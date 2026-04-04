@@ -4,6 +4,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import uuid
+import re
 import requests as http_requests
 from pathlib import Path
 from pydantic import BaseModel
@@ -35,12 +36,14 @@ class SessionExchange(BaseModel):
 
 class DepartmentCreate(BaseModel):
     department_name: str
+    is_system: bool = False
 
 class JobPositionCreate(BaseModel):
     position_name: str
     department_id: str
     has_levels: bool = False
     available_levels: List[str] = []
+    is_system: bool = False
 
 class EmployeeCreate(BaseModel):
     first_name: str
@@ -77,6 +80,19 @@ class EmployeeCreate(BaseModel):
     ifsc_code: str
     profile_picture: Optional[str] = None
     status: str = "Active"
+    teams: List[str] = []
+
+class TeamCreate(BaseModel):
+    team_name: str
+    team_manager_id: Optional[str] = None
+
+class NotionDatabaseCreate(BaseModel):
+    database_name: str
+    notion_api_token: str
+    notion_database_id: str
+    database_type: str  # "Video Editing", "Thumbnail", "Script"
+    team_id: str
+    is_active: bool = True
 
 
 # ===================== HELPERS =====================
@@ -228,6 +244,8 @@ async def update_department(dept_id: str, body: DepartmentCreate, request: Reque
     existing = await db.departments.find_one({"department_id": dept_id}, {"_id": 0})
     if not existing:
         raise HTTPException(404, "Department not found")
+    if existing.get("is_system") and body.department_name.strip().lower() != existing["department_name"].strip().lower():
+        raise HTTPException(400, "Cannot rename a system department")
     await db.departments.update_one({"department_id": dept_id}, {"$set": {"department_name": body.department_name}})
     await db.employees.update_many({"department_id": dept_id}, {"$set": {"department_name": body.department_name}})
     await db.job_positions.update_many({"department_id": dept_id}, {"$set": {"department_name": body.department_name}})
@@ -237,6 +255,11 @@ async def update_department(dept_id: str, body: DepartmentCreate, request: Reque
 @api_router.delete("/departments/{dept_id}")
 async def delete_department(dept_id: str, request: Request):
     await get_current_user(request)
+    existing = await db.departments.find_one({"department_id": dept_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Department not found")
+    if existing.get("is_system"):
+        raise HTTPException(400, "Cannot delete a system department")
     emp_count = await db.employees.count_documents({"department_id": dept_id})
     if emp_count > 0:
         raise HTTPException(400, f"Cannot delete: {emp_count} employee(s) belong to this department")
@@ -282,6 +305,8 @@ async def update_job_position(pos_id: str, body: JobPositionCreate, request: Req
     existing = await db.job_positions.find_one({"position_id": pos_id}, {"_id": 0})
     if not existing:
         raise HTTPException(404, "Job position not found")
+    if existing.get("is_system") and body.position_name.strip().lower() != existing["position_name"].strip().lower():
+        raise HTTPException(400, "Cannot rename a system job position")
     dept = await db.departments.find_one({"department_id": body.department_id}, {"_id": 0})
     dept_name = dept["department_name"] if dept else existing["department_name"]
     update = {
@@ -298,6 +323,11 @@ async def update_job_position(pos_id: str, body: JobPositionCreate, request: Req
 @api_router.delete("/job-positions/{pos_id}")
 async def delete_job_position(pos_id: str, request: Request):
     await get_current_user(request)
+    existing = await db.job_positions.find_one({"position_id": pos_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Job position not found")
+    if existing.get("is_system"):
+        raise HTTPException(400, "Cannot delete a system job position")
     emp_count = await db.employees.count_documents({"job_position_id": pos_id})
     if emp_count > 0:
         raise HTTPException(400, f"Cannot delete: {emp_count} employee(s) have this position")
@@ -327,11 +357,13 @@ async def get_cities(request: Request, state_id: Optional[str] = None):
 # ===================== EMPLOYEE ROUTES =====================
 
 @api_router.get("/employees")
-async def get_employees(request: Request, search: Optional[str] = None, status: Optional[str] = None):
+async def get_employees(request: Request, search: Optional[str] = None, status: Optional[str] = None, team_id: Optional[str] = None):
     await get_current_user(request)
     query = {}
     if status and status != "All":
         query["status"] = status
+    if team_id:
+        query["teams"] = team_id
     employees = await db.employees.find(query, {"_id": 0}).to_list(10000)
     if search:
         sl = search.lower()
@@ -400,6 +432,443 @@ async def delete_employee(emp_id: str, request: Request):
     return {"message": "Deleted"}
 
 
+# ===================== ME / CURRENT EMPLOYEE =====================
+
+@api_router.get("/me/employee")
+async def get_my_employee(request: Request):
+    user = await get_current_user(request)
+    email = user.get("email", "")
+    emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{email}$", "$options": "i"}}, {"_id": 0}
+    )
+    return emp or {}
+
+
+# ===================== TEAM ROUTES =====================
+
+@api_router.get("/teams")
+async def get_teams(request: Request):
+    await get_current_user(request)
+    teams = await db.teams.find({}, {"_id": 0}).sort("team_name", 1).to_list(1000)
+    return teams
+
+
+@api_router.post("/teams")
+async def create_team(body: TeamCreate, request: Request):
+    await get_current_user(request)
+    existing = await db.teams.find_one(
+        {"team_name": {"$regex": f"^{re.escape(body.team_name)}$", "$options": "i"}}, {"_id": 0}
+    )
+    if existing:
+        raise HTTPException(400, "Team name already exists")
+    manager_name = None
+    if body.team_manager_id:
+        mgr = await db.employees.find_one({"employee_id": body.team_manager_id}, {"_id": 0})
+        if mgr:
+            manager_name = f"{mgr['first_name']} {mgr['last_name']}"
+    team = {
+        "team_id": f"team_{uuid.uuid4().hex[:8]}",
+        "team_name": body.team_name,
+        "team_manager_id": body.team_manager_id,
+        "team_manager_name": manager_name,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.teams.insert_one(team)
+    return {k: v for k, v in team.items() if k != "_id"}
+
+
+@api_router.put("/teams/{team_id}")
+async def update_team(team_id: str, body: TeamCreate, request: Request):
+    await get_current_user(request)
+    existing = await db.teams.find_one({"team_id": team_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Team not found")
+    manager_name = None
+    if body.team_manager_id:
+        mgr = await db.employees.find_one({"employee_id": body.team_manager_id}, {"_id": 0})
+        if mgr:
+            manager_name = f"{mgr['first_name']} {mgr['last_name']}"
+    update = {
+        "team_name": body.team_name,
+        "team_manager_id": body.team_manager_id,
+        "team_manager_name": manager_name
+    }
+    await db.teams.update_one({"team_id": team_id}, {"$set": update})
+    return {**existing, **update}
+
+
+@api_router.delete("/teams/{team_id}")
+async def delete_team(team_id: str, request: Request):
+    await get_current_user(request)
+    existing = await db.teams.find_one({"team_id": team_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Team not found")
+    await db.teams.delete_one({"team_id": team_id})
+    return {"message": "Deleted"}
+
+
+# ===================== NOTION DATABASE ROUTES =====================
+
+@api_router.get("/notion-databases")
+async def get_notion_databases(request: Request):
+    await get_current_user(request)
+    dbs = await db.notion_databases.find({}, {"_id": 0}).sort("database_name", 1).to_list(1000)
+    return dbs
+
+
+@api_router.post("/notion-databases")
+async def create_notion_database(body: NotionDatabaseCreate, request: Request):
+    await get_current_user(request)
+    team = await db.teams.find_one({"team_id": body.team_id}, {"_id": 0})
+    ndb = {
+        "db_id": f"ndb_{uuid.uuid4().hex[:8]}",
+        "database_name": body.database_name,
+        "notion_api_token": body.notion_api_token,
+        "notion_database_id": body.notion_database_id,
+        "database_type": body.database_type,
+        "team_id": body.team_id,
+        "team_name": team["team_name"] if team else "",
+        "is_active": body.is_active,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.notion_databases.insert_one(ndb)
+    return {k: v for k, v in ndb.items() if k != "_id"}
+
+
+@api_router.put("/notion-databases/{db_id}")
+async def update_notion_database(db_id: str, body: NotionDatabaseCreate, request: Request):
+    await get_current_user(request)
+    existing = await db.notion_databases.find_one({"db_id": db_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Notion database not found")
+    team = await db.teams.find_one({"team_id": body.team_id}, {"_id": 0})
+    update = {
+        "database_name": body.database_name,
+        "notion_api_token": body.notion_api_token,
+        "notion_database_id": body.notion_database_id,
+        "database_type": body.database_type,
+        "team_id": body.team_id,
+        "team_name": team["team_name"] if team else "",
+        "is_active": body.is_active
+    }
+    await db.notion_databases.update_one({"db_id": db_id}, {"$set": update})
+    return {**existing, **update}
+
+
+@api_router.delete("/notion-databases/{db_id}")
+async def delete_notion_database(db_id: str, request: Request):
+    await get_current_user(request)
+    existing = await db.notion_databases.find_one({"db_id": db_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Notion database not found")
+    await db.notion_databases.delete_one({"db_id": db_id})
+    return {"message": "Deleted"}
+
+
+# ===================== PERFORMANCE HELPERS =====================
+
+def get_star_count(prop_value: dict) -> Optional[int]:
+    if not prop_value:
+        return None
+    select_obj = prop_value.get("select")
+    if not select_obj:
+        return None
+    name = select_obj.get("name", "")
+    if not name:
+        return None
+    stars = re.findall(r'[\u2B50\u2606\u2605]', name)
+    if stars:
+        return len(stars)
+    num_match = re.search(r'\d+', name)
+    if num_match:
+        return int(num_match.group())
+    clean = re.sub(r'[\uFE0F\s]', '', name)
+    if 1 <= len(clean) <= 5:
+        return len(clean)
+    return None
+
+
+def get_deadline_status(due_date_str: Optional[str], moved_to_review_str: Optional[str]) -> str:
+    if not due_date_str or not moved_to_review_str:
+        return "No Date"
+    try:
+        due_dt = datetime.fromisoformat(due_date_str.replace('Z', '+00:00'))
+        review_dt = datetime.fromisoformat(moved_to_review_str.replace('Z', '+00:00'))
+        if due_dt.tzinfo is None:
+            due_dt = due_dt.replace(tzinfo=timezone.utc)
+        if review_dt.tzinfo is None:
+            review_dt = review_dt.replace(tzinfo=timezone.utc)
+        if review_dt >= due_dt:
+            diff_minutes = (review_dt - due_dt).total_seconds() / 60
+            hours = int(diff_minutes // 60)
+            mins = int(diff_minutes % 60)
+            return f"Missed Deadline ({hours}h {mins}min)"
+        else:
+            return "On Time"
+    except Exception:
+        return "No Date"
+
+
+def compute_performance_score(
+    database_type: str,
+    intro_rating: Optional[int],
+    overall_rating: Optional[int],
+    thumbnail_rating: Optional[int],
+    script_rating: Optional[int],
+    deadline_status: str,
+    changes_count: Optional[int]
+) -> Optional[float]:
+    if deadline_status == "No Date":
+        return None
+
+    if database_type == "Video Editing":
+        if any(v is None for v in [intro_rating, overall_rating, changes_count]):
+            return None
+        quality = intro_rating + overall_rating
+        if quality >= 10: video_pts = 4
+        elif quality >= 8: video_pts = 3
+        elif quality >= 6: video_pts = 2
+        elif quality >= 4: video_pts = 1
+        else: video_pts = 0
+
+        if "On Time" in deadline_status:
+            dl_pts = 3
+        elif "Missed" in deadline_status:
+            hm = re.search(r'(\d+)h', deadline_status)
+            mm = re.search(r'(\d+)min', deadline_status)
+            total_mins = (int(hm.group(1)) if hm else 0) * 60 + (int(mm.group(1)) if mm else 0)
+            if total_mins < 30: dl_pts = 2
+            elif total_mins <= 60: dl_pts = 1
+            else: dl_pts = 0
+        else:
+            return None
+
+        if changes_count == 0: change_pts = 3
+        elif changes_count <= 5: change_pts = 2
+        elif changes_count <= 10: change_pts = 1
+        else: change_pts = 0
+
+        return float(video_pts + dl_pts + change_pts)
+
+    elif database_type in ("Thumbnail", "Script"):
+        rating = thumbnail_rating if database_type == "Thumbnail" else script_rating
+        if rating is None:
+            return None
+        rating_pts = {5: 6, 4: 4, 3: 3, 2: 1, 1: 0}.get(int(rating), 0)
+
+        if "On Time" in deadline_status:
+            dl_pts = 4
+        elif "Missed" in deadline_status:
+            hm = re.search(r'(\d+)h', deadline_status)
+            mm = re.search(r'(\d+)min', deadline_status)
+            total_mins = (int(hm.group(1)) if hm else 0) * 60 + (int(mm.group(1)) if mm else 0)
+            if total_mins < 30: dl_pts = 3
+            elif total_mins <= 60: dl_pts = 2
+            elif total_mins <= 120: dl_pts = 1
+            else: dl_pts = 0
+        else:
+            return None
+
+        return float(rating_pts + dl_pts)
+
+    return None
+
+
+# ===================== WEBHOOK ROUTES =====================
+
+@api_router.post("/webhooks/notion/{notion_database_id}")
+async def notion_webhook(notion_database_id: str, request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        return {"message": "Invalid JSON payload"}
+
+    # Extract page object — Notion automation sends {"source": {...}, "data": {page object}}
+    page = payload.get("data", payload)
+    if not isinstance(page, dict) or page.get("object") != "page":
+        for v in payload.values():
+            if isinstance(v, dict) and v.get("object") == "page":
+                page = v
+                break
+
+    if not isinstance(page, dict) or not page.get("id"):
+        logger.info(f"Notion webhook: no valid page in payload for db {notion_database_id}")
+        return {"message": "No page data found"}
+
+    notion_db = await db.notion_databases.find_one(
+        {"notion_database_id": notion_database_id, "is_active": True}, {"_id": 0}
+    )
+    if not notion_db:
+        return {"message": "Database not configured or inactive"}
+
+    properties = page.get("properties", {})
+    page_id = page.get("id", "").replace("-", "")
+    page_url = page.get("url", "")
+
+    # Title
+    title = ""
+    for prop in properties.values():
+        if prop.get("type") == "title":
+            title = " ".join(t.get("plain_text", "") for t in prop.get("title", []))
+            break
+
+    # Assignee
+    assignee_name = ""
+    for pname, prop in properties.items():
+        if prop.get("type") == "people" and pname.lower() in ("assignee", "assigned to"):
+            assignee_name = ", ".join(p.get("name", "") for p in prop.get("people", []))
+            break
+
+    # Due date
+    due_date = None
+    for pname, prop in properties.items():
+        if prop.get("type") == "date" and "due" in pname.lower():
+            d = prop.get("date")
+            if d:
+                due_date = d.get("start")
+            break
+
+    # Moved To Review date
+    moved_to_review = None
+    for pname, prop in properties.items():
+        if prop.get("type") == "date" and "review" in pname.lower() and "moved" in pname.lower():
+            d = prop.get("date")
+            if d:
+                moved_to_review = d.get("start")
+            break
+
+    # Ratings and changes
+    intro_rating = None
+    overall_rating = None
+    thumbnail_rating = None
+    script_rating = None
+    changes_count = None
+
+    for pname, prop in properties.items():
+        pl = pname.lower()
+        if "intro" in pl and prop.get("type") == "select":
+            intro_rating = get_star_count(prop)
+        elif "overall" in pl and prop.get("type") == "select":
+            overall_rating = get_star_count(prop)
+        elif "thumbnail" in pl and "rating" in pl and prop.get("type") == "select":
+            thumbnail_rating = get_star_count(prop)
+        elif "script" in pl and "rating" in pl and prop.get("type") == "select":
+            script_rating = get_star_count(prop)
+        elif "change" in pl and prop.get("type") == "number":
+            changes_count = prop.get("number")
+
+    database_type = notion_db.get("database_type", "Video Editing")
+    team_id = notion_db.get("team_id", "")
+    deadline_status = get_deadline_status(due_date, moved_to_review)
+    performance_score = compute_performance_score(
+        database_type, intro_rating, overall_rating,
+        thumbnail_rating, script_rating, deadline_status, changes_count
+    )
+
+    # Match assignee to employee
+    employee_id = None
+    first_assignee = assignee_name.split(", ")[0].strip() if assignee_name else ""
+    if first_assignee:
+        all_emps = await db.employees.find(
+            {}, {"_id": 0, "employee_id": 1, "first_name": 1, "last_name": 1}
+        ).to_list(5000)
+        for emp in all_emps:
+            full = f"{emp['first_name']} {emp['last_name']}".lower()
+            if full == first_assignee.lower() or emp["first_name"].lower() == first_assignee.lower():
+                employee_id = emp["employee_id"]
+                break
+
+    now = datetime.now(timezone.utc).isoformat()
+    existing = await db.performance_data.find_one({"page_id": page_id}, {"_id": 0})
+
+    if existing:
+        update = {
+            "title": title, "page_url": page_url, "assignee_name": assignee_name,
+            "employee_id": employee_id, "team_id": team_id, "database_type": database_type,
+            "deadline_status": deadline_status, "performance_score": performance_score,
+            "changes_count": changes_count, "updated_at": now
+        }
+        if existing.get("intro_rating") is None and intro_rating is not None:
+            update["intro_rating"] = intro_rating
+        if existing.get("overall_rating") is None and overall_rating is not None:
+            update["overall_rating"] = overall_rating
+        if existing.get("thumbnail_rating") is None and thumbnail_rating is not None:
+            update["thumbnail_rating"] = thumbnail_rating
+        if existing.get("script_rating") is None and script_rating is not None:
+            update["script_rating"] = script_rating
+        await db.performance_data.update_one({"page_id": page_id}, {"$set": update})
+    else:
+        doc = {
+            "page_id": page_id, "title": title, "page_url": page_url,
+            "assignee_name": assignee_name, "employee_id": employee_id,
+            "team_id": team_id, "database_type": database_type,
+            "deadline_status": deadline_status, "performance_score": performance_score,
+            "intro_rating": intro_rating, "overall_rating": overall_rating,
+            "thumbnail_rating": thumbnail_rating, "script_rating": script_rating,
+            "changes_count": changes_count, "created_at": now, "updated_at": now
+        }
+        await db.performance_data.insert_one(doc)
+
+    return {"message": "Processed", "page_id": page_id, "score": performance_score}
+
+
+# ===================== PERFORMANCE ROUTES =====================
+
+@api_router.get("/performance")
+async def get_performance(
+    request: Request,
+    team_id: Optional[str] = None,
+    employee_id: Optional[str] = None
+):
+    await get_current_user(request)
+    query = {}
+    if team_id:
+        query["team_id"] = team_id
+    if employee_id:
+        query["employee_id"] = employee_id
+    data = await db.performance_data.find(query, {"_id": 0}).sort("updated_at", -1).to_list(10000)
+    return data
+
+
+# ===================== SEED V2 =====================
+
+@api_router.post("/seed-v2")
+async def seed_v2():
+    """Idempotent: add is_system flags + Human Resource dept"""
+    now = datetime.now(timezone.utc).isoformat()
+    system_dept_ids = ["dept_operations", "dept_sales", "dept_admin"]
+    for dept_id in system_dept_ids:
+        await db.departments.update_one(
+            {"department_id": dept_id}, {"$set": {"is_system": True}}
+        )
+    hr_dept = await db.departments.find_one({"department_id": "dept_hr"})
+    if not hr_dept:
+        await db.departments.insert_one({
+            "department_id": "dept_hr", "department_name": "Human Resource",
+            "is_system": True, "created_at": now
+        })
+    system_pos_ids = [
+        "pos_video_editor", "pos_thumbnail_designer", "pos_script_writer", "pos_manager",
+        "pos_sales_rep", "pos_sales_manager", "pos_director", "pos_hr_manager"
+    ]
+    for pos_id in system_pos_ids:
+        await db.job_positions.update_one(
+            {"position_id": pos_id}, {"$set": {"is_system": True}}
+        )
+    hr_positions = [
+        {"position_id": "pos_hr_executive", "position_name": "HR Executive",
+         "department_id": "dept_hr", "department_name": "Human Resource",
+         "has_levels": False, "available_levels": [], "is_system": True, "created_at": now},
+        {"position_id": "pos_hr_manager_hr", "position_name": "HR Manager",
+         "department_id": "dept_hr", "department_name": "Human Resource",
+         "has_levels": False, "available_levels": [], "is_system": True, "created_at": now},
+    ]
+    for pos in hr_positions:
+        if not await db.job_positions.find_one({"position_id": pos["position_id"]}):
+            await db.job_positions.insert_one(pos)
+    return {"message": "Seeded v2 successfully"}
+
+
 # ===================== SEED ROUTE =====================
 
 @api_router.post("/seed")
@@ -411,21 +880,24 @@ async def seed_data():
     now = datetime.now(timezone.utc).isoformat()
 
     depts = [
-        {"department_id": "dept_operations", "department_name": "Operations", "created_at": now},
-        {"department_id": "dept_sales", "department_name": "Sales", "created_at": now},
-        {"department_id": "dept_admin", "department_name": "Admin", "created_at": now},
+        {"department_id": "dept_operations", "department_name": "Operations", "is_system": True, "created_at": now},
+        {"department_id": "dept_sales", "department_name": "Sales", "is_system": True, "created_at": now},
+        {"department_id": "dept_admin", "department_name": "Admin", "is_system": True, "created_at": now},
+        {"department_id": "dept_hr", "department_name": "Human Resource", "is_system": True, "created_at": now},
     ]
     await db.departments.insert_many(depts)
 
     positions = [
-        {"position_id": "pos_video_editor", "position_name": "Video Editor", "department_id": "dept_operations", "department_name": "Operations", "has_levels": True, "available_levels": ["Beginner", "Intermediate", "Advanced"], "created_at": now},
-        {"position_id": "pos_thumbnail_designer", "position_name": "Thumbnail Designer", "department_id": "dept_operations", "department_name": "Operations", "has_levels": True, "available_levels": ["Beginner", "Intermediate", "Advanced"], "created_at": now},
-        {"position_id": "pos_script_writer", "position_name": "Script Writer", "department_id": "dept_operations", "department_name": "Operations", "has_levels": False, "available_levels": [], "created_at": now},
-        {"position_id": "pos_manager", "position_name": "Manager", "department_id": "dept_operations", "department_name": "Operations", "has_levels": False, "available_levels": [], "created_at": now},
-        {"position_id": "pos_sales_rep", "position_name": "Sales Representative", "department_id": "dept_sales", "department_name": "Sales", "has_levels": False, "available_levels": [], "created_at": now},
-        {"position_id": "pos_sales_manager", "position_name": "Sales Manager", "department_id": "dept_sales", "department_name": "Sales", "has_levels": False, "available_levels": [], "created_at": now},
-        {"position_id": "pos_director", "position_name": "Director/CEO/COO", "department_id": "dept_admin", "department_name": "Admin", "has_levels": False, "available_levels": [], "created_at": now},
-        {"position_id": "pos_hr_manager", "position_name": "HR Manager", "department_id": "dept_admin", "department_name": "Admin", "has_levels": False, "available_levels": [], "created_at": now},
+        {"position_id": "pos_video_editor", "position_name": "Video Editor", "department_id": "dept_operations", "department_name": "Operations", "has_levels": True, "available_levels": ["Beginner", "Intermediate", "Advanced"], "is_system": True, "created_at": now},
+        {"position_id": "pos_thumbnail_designer", "position_name": "Thumbnail Designer", "department_id": "dept_operations", "department_name": "Operations", "has_levels": True, "available_levels": ["Beginner", "Intermediate", "Advanced"], "is_system": True, "created_at": now},
+        {"position_id": "pos_script_writer", "position_name": "Script Writer", "department_id": "dept_operations", "department_name": "Operations", "has_levels": False, "available_levels": [], "is_system": True, "created_at": now},
+        {"position_id": "pos_manager", "position_name": "Manager", "department_id": "dept_operations", "department_name": "Operations", "has_levels": False, "available_levels": [], "is_system": True, "created_at": now},
+        {"position_id": "pos_sales_rep", "position_name": "Sales Representative", "department_id": "dept_sales", "department_name": "Sales", "has_levels": False, "available_levels": [], "is_system": True, "created_at": now},
+        {"position_id": "pos_sales_manager", "position_name": "Sales Manager", "department_id": "dept_sales", "department_name": "Sales", "has_levels": False, "available_levels": [], "is_system": True, "created_at": now},
+        {"position_id": "pos_director", "position_name": "Director/CEO/COO", "department_id": "dept_admin", "department_name": "Admin", "has_levels": False, "available_levels": [], "is_system": True, "created_at": now},
+        {"position_id": "pos_hr_manager", "position_name": "HR Manager", "department_id": "dept_admin", "department_name": "Admin", "has_levels": False, "available_levels": [], "is_system": True, "created_at": now},
+        {"position_id": "pos_hr_executive", "position_name": "HR Executive", "department_id": "dept_hr", "department_name": "Human Resource", "has_levels": False, "available_levels": [], "is_system": True, "created_at": now},
+        {"position_id": "pos_hr_manager_hr", "position_name": "HR Manager", "department_id": "dept_hr", "department_name": "Human Resource", "has_levels": False, "available_levels": [], "is_system": True, "created_at": now},
     ]
     await db.job_positions.insert_many(positions)
 

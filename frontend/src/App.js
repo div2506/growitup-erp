@@ -5,6 +5,8 @@ import LoginPage from "@/pages/LoginPage";
 import EmployeesPage from "@/pages/EmployeesPage";
 import DepartmentsPage from "@/pages/DepartmentsPage";
 import JobPositionsPage from "@/pages/JobPositionsPage";
+import SettingsPage from "@/pages/SettingsPage";
+import PerformancePage from "@/pages/PerformancePage";
 import AuthCallback from "@/components/AuthCallback";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Layout from "@/components/Layout";
@@ -33,6 +35,8 @@ function AppRouter() {
         <Route path="employees" element={<EmployeesPage />} />
         <Route path="departments" element={<DepartmentsPage />} />
         <Route path="job-positions" element={<JobPositionsPage />} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route path="performance" element={<PerformancePage />} />
       </Route>
       <Route path="*" element={<Navigate to="/employees" replace />} />
     </Routes>

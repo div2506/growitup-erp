@@ -24,7 +24,8 @@ const EMPTY_FORM = {
   department_name: "", job_position_id: "", job_position_name: "", level: "",
   reporting_manager_id: "", reporting_manager_name: "", employee_type: "",
   joining_date: "", basic_salary: "", bank_name: "", account_name: "",
-  account_number: "", ifsc_code: "", profile_picture: null, status: "Active"
+  account_number: "", ifsc_code: "", profile_picture: null, status: "Active",
+  teams: []
 };
 
 const inputCls = "bg-[#191919] border-white/10 text-white placeholder-[#B3B3B3] focus-visible:ring-white/20 focus-visible:border-white/30";
@@ -58,6 +59,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
   const [departments, setDepartments] = useState([]);
   const [jobPositions, setJobPositions] = useState([]); // filtered by dept
   const [allEmployees, setAllEmployees] = useState([]);
+  const [allTeams, setAllTeams] = useState([]);
 
   const selectedJobPos = jobPositions.find(jp => jp.position_id === form.job_position_id);
   const showLevel = selectedJobPos?.has_levels === true;
@@ -66,14 +68,16 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
   useEffect(() => {
     const load = async () => {
       try {
-        const [statesRes, deptsRes, empsRes] = await Promise.all([
+        const [statesRes, deptsRes, empsRes, teamsRes] = await Promise.all([
           axios.get(`${API}/states`, { withCredentials: true }),
           axios.get(`${API}/departments`, { withCredentials: true }),
           axios.get(`${API}/employees`, { withCredentials: true }),
+          axios.get(`${API}/teams`, { withCredentials: true }),
         ]);
         setStates(statesRes.data);
         setDepartments(deptsRes.data);
         setAllEmployees(empsRes.data);
+        setAllTeams(teamsRes.data);
       } catch {
         toast.error("Failed to load form data");
       }
@@ -92,6 +96,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
         reporting_manager_id: employee.reporting_manager_id || "",
         reporting_manager_name: employee.reporting_manager_name || "",
         profile_picture: employee.profile_picture || null,
+        teams: employee.teams || [],
       });
     } else {
       setForm(EMPTY_FORM);
@@ -219,6 +224,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
       level: form.level || null,
       reporting_manager_id: form.reporting_manager_id || null,
       reporting_manager_name: form.reporting_manager_name || null,
+      teams: form.teams || [],
     };
     delete payload.employee_id;
     delete payload.created_at;
@@ -477,6 +483,48 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
                 </Select>
               </FormField>
             </div>
+
+            {/* Teams Multi-Select */}
+            {allTeams.length > 0 && (
+              <div className="mt-5 pt-5 border-t border-white/10">
+                <p className="text-white font-medium text-sm mb-3">Team Assignment</p>
+                <div className="space-y-1.5">
+                  <Label className={labelCls}>Teams (select all that apply)</Label>
+                  <div className="flex flex-wrap gap-2" data-testid="teams-multiselect">
+                    {allTeams.map(team => {
+                      const isSelected = (form.teams || []).includes(team.team_id);
+                      return (
+                        <button
+                          key={team.team_id}
+                          type="button"
+                          data-testid={`team-toggle-${team.team_id}`}
+                          onClick={() => {
+                            const current = form.teams || [];
+                            const updated = isSelected
+                              ? current.filter(id => id !== team.team_id)
+                              : [...current, team.team_id];
+                            set("teams", updated);
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                            isSelected
+                              ? "bg-white/10 text-white border-white/30"
+                              : "bg-transparent text-[#B3B3B3] border-white/10 hover:border-white/20 hover:text-white"
+                          }`}
+                        >
+                          {team.team_name}
+                          {isSelected && <span className="ml-1.5 text-green-400">✓</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {(form.teams || []).length > 0 && (
+                    <p className="text-[#B3B3B3] text-xs mt-1">
+                      {(form.teams || []).length} team{(form.teams || []).length !== 1 ? "s" : ""} selected
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="flex justify-between mt-6">
               <Button variant="outline" onClick={() => setTab("personal")} className="bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white gap-1.5">

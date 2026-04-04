@@ -1,12 +1,6 @@
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, API } from "@/contexts/AuthContext";
-import { Users, Building2, Briefcase, LogOut } from "lucide-react";
-
-const navItems = [
-  { path: "/employees", label: "Employees", icon: Users },
-  { path: "/departments", label: "Departments", icon: Building2 },
-  { path: "/job-positions", label: "Job Positions", icon: Briefcase },
-];
+import { Users, Settings, BarChart2, LogOut } from "lucide-react";
 
 export default function Layout() {
   const { user, setUser } = useAuth();
@@ -20,6 +14,12 @@ export default function Layout() {
     setUser(null);
     navigate("/login", { replace: true });
   };
+
+  const navItems = [
+    { path: "/employees", label: "Employees", icon: Users },
+    { path: "/performance", label: "Performance", icon: BarChart2 },
+    { path: "/settings", label: "Settings", icon: Settings },
+  ];
 
   return (
     <div className="flex min-h-screen bg-[#191919]">
