@@ -6,6 +6,7 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [myEmployee, setMyEmployee] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const checkAuth = useCallback(async () => {
@@ -14,8 +15,17 @@ export function AuthProvider({ children }) {
       if (!response.ok) throw new Error("Not authenticated");
       const userData = await response.json();
       setUser(userData);
+      // Load employee profile right after auth
+      try {
+        const empRes = await fetch(`${API}/me/employee`, { credentials: "include" });
+        if (empRes.ok) {
+          const empData = await empRes.json();
+          if (empData?.employee_id) setMyEmployee(empData);
+        }
+      } catch {}
     } catch {
       setUser(null);
+      setMyEmployee(null);
     } finally {
       setLoading(false);
     }
@@ -33,7 +43,7 @@ export function AuthProvider({ children }) {
   }, [checkAuth]);
 
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, checkAuth }}>
+    <AuthContext.Provider value={{ user, setUser, myEmployee, setMyEmployee, loading, checkAuth }}>
       {children}
     </AuthContext.Provider>
   );

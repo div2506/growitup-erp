@@ -3,7 +3,7 @@ import axios from "axios";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   ChevronRight, ChevronLeft, ExternalLink, Users, User, BarChart2,
-  Search, ChevronDown, Calendar
+  Search, Calendar
 } from "lucide-react";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -542,8 +542,7 @@ function TeamSelection({ onSelectTeam }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function PerformancePage() {
-  const { user } = useAuth();
-  const [myEmployee, setMyEmployee] = useState(null);
+  const { user, myEmployee } = useAuth();
   const [myManagedTeams, setMyManagedTeams] = useState([]);
   const [roleLoading, setRoleLoading] = useState(true);
   const [selectedTeam, setSelectedTeam] = useState(null);
@@ -551,18 +550,13 @@ export default function PerformancePage() {
 
   const loadRole = useCallback(async () => {
     try {
-      const [empRes, teamsRes] = await Promise.all([
-        axios.get(`${API}/me/employee`, { withCredentials: true }),
-        axios.get(`${API}/teams`, { withCredentials: true }),
-      ]);
-      const emp = empRes.data;
-      setMyEmployee(emp);
-      if (emp?.employee_id) {
-        setMyManagedTeams(teamsRes.data.filter(t => t.team_manager_id === emp.employee_id));
+      const teamsRes = await axios.get(`${API}/teams`, { withCredentials: true });
+      if (myEmployee?.employee_id) {
+        setMyManagedTeams(teamsRes.data.filter(t => t.team_manager_id === myEmployee.employee_id));
       }
     } catch {}
     finally { setRoleLoading(false); }
-  }, []);
+  }, [myEmployee]);
 
   useEffect(() => { loadRole(); }, [loadRole]);
 

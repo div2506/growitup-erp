@@ -1,20 +1,11 @@
-import { useState, useEffect } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, API } from "@/contexts/AuthContext";
 import { Users, Settings, BarChart2, LogOut } from "lucide-react";
-import axios from "axios";
 
 export default function Layout() {
-  const { user, setUser } = useAuth();
+  const { user, setUser, myEmployee } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [myEmployee, setMyEmployee] = useState(null);
-
-  useEffect(() => {
-    axios.get(`${API}/me/employee`, { withCredentials: true })
-      .then(r => { if (r.data && r.data.employee_id) setMyEmployee(r.data); })
-      .catch(() => {});
-  }, []);
 
   const handleLogout = async () => {
     try {
@@ -24,17 +15,19 @@ export default function Layout() {
     navigate("/login", { replace: true });
   };
 
+  const isAdminDept = user?.is_admin || myEmployee?.department_name === "Admin";
+
   const navItems = [
     { path: "/employees", label: "Employees", icon: Users },
     { path: "/performance", label: "Performance", icon: BarChart2 },
-    { path: "/settings", label: "Settings", icon: Settings },
+    ...(isAdminDept ? [{ path: "/settings", label: "Settings", icon: Settings }] : []),
   ];
 
   const displayName = myEmployee
     ? `${myEmployee.first_name} ${myEmployee.last_name}`
     : user?.name || "User";
   const displayEmail = myEmployee?.work_email || user?.email || "";
-  const displayPicture = user?.picture;
+  const displayPicture = myEmployee?.profile_picture || null;
 
   return (
     <div className="flex min-h-screen bg-[#191919]">
