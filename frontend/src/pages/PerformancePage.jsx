@@ -106,9 +106,11 @@ function PerformanceTable({ employeeId, employeeName, onBack, showBackLabel }) {
               <tr>
                 <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Task</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Type</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Status</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Deadline</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Ratings</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Changes</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Vid Len</th>
                 <th className="text-center py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Score</th>
               </tr>
             </thead>
@@ -128,6 +130,15 @@ function PerformanceTable({ employeeId, employeeName, onBack, showBackLabel }) {
                   </td>
                   <td className="py-3.5 px-4">
                     <span className="px-2 py-0.5 text-[10px] rounded-full bg-blue-500/15 text-blue-400">{record.database_type || "—"}</span>
+                  </td>
+                  <td className="py-3.5 px-4">
+                    <span className={`px-2 py-0.5 text-[10px] rounded-full font-medium ${
+                      record.status === "Approved" ? "bg-green-500/15 text-green-400" :
+                      record.status === "Review" ? "bg-amber-500/15 text-amber-400" :
+                      record.status === "Changes" ? "bg-red-500/15 text-red-400" :
+                      record.status === "Final Review" ? "bg-blue-500/15 text-blue-400" :
+                      "bg-white/5 text-[#B3B3B3]"
+                    }`}>{record.status || "—"}</span>
                   </td>
                   <td className="py-3.5 px-4"><DeadlineBadge status={record.deadline_status} /></td>
                   <td className="py-3.5 px-4">
@@ -150,6 +161,11 @@ function PerformanceTable({ employeeId, employeeName, onBack, showBackLabel }) {
                   </td>
                   <td className="py-3.5 px-4 text-sm text-[#B3B3B3]">
                     {record.changes_count !== null && record.changes_count !== undefined ? record.changes_count : "—"}
+                  </td>
+                  <td className="py-3.5 px-4 text-sm text-[#B3B3B3]">
+                    {record.database_type === "Video Editing" && record.video_length !== null && record.video_length !== undefined
+                      ? `${record.video_length} min`
+                      : "—"}
                   </td>
                   <td className="py-3.5 px-4 text-center"><ScoreBadge score={record.performance_score} /></td>
                 </tr>

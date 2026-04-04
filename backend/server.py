@@ -567,24 +567,36 @@ async def delete_notion_database(db_id: str, request: Request):
 
 # ===================== PERFORMANCE HELPERS =====================
 
+# Valid statuses (same as VALID_STATUSES in the appscript)
+VALID_STATUSES = {"Review", "Approved", "Changes", "Final Review"}
+# Statuses where manager rating fields may be written
+RATING_STATUSES = {"Approved", "Changes", "Final Review"}
+
+
 def get_star_count(prop_value: dict) -> Optional[int]:
+    """Exact mirror of getStarRatingNumber_() from the appscript."""
     if not prop_value:
         return None
     select_obj = prop_value.get("select")
-    if not select_obj:
+    if not select_obj or not select_obj.get("name"):
         return None
-    name = select_obj.get("name", "")
-    if not name:
-        return None
-    stars = re.findall(r'[\u2B50\u2606\u2605]', name)
-    if stars:
-        return len(stars)
-    num_match = re.search(r'\d+', name)
+    value = select_obj["name"].strip()
+
+    # 1. Count actual star Unicode chars (excluding variation selectors \uFE0F)
+    actual_stars = re.findall(r'[\u2B50\u2606\u2605]', value)
+    if actual_stars:
+        return len(actual_stars)
+
+    # 2. Fallback: extract a plain number from the string
+    num_match = re.search(r'(\d+)', value)
     if num_match:
-        return int(num_match.group())
-    clean = re.sub(r'[\uFE0F\s]', '', name)
+        return int(num_match.group(1))
+
+    # 3. Last resort: count non-space non-variation-selector characters (1–5)
+    clean = re.sub(r'[\s\uFE0F]', '', value)
     if 1 <= len(clean) <= 5:
         return len(clean)
+
     return None
 
 
@@ -768,108 +780,202 @@ async def notion_webhook(notion_database_id: str, request: Request):
         "property_names": list(properties.keys()),
     })
 
-    # Title
+    # ── 1. STATUS FILTER ──────────────────────────────────────────
+    # Only process pages in the 4 valid statuses (same as appscript VALID_STATUSES)
+    page_status = ""
+    for pname, prop in properties.items():
+        if pname == "Status" and prop.get("type") == "status":
+            page_status = (prop.get("status") or {}).get("name", "")
+            break
+    if page_status not in VALID_STATUSES:
+        logger.info(f"[WEBHOOK] Skipping page {page_id}: status='{page_status}' not in valid statuses")
+        return {"message": f"Skipped: status '{page_status}' not in {sorted(VALID_STATUSES)}"}
+
+    # ── TITLE ─────────────────────────────────────────────────────
     title = ""
     for prop in properties.values():
         if prop.get("type") == "title":
             title = " ".join(t.get("plain_text", "") for t in prop.get("title", []))
             break
 
-    # Assignee — Notion people property: [{name: "...", ...}]
-    assignee_name = ""
+    # ── MULTIPLE ASSIGNEES ────────────────────────────────────────
+    # Support both "Assignee" and "Assigned To" (case-insensitive, exact match like appscript)
+    assignees = []
     for pname, prop in properties.items():
-        if prop.get("type") == "people":
-            people = prop.get("people", [])
-            if people:
-                assignee_name = ", ".join(p.get("name", "") for p in people)
-                break
+        if prop.get("type") == "people" and pname in ("Assignee", "Assigned To"):
+            assignees = prop.get("people", [])
+            break
 
-    # Due date
+    # ── 7. SKIP IF NO ASSIGNEE ────────────────────────────────────
+    if not assignees:
+        logger.info(f"[WEBHOOK] Skipping page {page_id}: no assignee")
+        return {"message": "Skipped: no assignee"}
+
+    # ── DUE DATE (with fallback) ──────────────────────────────────
+    # Support "Due date" AND "Due Date" (exact appscript PROP_DUE_1 / PROP_DUE_2)
     due_date = None
     for pname, prop in properties.items():
-        if prop.get("type") == "date" and "due" in pname.lower():
+        if prop.get("type") == "date" and pname in ("Due date", "Due Date"):
             d = prop.get("date")
             if d:
                 due_date = d.get("start")
             break
 
-    # Moved To Review date
+    # ── MOVED TO REVIEW ───────────────────────────────────────────
     moved_to_review = None
     for pname, prop in properties.items():
-        if prop.get("type") == "date" and "review" in pname.lower() and "moved" in pname.lower():
+        if prop.get("type") == "date" and pname == "Moved To Review":
             d = prop.get("date")
             if d:
                 moved_to_review = d.get("start")
             break
 
-    # Ratings and changes
+    # ── RATINGS & CHANGES ─────────────────────────────────────────
+    # Extracted from Notion; will only be written when status is in RATING_STATUSES
     intro_rating = None
     overall_rating = None
     thumbnail_rating = None
     script_rating = None
     changes_count = None
+    video_length = None
 
     for pname, prop in properties.items():
-        pl = pname.lower()
-        if "intro" in pl and prop.get("type") == "select":
+        if pname == "Intro / Hook Rating" and prop.get("type") == "select":
             intro_rating = get_star_count(prop)
-        elif "overall" in pl and prop.get("type") == "select":
+        elif pname == "Overall Editing Quality Rating" and prop.get("type") == "select":
             overall_rating = get_star_count(prop)
-        elif "thumbnail" in pl and "rating" in pl and prop.get("type") == "select":
+        elif "Thumbnail" in pname and "Rating" in pname and prop.get("type") == "select":
             thumbnail_rating = get_star_count(prop)
-        elif "script" in pl and "rating" in pl and prop.get("type") == "select":
+        elif "Script" in pname and "Rating" in pname and prop.get("type") == "select":
             script_rating = get_star_count(prop)
-        elif "change" in pl and prop.get("type") == "number":
+        elif pname == "Changes (No.)" and prop.get("type") == "number":
             changes_count = prop.get("number")
+        elif pname == "Video Length" and prop.get("type") == "number":
+            video_length = prop.get("number")
 
     database_type = notion_db.get("database_type", "Video Editing")
     team_id = notion_db.get("team_id", "")
     deadline_status = get_deadline_status(due_date, moved_to_review)
-    performance_score = compute_performance_score(
-        database_type, intro_rating, overall_rating,
-        thumbnail_rating, script_rating, deadline_status, changes_count
-    )
 
-    # Match assignee to employee
-    employee_id = None
-    first_assignee = assignee_name.split(", ")[0].strip() if assignee_name else ""
-    if first_assignee:
-        all_emps = await db.employees.find(
-            {}, {"_id": 0, "employee_id": 1, "first_name": 1, "last_name": 1}
-        ).to_list(5000)
-        for emp in all_emps:
-            full = f"{emp['first_name']} {emp['last_name']}".lower()
-            if full == first_assignee.lower() or emp["first_name"].lower() == first_assignee.lower():
-                employee_id = emp["employee_id"]
-                break
+    # ── 4. RATINGS ONLY WRITTEN FOR APPROVED / CHANGES / FINAL REVIEW ──
+    write_ratings = page_status in RATING_STATUSES
+
+    # Pre-load all employees for name matching
+    all_emps = await db.employees.find(
+        {}, {"_id": 0, "employee_id": 1, "first_name": 1, "last_name": 1}
+    ).to_list(5000)
 
     now = datetime.now(timezone.utc).isoformat()
-    existing = await db.performance_data.find_one({"page_id": page_id}, {"_id": 0})
+    processed = []
 
-    if existing:
-        # Always update with latest Notion data (Notion API is the source of truth)
-        update = {
-            "title": title, "page_url": page_url, "assignee_name": assignee_name,
-            "employee_id": employee_id, "team_id": team_id, "database_type": database_type,
-            "deadline_status": deadline_status, "performance_score": performance_score,
-            "changes_count": changes_count, "updated_at": now,
-            "intro_rating": intro_rating, "overall_rating": overall_rating,
-            "thumbnail_rating": thumbnail_rating, "script_rating": script_rating,
-        }
-        await db.performance_data.update_one({"page_id": page_id}, {"$set": update})
-    else:
-        doc = {
-            "page_id": page_id, "title": title, "page_url": page_url,
-            "assignee_name": assignee_name, "employee_id": employee_id,
-            "team_id": team_id, "database_type": database_type,
-            "deadline_status": deadline_status, "performance_score": performance_score,
-            "intro_rating": intro_rating, "overall_rating": overall_rating,
-            "thumbnail_rating": thumbnail_rating, "script_rating": script_rating,
-            "changes_count": changes_count, "created_at": now, "updated_at": now
-        }
-        await db.performance_data.insert_one(doc)
+    # ── 3. PROCESS EACH ASSIGNEE SEPARATELY ──────────────────────
+    for person in assignees:
+        assignee_name = (person.get("name") or "").strip()
+        if not assignee_name:
+            continue
 
-    return {"message": "Processed", "page_id": page_id, "score": performance_score}
+        # ── 8. SKIP IF NO MATCHING EMPLOYEE ─────────────────────
+        employee_id = None
+        for emp in all_emps:
+            full_name = f"{emp['first_name']} {emp['last_name']}".lower()
+            if full_name == assignee_name.lower() or emp["first_name"].lower() == assignee_name.lower():
+                employee_id = emp["employee_id"]
+                break
+        if not employee_id:
+            logger.info(f"[WEBHOOK] Skipping assignee '{assignee_name}': no matching employee")
+            continue
+
+        # Composite unique key: page_id + employee_id  (one record per page per person)
+        perf_id = f"{page_id}_{employee_id}"
+
+        # Find existing record — support both new perf_id and legacy page_id-only records
+        existing = await db.performance_data.find_one(
+            {"$or": [{"perf_id": perf_id}, {"page_id": page_id, "employee_id": employee_id}]},
+            {"_id": 0}
+        )
+
+        if existing:
+            # ── MANAGER RATING PROTECTION (if updating) ─────────
+            # Always recalculate score using best available data
+            eff_intro = existing.get("intro_rating")
+            eff_overall = existing.get("overall_rating")
+            eff_thumbnail = existing.get("thumbnail_rating")
+            eff_script = existing.get("script_rating")
+            eff_changes = existing.get("changes_count")
+
+            update: dict = {
+                "perf_id": perf_id,
+                "title": title, "page_url": page_url, "assignee_name": assignee_name,
+                "employee_id": employee_id, "team_id": team_id, "database_type": database_type,
+                "status": page_status, "deadline_status": deadline_status,
+                "video_length": video_length, "updated_at": now,
+            }
+
+            # Only fill rating fields when status allows AND field is currently empty
+            if write_ratings:
+                if eff_intro is None and intro_rating is not None:
+                    update["intro_rating"] = intro_rating
+                    eff_intro = intro_rating
+                if eff_overall is None and overall_rating is not None:
+                    update["overall_rating"] = overall_rating
+                    eff_overall = overall_rating
+                if eff_thumbnail is None and thumbnail_rating is not None:
+                    update["thumbnail_rating"] = thumbnail_rating
+                    eff_thumbnail = thumbnail_rating
+                if eff_script is None and script_rating is not None:
+                    update["script_rating"] = script_rating
+                    eff_script = script_rating
+                if eff_changes is None and changes_count is not None:
+                    update["changes_count"] = changes_count
+                    eff_changes = changes_count
+
+            # Always recalculate performance_score with effective values
+            update["performance_score"] = compute_performance_score(
+                database_type, eff_intro, eff_overall, eff_thumbnail, eff_script,
+                deadline_status, eff_changes
+            )
+
+            await db.performance_data.update_one(
+                {"$or": [{"perf_id": perf_id}, {"page_id": page_id, "employee_id": employee_id}]},
+                {"$set": update}
+            )
+            processed.append({"assignee": assignee_name, "employee_id": employee_id,
+                               "action": "updated", "score": update["performance_score"]})
+        else:
+            # New record — only store rating fields if status allows
+            r_intro = intro_rating if write_ratings else None
+            r_overall = overall_rating if write_ratings else None
+            r_thumbnail = thumbnail_rating if write_ratings else None
+            r_script = script_rating if write_ratings else None
+            r_changes = changes_count if write_ratings else None
+
+            perf_score = compute_performance_score(
+                database_type, r_intro, r_overall, r_thumbnail, r_script, deadline_status, r_changes
+            )
+            doc = {
+                "perf_id": perf_id, "page_id": page_id, "title": title, "page_url": page_url,
+                "assignee_name": assignee_name, "employee_id": employee_id,
+                "team_id": team_id, "database_type": database_type, "status": page_status,
+                "deadline_status": deadline_status, "performance_score": perf_score,
+                "intro_rating": r_intro, "overall_rating": r_overall,
+                "thumbnail_rating": r_thumbnail, "script_rating": r_script,
+                "changes_count": r_changes, "video_length": video_length,
+                "created_at": now, "updated_at": now,
+            }
+            await db.performance_data.insert_one(doc)
+            processed.append({"assignee": assignee_name, "employee_id": employee_id,
+                               "action": "inserted", "score": perf_score})
+
+    if not processed:
+        return {"message": "No matching employees found for any assignee", "page_id": page_id}
+
+    return {
+        "message": "Processed",
+        "page_id": page_id,
+        "status": page_status,
+        "processed_count": len(processed),
+        "entries": processed,
+    }
 
 
 # ===================== PERFORMANCE ROUTES =====================
