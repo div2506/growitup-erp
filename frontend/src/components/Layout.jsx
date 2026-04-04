@@ -1,0 +1,103 @@
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useAuth, API } from "@/contexts/AuthContext";
+import { Users, Building2, Briefcase, LogOut } from "lucide-react";
+
+const navItems = [
+  { path: "/employees", label: "Employees", icon: Users },
+  { path: "/departments", label: "Departments", icon: Building2 },
+  { path: "/job-positions", label: "Job Positions", icon: Briefcase },
+];
+
+export default function Layout() {
+  const { user, setUser } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API}/auth/logout`, { method: "POST", credentials: "include" });
+    } catch {}
+    setUser(null);
+    navigate("/login", { replace: true });
+  };
+
+  return (
+    <div className="flex min-h-screen bg-[#191919]">
+      {/* Sidebar */}
+      <aside className="w-64 fixed top-0 left-0 h-screen bg-[#191919] border-r border-white/10 z-40 flex flex-col">
+        {/* Logo */}
+        <div className="px-6 py-5 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <img
+              src="https://customer-assets.emergentagent.com/job_team-roster-95/artifacts/0sko7shb_Growitup.png1"
+              alt="GrowItUp"
+              className="w-9 h-9 rounded-lg object-cover"
+              onError={(e) => {
+                e.target.onerror = null;
+                e.target.src = "https://static.prod-images.emergentagent.com/jobs/f01237da-b074-442a-8928-2bb02a0d751a/images/5b076fe5b949f10d2a338de5b0450680980d8bd1096ce704d123da4c41f306eb.png";
+              }}
+            />
+            <div>
+              <p className="text-white font-semibold text-sm" style={{ fontFamily: "Manrope, sans-serif" }}>
+                GrowItUp
+              </p>
+              <p className="text-[#B3B3B3] text-xs">Management</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 px-3 py-4 space-y-1" data-testid="sidebar-nav">
+          {navItems.map(({ path, label, icon: Icon }) => {
+            const isActive = location.pathname === path || location.pathname.startsWith(path + "/");
+            return (
+              <Link
+                key={path}
+                to={path}
+                data-testid={`nav-${label.toLowerCase().replace(" ", "-")}`}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150 ${
+                  isActive
+                    ? "bg-white/10 text-white"
+                    : "text-[#B3B3B3] hover:bg-white/5 hover:text-white"
+                }`}
+              >
+                <Icon size={18} strokeWidth={isActive ? 2 : 1.5} />
+                {label}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* User Info */}
+        <div className="px-3 py-4 border-t border-white/10">
+          <div className="flex items-center gap-3 px-2 py-2 rounded-lg mb-2">
+            {user?.picture ? (
+              <img src={user.picture} alt={user.name} className="w-8 h-8 rounded-full object-cover" />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white text-xs font-bold">
+                {user?.name?.[0]?.toUpperCase() || "U"}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-white text-xs font-medium truncate">{user?.name || "User"}</p>
+              <p className="text-[#B3B3B3] text-xs truncate">{user?.email || ""}</p>
+            </div>
+          </div>
+          <button
+            data-testid="logout-button"
+            onClick={handleLogout}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[#B3B3B3] hover:text-white hover:bg-white/5 text-sm transition-colors"
+          >
+            <LogOut size={16} />
+            Sign out
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="ml-64 flex-1 min-h-screen bg-[#191919]">
+        <Outlet />
+      </main>
+    </div>
+  );
+}
