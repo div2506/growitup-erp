@@ -1,69 +1,251 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import axios from "axios";
 import { useAuth } from "@/contexts/AuthContext";
-import { ChevronRight, ChevronLeft, ExternalLink, Users, User, BarChart2 } from "lucide-react";
+import {
+  ChevronRight, ChevronLeft, ExternalLink, Users, User, BarChart2,
+  Search, ChevronDown, Calendar
+} from "lucide-react";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const ITEMS_PER_PAGE = 10;
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmtDate(dateStr) {
+  if (!dateStr) return "—";
+  try {
+    return new Date(dateStr).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  } catch { return "—"; }
+}
+
+function fmtMonth(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleString("default", { month: "long", year: "numeric" });
+}
+
+function getRecordMonth(r) {
+  const d = new Date(r.due_date || r.updated_at);
+  return isNaN(d) ? null : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function currentYM() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// ── UI Atoms ─────────────────────────────────────────────────────────────────
 
 function ScoreBadge({ score }) {
-  if (score === null || score === undefined || score === "") {
-    return <span className="text-[#B3B3B3] text-xs">—</span>;
-  }
-  const num = parseFloat(score);
-  const color = num >= 7 ? "text-green-400 bg-green-400/10" : num >= 5 ? "text-amber-400 bg-amber-400/10" : "text-red-400 bg-red-400/10";
-  return (
-    <span className={`inline-flex items-center justify-center w-10 h-7 rounded-lg font-bold text-sm ${color}`}>
-      {num.toFixed(1)}
-    </span>
-  );
+  if (score === null || score === undefined) return <span className="text-[#B3B3B3] text-xs">—</span>;
+  const n = parseFloat(score);
+  const cls = n >= 7 ? "text-green-400 bg-green-400/10" : n >= 5 ? "text-amber-400 bg-amber-400/10" : "text-red-400 bg-red-400/10";
+  return <span className={`inline-flex items-center justify-center w-10 h-7 rounded-lg font-bold text-sm ${cls}`}>{n.toFixed(1)}</span>;
 }
 
 function DeadlineBadge({ status }) {
   if (!status || status === "No Date") return <span className="text-[#B3B3B3] text-xs">No Date</span>;
-  const isOnTime = status === "On Time";
+  const ok = status === "On Time";
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${isOnTime ? "bg-green-400/10 text-green-400" : "bg-red-400/10 text-red-400"}`}>
-      {isOnTime ? "On Time" : status.replace("Missed Deadline ", "Late ")}
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${ok ? "bg-green-400/10 text-green-400" : "bg-red-400/10 text-red-400"}`}>
+      {ok ? "On Time" : status.replace("Missed Deadline ", "Late ")}
     </span>
   );
 }
 
 function StarRating({ value }) {
   if (value === null || value === undefined) return <span className="text-[#B3B3B3] text-xs">—</span>;
+  const n = Math.min(5, Math.max(0, parseInt(value)));
+  return <span className="text-amber-400 text-sm">{"⭐".repeat(n)}<span className="text-[#B3B3B3] text-xs ml-1">({value}/5)</span></span>;
+}
+
+// ── Metric Card ───────────────────────────────────────────────────────────────
+
+function MetricCard({ label, value, accent }) {
+  const accentCls = accent === "green" ? "text-green-400" : accent === "amber" ? "text-amber-400" : accent === "red" ? "text-red-400" : "text-white";
   return (
-    <span className="text-amber-400 text-sm">
-      {"⭐".repeat(Math.min(5, Math.max(0, parseInt(value))))}
-      <span className="text-[#B3B3B3] text-xs ml-1">({value}/5)</span>
-    </span>
+    <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4 flex flex-col gap-1">
+      <p className="text-[#B3B3B3] text-xs">{label}</p>
+      <p className={`text-xl font-bold ${accentCls}`} data-testid="metric-value">{value}</p>
+    </div>
   );
 }
 
-// Level 3: Performance Table
-function PerformanceTable({ employeeId, employeeName, onBack, showBackLabel }) {
-  const [records, setRecords] = useState([]);
+function scoreAccent(v) { return v === "—" ? "default" : parseFloat(v) >= 70 ? "green" : parseFloat(v) >= 50 ? "amber" : "red"; }
+function perfAccent(v) { return v === "—" ? "default" : parseFloat(v) >= 7 ? "green" : parseFloat(v) >= 5 ? "amber" : "red"; }
+
+function MetricsSection({ records, dbType }) {
+  const total = records.length;
+  if (total === 0) return null;
+
+  const onTime = records.filter(r => r.deadline_status === "On Time").length;
+  const dlScore = total > 0 ? ((onTime / total) * 100).toFixed(1) + "%" : "—";
+  const dlAccent = total > 0 ? scoreAccent(dlScore) : "default";
+
+  const withScore = records.filter(r => r.performance_score != null);
+  const avgPerf = withScore.length > 0
+    ? (withScore.reduce((s, r) => s + r.performance_score, 0) / withScore.length).toFixed(2) + "/10"
+    : "—";
+
+  let row1 = [], row2 = [];
+
+  if (dbType === "Video Editing") {
+    const withQ = records.filter(r => r.intro_rating != null && r.overall_rating != null);
+    const qual = withQ.length > 0
+      ? ((withQ.reduce((s, r) => s + r.intro_rating + r.overall_rating, 0) / (2 * withQ.length)) * 100).toFixed(1) + "%"
+      : "—";
+    const totalLen = records.reduce((s, r) => s + (r.video_length || 0), 0);
+    row1 = [
+      <MetricCard key="q" label="Quality Score" value={qual} accent={scoreAccent(qual)} />,
+      <MetricCard key="d" label="Deadline Score" value={dlScore} accent={dlAccent} />,
+      <MetricCard key="p" label="Performance Score" value={avgPerf} accent={perfAccent(avgPerf)} />,
+    ];
+    row2 = [
+      <MetricCard key="v" label="Total Videos" value={total} />,
+      <MetricCard key="l" label="Total Length" value={`${totalLen} min`} />,
+    ];
+  } else if (dbType === "Thumbnail") {
+    const withQ = records.filter(r => r.thumbnail_rating != null);
+    const qual = withQ.length > 0
+      ? ((withQ.reduce((s, r) => s + r.thumbnail_rating, 0) / withQ.length) * 20).toFixed(1) + "%"
+      : "—";
+    row1 = [
+      <MetricCard key="q" label="Quality Score" value={qual} accent={scoreAccent(qual)} />,
+      <MetricCard key="d" label="Deadline Score" value={dlScore} accent={dlAccent} />,
+      <MetricCard key="p" label="Performance Score" value={avgPerf} accent={perfAccent(avgPerf)} />,
+    ];
+    row2 = [<MetricCard key="t" label="Total Thumbnails" value={total} />];
+  } else if (dbType === "Script") {
+    const withQ = records.filter(r => r.script_rating != null);
+    const qual = withQ.length > 0
+      ? ((withQ.reduce((s, r) => s + r.script_rating, 0) / withQ.length) * 20).toFixed(1) + "%"
+      : "—";
+    row1 = [
+      <MetricCard key="q" label="Quality Score" value={qual} accent={scoreAccent(qual)} />,
+      <MetricCard key="d" label="Deadline Score" value={dlScore} accent={dlAccent} />,
+      <MetricCard key="p" label="Performance Score" value={avgPerf} accent={perfAccent(avgPerf)} />,
+    ];
+    row2 = [<MetricCard key="s" label="Total Scripts" value={total} />];
+  } else {
+    row1 = [
+      <MetricCard key="d" label="Deadline Score" value={dlScore} accent={dlAccent} />,
+      <MetricCard key="p" label="Performance Score" value={avgPerf} accent={perfAccent(avgPerf)} />,
+      <MetricCard key="t" label="Total Tasks" value={total} />,
+    ];
+  }
+
+  return (
+    <div className="mb-2">
+      <p className="text-[#B3B3B3] text-xs uppercase tracking-wider mb-2 font-medium">{dbType}</p>
+      <div className="grid grid-cols-3 gap-3 mb-3">{row1}</div>
+      {row2.length > 0 && (
+        <div className={`grid gap-3 mb-3`} style={{ gridTemplateColumns: `repeat(${row2.length}, minmax(0,1fr))` }}>
+          {row2}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Month Selector ────────────────────────────────────────────────────────────
+
+function MonthSelector({ records, value, onChange }) {
+  const months = useMemo(() => {
+    const s = new Set();
+    records.forEach(r => { const m = getRecordMonth(r); if (m) s.add(m); });
+    return Array.from(s).sort().reverse();
+  }, [records]);
+
+  const cur = currentYM();
+
+  return (
+    <div className="flex items-center gap-2">
+      <Calendar size={15} className="text-[#B3B3B3]" />
+      <select
+        data-testid="month-selector"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="bg-[#2F2F2F] border border-white/10 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-white/20 appearance-none cursor-pointer"
+      >
+        <option value="current">Current Month ({fmtMonth(cur)})</option>
+        {months.filter(m => m !== cur).map(m => (
+          <option key={m} value={m}>{fmtMonth(m)}</option>
+        ))}
+        <option value="all">All Time</option>
+      </select>
+    </div>
+  );
+}
+
+// ── Performance View (Level 3) ────────────────────────────────────────────────
+
+function PerformanceView({ employeeId, employeeName, onBack, showBackLabel }) {
+  const [allRecords, setAllRecords] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedMonth, setSelectedMonth] = useState("current");
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [deadlineFilter, setDeadlineFilter] = useState("all");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
-    const fetch = async () => {
-      try {
-        const { data } = await axios.get(`${API}/performance?employee_id=${employeeId}`, { withCredentials: true });
-        setRecords(data);
-      } catch { }
-      finally { setLoading(false); }
-    };
-    fetch();
+    setLoading(true);
+    axios.get(`${API}/performance?employee_id=${employeeId}`, { withCredentials: true })
+      .then(r => setAllRecords(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, [employeeId]);
 
-  const avgScore = records.length > 0
-    ? (records.filter(r => r.performance_score !== null && r.performance_score !== undefined)
-        .reduce((sum, r) => sum + parseFloat(r.performance_score || 0), 0) /
-       Math.max(1, records.filter(r => r.performance_score !== null && r.performance_score !== undefined).length)
-      ).toFixed(1)
+  // Reset page when filters change
+  useEffect(() => { setPage(1); }, [search, typeFilter, deadlineFilter, selectedMonth]);
+
+  // Records filtered by month only → for metrics
+  const monthRecords = useMemo(() => {
+    if (selectedMonth === "all") return allRecords;
+    const cur = currentYM();
+    const target = selectedMonth === "current" ? cur : selectedMonth;
+    return allRecords.filter(r => getRecordMonth(r) === target);
+  }, [allRecords, selectedMonth]);
+
+  // Records filtered by all filters → for table
+  const tableRecords = useMemo(() => {
+    let r = monthRecords;
+    if (search) r = r.filter(x => (x.title || "").toLowerCase().includes(search.toLowerCase()));
+    if (typeFilter !== "all") r = r.filter(x => (x.task_type || "").includes(typeFilter) || x.database_type === typeFilter);
+    if (deadlineFilter === "on_time") r = r.filter(x => x.deadline_status === "On Time");
+    if (deadlineFilter === "missed") r = r.filter(x => (x.deadline_status || "").includes("Missed"));
+    return r;
+  }, [monthRecords, search, typeFilter, deadlineFilter]);
+
+  const totalPages = Math.ceil(tableRecords.length / ITEMS_PER_PAGE);
+  const pageRecords = tableRecords.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
+
+  // Group month records by database_type for metrics
+  const byType = useMemo(() => {
+    const g = {};
+    monthRecords.forEach(r => {
+      const t = r.database_type || "Other";
+      if (!g[t]) g[t] = [];
+      g[t].push(r);
+    });
+    return g;
+  }, [monthRecords]);
+
+  // Distinct task types for filter dropdown
+  const taskTypes = useMemo(() => {
+    const s = new Set();
+    allRecords.forEach(r => { if (r.task_type) r.task_type.split(", ").forEach(t => s.add(t.trim())); });
+    return Array.from(s).sort();
+  }, [allRecords]);
+
+  const avg = allRecords.filter(r => r.performance_score != null);
+  const overallAvg = avg.length > 0
+    ? (avg.reduce((s, r) => s + r.performance_score, 0) / avg.length).toFixed(1)
     : null;
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-6">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-5">
         {onBack && (
           <button onClick={onBack} className="flex items-center gap-1.5 text-[#B3B3B3] hover:text-white text-sm transition-colors">
             <ChevronLeft size={16} /> {showBackLabel || "Back"}
@@ -74,117 +256,181 @@ function PerformanceTable({ employeeId, employeeName, onBack, showBackLabel }) {
             {employeeName?.[0]?.toUpperCase() || "?"}
           </div>
           <div>
-            <h2 className="text-white font-semibold" style={{ fontFamily: "Manrope, sans-serif" }}>
-              {employeeName}
-            </h2>
-            <p className="text-[#B3B3B3] text-xs">{records.length} tasks</p>
+            <h2 className="text-white font-semibold" style={{ fontFamily: "Manrope, sans-serif" }}>{employeeName}</h2>
+            <p className="text-[#B3B3B3] text-xs">{allRecords.length} total tasks</p>
           </div>
-          {avgScore !== null && (
-            <div className="ml-3 flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5">
-              <BarChart2 size={14} className="text-[#B3B3B3]" />
-              <span className="text-[#B3B3B3] text-xs">Avg Score</span>
-              <ScoreBadge score={avgScore} />
+          {overallAvg !== null && (
+            <div className="ml-2 flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5">
+              <BarChart2 size={13} className="text-[#B3B3B3]" />
+              <span className="text-[#B3B3B3] text-xs">All-time avg</span>
+              <ScoreBadge score={overallAvg} />
             </div>
           )}
         </div>
+        <div className="ml-auto">
+          <MonthSelector records={allRecords} value={selectedMonth} onChange={v => { setSelectedMonth(v); }} />
+        </div>
       </div>
 
-      {loading ? (
-        <div className="space-y-2">
-          {[...Array(5)].map((_, i) => <div key={i} className="h-14 bg-[#2F2F2F] rounded-xl animate-pulse border border-white/10" />)}
+      {/* Metrics Cards */}
+      {!loading && monthRecords.length > 0 && (
+        <div className="mb-5 p-4 bg-[#1E1E1E] rounded-xl border border-white/10">
+          {Object.entries(byType).map(([dbType, recs]) => (
+            <MetricsSection key={dbType} records={recs} dbType={dbType} />
+          ))}
         </div>
-      ) : records.length === 0 ? (
+      )}
+
+      {/* Filters */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap" data-testid="performance-filters">
+        <div className="relative flex-1 min-w-48">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#B3B3B3]" />
+          <input
+            data-testid="perf-search"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search tasks..."
+            className="w-full bg-[#2F2F2F] border border-white/10 text-white text-sm rounded-lg pl-8 pr-3 py-2 focus:outline-none focus:ring-1 focus:ring-white/20 placeholder-[#B3B3B3]"
+          />
+        </div>
+        {taskTypes.length > 0 && (
+          <select data-testid="perf-type-filter" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
+            className="bg-[#2F2F2F] border border-white/10 text-sm text-white rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-white/20">
+            <option value="all">All Types</option>
+            {taskTypes.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        )}
+        <select data-testid="perf-deadline-filter" value={deadlineFilter} onChange={e => setDeadlineFilter(e.target.value)}
+          className="bg-[#2F2F2F] border border-white/10 text-sm text-white rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-white/20">
+          <option value="all">All Deadlines</option>
+          <option value="on_time">On Time</option>
+          <option value="missed">Missed</option>
+        </select>
+        {(search || typeFilter !== "all" || deadlineFilter !== "all") && (
+          <button onClick={() => { setSearch(""); setTypeFilter("all"); setDeadlineFilter("all"); }}
+            className="text-xs text-[#B3B3B3] hover:text-white border border-white/10 rounded-lg px-3 py-2 transition-colors">
+            Clear
+          </button>
+        )}
+        <span className="text-[#B3B3B3] text-xs ml-auto">{tableRecords.length} result{tableRecords.length !== 1 ? "s" : ""}</span>
+      </div>
+
+      {/* Table */}
+      {loading ? (
+        <div className="space-y-2">{[...Array(5)].map((_, i) => <div key={i} className="h-14 bg-[#2F2F2F] rounded-xl animate-pulse border border-white/10" />)}</div>
+      ) : tableRecords.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <BarChart2 size={32} className="text-[#B3B3B3] mb-3" />
-          <p className="text-white font-medium">No performance data yet</p>
-          <p className="text-[#B3B3B3] text-sm">Data will appear once Notion webhooks start syncing</p>
+          <p className="text-white font-medium">{allRecords.length === 0 ? "No performance data yet" : "No results match your filters"}</p>
+          <p className="text-[#B3B3B3] text-sm">{allRecords.length === 0 ? "Data will appear once Notion webhooks start syncing" : "Try adjusting your filters"}</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-white/10 overflow-hidden overflow-x-auto">
-          <table className="w-full min-w-[900px]" data-testid="performance-table">
-            <thead className="bg-[#191919] border-b border-white/10">
-              <tr>
-                <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Task</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Type</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Deadline</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Ratings</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Changes</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Vid Len</th>
-                <th className="text-center py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Score</th>
-              </tr>
-            </thead>
-            <tbody className="bg-[#2F2F2F] divide-y divide-white/5">
-              {records.map((record) => (
-                <tr key={record.page_id} className="hover:bg-white/5 transition-colors" data-testid="performance-row">
-                  <td className="py-3.5 px-4">
-                    <div className="flex items-center gap-2">
-                      <span className="text-white text-sm font-medium">{record.title || "Untitled"}</span>
-                      {record.page_url && (
-                        <a href={record.page_url} target="_blank" rel="noopener noreferrer"
-                          className="text-[#B3B3B3] hover:text-white transition-colors">
-                          <ExternalLink size={12} />
-                        </a>
-                      )}
-                    </div>
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <span className="px-2 py-0.5 text-[10px] rounded-full bg-blue-500/15 text-blue-400 w-fit">
-                      {record.task_type || record.database_type || "—"}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4"><DeadlineBadge status={record.deadline_status} /></td>
-                  <td className="py-3.5 px-4">
-                    {record.database_type === "Video Editing" ? (
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[#B3B3B3] text-[10px] w-14">Intro:</span>
-                          <StarRating value={record.intro_rating} />
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[#B3B3B3] text-[10px] w-14">Overall:</span>
-                          <StarRating value={record.overall_rating} />
-                        </div>
-                      </div>
-                    ) : record.database_type === "Thumbnail" ? (
-                      <StarRating value={record.thumbnail_rating} />
-                    ) : record.database_type === "Script" ? (
-                      <StarRating value={record.script_rating} />
-                    ) : <span className="text-[#B3B3B3] text-xs">—</span>}
-                  </td>
-                  <td className="py-3.5 px-4 text-sm text-[#B3B3B3]">
-                    {record.changes_count !== null && record.changes_count !== undefined ? record.changes_count : "—"}
-                  </td>
-                  <td className="py-3.5 px-4 text-sm text-[#B3B3B3]">
-                    {record.database_type === "Video Editing" && record.video_length !== null && record.video_length !== undefined
-                      ? `${record.video_length} min`
-                      : "—"}
-                  </td>
-                  <td className="py-3.5 px-4 text-center"><ScoreBadge score={record.performance_score} /></td>
+        <>
+          <div className="rounded-xl border border-white/10 overflow-hidden overflow-x-auto">
+            <table className="w-full min-w-[960px]" data-testid="performance-table">
+              <thead className="bg-[#191919] border-b border-white/10">
+                <tr>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Task</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Type</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Due Date</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Deadline</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Ratings</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Changes</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Vid Len</th>
+                  <th className="text-center py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Score</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="bg-[#2F2F2F] divide-y divide-white/5">
+                {pageRecords.map(record => (
+                  <tr key={record.perf_id || record.page_id} className="hover:bg-white/5 transition-colors" data-testid="performance-row">
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-white text-sm font-medium max-w-xs truncate">{record.title || "Untitled"}</span>
+                        {record.page_url && (
+                          <a href={record.page_url} target="_blank" rel="noopener noreferrer" className="text-[#B3B3B3] hover:text-white transition-colors shrink-0">
+                            <ExternalLink size={12} />
+                          </a>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className="px-2 py-0.5 text-[10px] rounded-full bg-blue-500/15 text-blue-400">
+                        {record.task_type || record.database_type || "—"}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-sm text-[#B3B3B3] whitespace-nowrap">{fmtDate(record.due_date)}</td>
+                    <td className="py-3.5 px-4"><DeadlineBadge status={record.deadline_status} /></td>
+                    <td className="py-3.5 px-4">
+                      {record.database_type === "Video Editing" ? (
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1"><span className="text-[#B3B3B3] text-[10px] w-12">Intro:</span><StarRating value={record.intro_rating} /></div>
+                          <div className="flex items-center gap-1"><span className="text-[#B3B3B3] text-[10px] w-12">Overall:</span><StarRating value={record.overall_rating} /></div>
+                        </div>
+                      ) : record.database_type === "Thumbnail" ? (
+                        <StarRating value={record.thumbnail_rating} />
+                      ) : record.database_type === "Script" ? (
+                        <StarRating value={record.script_rating} />
+                      ) : <span className="text-[#B3B3B3] text-xs">—</span>}
+                    </td>
+                    <td className="py-3.5 px-4 text-sm text-[#B3B3B3]">
+                      {record.changes_count != null ? record.changes_count : "—"}
+                    </td>
+                    <td className="py-3.5 px-4 text-sm text-[#B3B3B3]">
+                      {record.database_type === "Video Editing" && record.video_length != null ? `${record.video_length} min` : "—"}
+                    </td>
+                    <td className="py-3.5 px-4 text-center"><ScoreBadge score={record.performance_score} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4" data-testid="pagination">
+              <p className="text-[#B3B3B3] text-xs">
+                Showing {(page - 1) * ITEMS_PER_PAGE + 1}–{Math.min(page * ITEMS_PER_PAGE, tableRecords.length)} of {tableRecords.length}
+              </p>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                  className="p-1.5 rounded-lg text-[#B3B3B3] hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                  <ChevronLeft size={16} />
+                </button>
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  const start = Math.max(1, Math.min(page - 2, totalPages - 4));
+                  const p2 = start + i;
+                  return p2 <= totalPages ? (
+                    <button key={p2} onClick={() => setPage(p2)}
+                      className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${p2 === page ? "bg-white/10 text-white" : "text-[#B3B3B3] hover:text-white hover:bg-white/5"}`}>
+                      {p2}
+                    </button>
+                  ) : null;
+                })}
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                  className="p-1.5 rounded-lg text-[#B3B3B3] hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 }
 
-// Level 2: Employee Selection
+// ── Employee Selection (Level 2) ──────────────────────────────────────────────
+
 function EmployeeSelection({ teamId, teamName, onSelectEmployee, onBack }) {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetch = async () => {
-      try {
-        const url = teamId ? `${API}/employees?team_id=${teamId}` : `${API}/employees`;
-        const { data } = await axios.get(url, { withCredentials: true });
-        setEmployees(data);
-      } catch { }
-      finally { setLoading(false); }
-    };
-    fetch();
+    const url = teamId ? `${API}/employees?team_id=${teamId}` : `${API}/employees`;
+    axios.get(url, { withCredentials: true })
+      .then(r => setEmployees(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, [teamId]);
 
   return (
@@ -196,13 +442,10 @@ function EmployeeSelection({ teamId, teamName, onSelectEmployee, onBack }) {
           </button>
         )}
         <div>
-          <h2 className="text-white font-semibold" style={{ fontFamily: "Manrope, sans-serif" }}>
-            {teamName}
-          </h2>
+          <h2 className="text-white font-semibold" style={{ fontFamily: "Manrope, sans-serif" }}>{teamName}</h2>
           <p className="text-[#B3B3B3] text-xs">Select an employee to view performance</p>
         </div>
       </div>
-
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {[...Array(6)].map((_, i) => <div key={i} className="h-24 bg-[#2F2F2F] rounded-xl animate-pulse border border-white/10" />)}
@@ -211,11 +454,10 @@ function EmployeeSelection({ teamId, teamName, onSelectEmployee, onBack }) {
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <User size={32} className="text-[#B3B3B3] mb-3" />
           <p className="text-white font-medium">No employees in this team</p>
-          <p className="text-[#B3B3B3] text-sm">Add employees to this team from the Employees section</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" data-testid="employee-selection-grid">
-          {employees.map((emp) => (
+          {employees.map(emp => (
             <button key={emp.employee_id} data-testid="employee-select-card"
               onClick={() => onSelectEmployee(emp)}
               className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4 text-left hover:border-white/30 hover:-translate-y-0.5 transition-all duration-200 group">
@@ -231,7 +473,6 @@ function EmployeeSelection({ teamId, teamName, onSelectEmployee, onBack }) {
               </div>
               <p className="text-white font-medium text-sm truncate">{emp.first_name} {emp.last_name}</p>
               <p className="text-[#B3B3B3] text-xs truncate">{emp.job_position_name}</p>
-              <p className="text-[#B3B3B3] text-[10px] mt-1">{emp.employee_id}</p>
             </button>
           ))}
         </div>
@@ -240,26 +481,22 @@ function EmployeeSelection({ teamId, teamName, onSelectEmployee, onBack }) {
   );
 }
 
-// Level 1: Team Selection
+// ── Team Selection (Level 1) ──────────────────────────────────────────────────
+
 function TeamSelection({ onSelectTeam }) {
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetch = async () => {
-      try {
-        const { data } = await axios.get(`${API}/teams`, { withCredentials: true });
-        setTeams(data);
-      } catch { }
-      finally { setLoading(false); }
-    };
-    fetch();
+    axios.get(`${API}/teams`, { withCredentials: true })
+      .then(r => setTeams(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   return (
     <div>
       <p className="text-[#B3B3B3] text-sm mb-6">Select a team to view employee performance</p>
-
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           {[...Array(4)].map((_, i) => <div key={i} className="h-28 bg-[#2F2F2F] rounded-xl animate-pulse border border-white/10" />)}
@@ -272,20 +509,28 @@ function TeamSelection({ onSelectTeam }) {
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" data-testid="team-selection-grid">
-          {teams.map((team) => (
+          {teams.map(team => (
             <button key={team.team_id} data-testid="team-select-card"
               onClick={() => onSelectTeam(team)}
               className="bg-[#2F2F2F] rounded-xl border border-white/10 p-5 text-left hover:border-white/30 hover:-translate-y-0.5 transition-all duration-200 group">
-              <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center mb-3">
-                <Users size={18} className="text-[#B3B3B3] group-hover:text-white transition-colors" />
+              {/* Manager photo */}
+              <div className="flex items-center gap-3 mb-3">
+                {team.team_manager_picture ? (
+                  <img src={team.team_manager_picture} alt={team.team_manager_name} className="w-10 h-10 rounded-full object-cover border border-white/20" />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white font-bold text-sm">
+                    {team.team_manager_name?.[0]?.toUpperCase() || <Users size={16} className="text-[#B3B3B3]" />}
+                  </div>
+                )}
+                <ChevronRight size={16} className="ml-auto text-[#B3B3B3] group-hover:text-white transition-colors" />
               </div>
               <p className="text-white font-semibold text-sm">{team.team_name}</p>
               {team.team_manager_name && (
-                <p className="text-[#B3B3B3] text-xs mt-1 truncate">Manager: {team.team_manager_name}</p>
+                <p className="text-[#B3B3B3] text-xs mt-0.5 truncate">Manager: {team.team_manager_name}</p>
               )}
-              <div className="flex items-center justify-end mt-3">
-                <ChevronRight size={16} className="text-[#B3B3B3] group-hover:text-white transition-colors" />
-              </div>
+              <p className="text-[#B3B3B3] text-xs mt-1">
+                {team.member_count || 0} member{(team.member_count || 0) !== 1 ? "s" : ""}
+              </p>
             </button>
           ))}
         </div>
@@ -294,13 +539,13 @@ function TeamSelection({ onSelectTeam }) {
   );
 }
 
+// ── Main Page ─────────────────────────────────────────────────────────────────
+
 export default function PerformancePage() {
   const { user } = useAuth();
   const [myEmployee, setMyEmployee] = useState(null);
   const [myManagedTeams, setMyManagedTeams] = useState([]);
   const [roleLoading, setRoleLoading] = useState(true);
-
-  // Drill-down state
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
 
@@ -312,11 +557,10 @@ export default function PerformancePage() {
       ]);
       const emp = empRes.data;
       setMyEmployee(emp);
-      if (emp && emp.employee_id) {
-        const managed = teamsRes.data.filter(t => t.team_manager_id === emp.employee_id);
-        setMyManagedTeams(managed);
+      if (emp?.employee_id) {
+        setMyManagedTeams(teamsRes.data.filter(t => t.team_manager_id === emp.employee_id));
       }
-    } catch { }
+    } catch {}
     finally { setRoleLoading(false); }
   }, []);
 
@@ -324,97 +568,72 @@ export default function PerformancePage() {
 
   const isAdmin = user?.is_admin;
   const isManager = !isAdmin && myManagedTeams.length > 0;
-  const isEmployee = !isAdmin && !isManager && myEmployee?.employee_id;
+  const isEmployee = !isAdmin && !isManager && !!myEmployee?.employee_id;
+
+  // Breadcrumbs
+  const crumbs = ["Performance"];
+  if (selectedTeam) crumbs.push(selectedTeam.team_name);
+  if (selectedEmployee) crumbs.push(`${selectedEmployee.first_name} ${selectedEmployee.last_name}`);
 
   if (roleLoading) {
     return (
       <div className="p-8">
         <div className="h-8 w-48 bg-[#2F2F2F] rounded animate-pulse mb-4" />
-        <div className="grid grid-cols-3 gap-4">
-          {[...Array(3)].map((_, i) => <div key={i} className="h-28 bg-[#2F2F2F] rounded-xl animate-pulse border border-white/10" />)}
-        </div>
+        <div className="grid grid-cols-3 gap-4">{[...Array(3)].map((_, i) => <div key={i} className="h-28 bg-[#2F2F2F] rounded-xl animate-pulse border border-white/10" />)}</div>
       </div>
     );
   }
 
-  // Breadcrumb
-  const breadcrumbs = ["Performance"];
-  if (selectedTeam) breadcrumbs.push(selectedTeam.team_name);
-  if (selectedEmployee) breadcrumbs.push(`${selectedEmployee.first_name} ${selectedEmployee.last_name}`);
-
   return (
     <div className="p-8">
-      {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>Performance</h1>
         <div className="flex items-center gap-2 mt-1">
-          {breadcrumbs.map((crumb, i) => (
+          {crumbs.map((c, i) => (
             <span key={i} className="flex items-center gap-2">
               {i > 0 && <ChevronRight size={14} className="text-[#B3B3B3]" />}
-              <span className={i === breadcrumbs.length - 1 ? "text-white text-sm" : "text-[#B3B3B3] text-sm"}>{crumb}</span>
+              <span className={i === crumbs.length - 1 ? "text-white text-sm" : "text-[#B3B3B3] text-sm"}>{c}</span>
             </span>
           ))}
         </div>
       </div>
 
-      {/* ADMIN VIEW */}
       {isAdmin && (
         <>
-          {!selectedTeam && !selectedEmployee && (
-            <TeamSelection onSelectTeam={(team) => setSelectedTeam(team)} />
-          )}
+          {!selectedTeam && <TeamSelection onSelectTeam={setSelectedTeam} />}
           {selectedTeam && !selectedEmployee && (
-            <EmployeeSelection
-              teamId={selectedTeam.team_id}
-              teamName={selectedTeam.team_name}
-              onSelectEmployee={(emp) => setSelectedEmployee(emp)}
-              onBack={() => setSelectedTeam(null)}
-            />
+            <EmployeeSelection teamId={selectedTeam.team_id} teamName={selectedTeam.team_name}
+              onSelectEmployee={setSelectedEmployee} onBack={() => setSelectedTeam(null)} />
           )}
           {selectedTeam && selectedEmployee && (
-            <PerformanceTable
-              employeeId={selectedEmployee.employee_id}
+            <PerformanceView employeeId={selectedEmployee.employee_id}
               employeeName={`${selectedEmployee.first_name} ${selectedEmployee.last_name}`}
-              onBack={() => setSelectedEmployee(null)}
-              showBackLabel={selectedTeam.team_name}
-            />
+              onBack={() => setSelectedEmployee(null)} showBackLabel={selectedTeam.team_name} />
           )}
         </>
       )}
 
-      {/* MANAGER VIEW */}
       {isManager && (
         <>
           {!selectedEmployee && (
-            <EmployeeSelection
-              teamId={myManagedTeams[0]?.team_id}
-              teamName={myManagedTeams[0]?.team_name || "My Team"}
-              onSelectEmployee={(emp) => setSelectedEmployee(emp)}
-              onBack={null}
-            />
+            <EmployeeSelection teamId={myManagedTeams[0]?.team_id} teamName={myManagedTeams[0]?.team_name || "My Team"}
+              onSelectEmployee={setSelectedEmployee} onBack={null} />
           )}
           {selectedEmployee && (
-            <PerformanceTable
-              employeeId={selectedEmployee.employee_id}
+            <PerformanceView employeeId={selectedEmployee.employee_id}
               employeeName={`${selectedEmployee.first_name} ${selectedEmployee.last_name}`}
-              onBack={() => setSelectedEmployee(null)}
-              showBackLabel="My Team"
-            />
+              onBack={() => setSelectedEmployee(null)} showBackLabel="My Team" />
           )}
         </>
       )}
 
-      {/* EMPLOYEE VIEW */}
       {isEmployee && (
-        <PerformanceTable
-          employeeId={myEmployee.employee_id}
+        <PerformanceView employeeId={myEmployee.employee_id}
           employeeName={`${myEmployee.first_name} ${myEmployee.last_name}`}
-          onBack={null}
-        />
+          onBack={null} />
       )}
 
-      {/* No role detected fallback */}
-      {!isAdmin && !isManager && !isEmployee && !roleLoading && (
+      {!isAdmin && !isManager && !isEmployee && (
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <BarChart2 size={40} className="text-[#B3B3B3] mb-4" />
           <p className="text-white font-medium text-lg">Performance data unavailable</p>

@@ -1,11 +1,20 @@
+import { useState, useEffect } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, API } from "@/contexts/AuthContext";
 import { Users, Settings, BarChart2, LogOut } from "lucide-react";
+import axios from "axios";
 
 export default function Layout() {
   const { user, setUser } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const [myEmployee, setMyEmployee] = useState(null);
+
+  useEffect(() => {
+    axios.get(`${API}/me/employee`, { withCredentials: true })
+      .then(r => { if (r.data && r.data.employee_id) setMyEmployee(r.data); })
+      .catch(() => {});
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -21,11 +30,15 @@ export default function Layout() {
     { path: "/settings", label: "Settings", icon: Settings },
   ];
 
+  const displayName = myEmployee
+    ? `${myEmployee.first_name} ${myEmployee.last_name}`
+    : user?.name || "User";
+  const displayEmail = myEmployee?.work_email || user?.email || "";
+  const displayPicture = user?.picture;
+
   return (
     <div className="flex min-h-screen bg-[#191919]">
-      {/* Sidebar */}
       <aside className="w-64 fixed top-0 left-0 h-screen bg-[#191919] border-r border-white/10 z-40 flex flex-col">
-        {/* Logo */}
         <div className="px-6 py-5 border-b border-white/10">
           <div className="flex items-center gap-3">
             <img
@@ -38,29 +51,20 @@ export default function Layout() {
               }}
             />
             <div>
-              <p className="text-white font-semibold text-sm" style={{ fontFamily: "Manrope, sans-serif" }}>
-                GrowItUp
-              </p>
+              <p className="text-white font-semibold text-sm" style={{ fontFamily: "Manrope, sans-serif" }}>GrowItUp</p>
               <p className="text-[#B3B3B3] text-xs">Management</p>
             </div>
           </div>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1" data-testid="sidebar-nav">
           {navItems.map(({ path, label, icon: Icon }) => {
             const isActive = location.pathname === path || location.pathname.startsWith(path + "/");
             return (
-              <Link
-                key={path}
-                to={path}
-                data-testid={`nav-${label.toLowerCase().replace(" ", "-")}`}
+              <Link key={path} to={path} data-testid={`nav-${label.toLowerCase().replace(" ", "-")}`}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150 ${
-                  isActive
-                    ? "bg-white/10 text-white"
-                    : "text-[#B3B3B3] hover:bg-white/5 hover:text-white"
-                }`}
-              >
+                  isActive ? "bg-white/10 text-white" : "text-[#B3B3B3] hover:bg-white/5 hover:text-white"
+                }`}>
                 <Icon size={18} strokeWidth={isActive ? 2 : 1.5} />
                 {label}
               </Link>
@@ -68,33 +72,28 @@ export default function Layout() {
           })}
         </nav>
 
-        {/* User Info */}
         <div className="px-3 py-4 border-t border-white/10">
           <div className="flex items-center gap-3 px-2 py-2 rounded-lg mb-2">
-            {user?.picture ? (
-              <img src={user.picture} alt={user.name} className="w-8 h-8 rounded-full object-cover" />
+            {displayPicture ? (
+              <img src={displayPicture} alt={displayName} className="w-8 h-8 rounded-full object-cover" />
             ) : (
               <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white text-xs font-bold">
-                {user?.name?.[0]?.toUpperCase() || "U"}
+                {displayName?.[0]?.toUpperCase() || "U"}
               </div>
             )}
             <div className="flex-1 min-w-0">
-              <p className="text-white text-xs font-medium truncate">{user?.name || "User"}</p>
-              <p className="text-[#B3B3B3] text-xs truncate">{user?.email || ""}</p>
+              <p className="text-white text-xs font-medium truncate">{displayName}</p>
+              <p className="text-[#B3B3B3] text-xs truncate">{displayEmail}</p>
             </div>
           </div>
-          <button
-            data-testid="logout-button"
-            onClick={handleLogout}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[#B3B3B3] hover:text-white hover:bg-white/5 text-sm transition-colors"
-          >
+          <button data-testid="logout-button" onClick={handleLogout}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[#B3B3B3] hover:text-white hover:bg-white/5 text-sm transition-colors">
             <LogOut size={16} />
             Sign out
           </button>
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="ml-64 flex-1 min-h-screen bg-[#191919]">
         <Outlet />
       </main>

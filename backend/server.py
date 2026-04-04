@@ -450,6 +450,15 @@ async def get_my_employee(request: Request):
 async def get_teams(request: Request):
     await get_current_user(request)
     teams = await db.teams.find({}, {"_id": 0}).sort("team_name", 1).to_list(1000)
+    for team in teams:
+        team["member_count"] = await db.employees.count_documents({"teams": team["team_id"]})
+        if team.get("team_manager_id"):
+            mgr = await db.employees.find_one(
+                {"employee_id": team["team_manager_id"]}, {"_id": 0, "profile_picture": 1}
+            )
+            team["team_manager_picture"] = mgr.get("profile_picture") if mgr else None
+        else:
+            team["team_manager_picture"] = None
     return teams
 
 
@@ -914,7 +923,7 @@ async def notion_webhook(notion_database_id: str, request: Request):
                 "perf_id": perf_id,
                 "title": title, "page_url": page_url, "assignee_name": assignee_name,
                 "employee_id": employee_id, "team_id": team_id, "database_type": database_type,
-                "task_type": task_type,
+                "task_type": task_type, "due_date": due_date,
                 "status": page_status, "deadline_status": deadline_status,
                 "video_length": video_length, "updated_at": now,
             }
@@ -964,7 +973,7 @@ async def notion_webhook(notion_database_id: str, request: Request):
                 "perf_id": perf_id, "page_id": page_id, "title": title, "page_url": page_url,
                 "assignee_name": assignee_name, "employee_id": employee_id,
                 "team_id": team_id, "database_type": database_type, "task_type": task_type,
-                "status": page_status,
+                "due_date": due_date, "status": page_status,
                 "deadline_status": deadline_status, "performance_score": perf_score,
                 "intro_rating": r_intro, "overall_rating": r_overall,
                 "thumbnail_rating": r_thumbnail, "script_rating": r_script,
@@ -1034,13 +1043,12 @@ async def seed_v2():
         {"position_id": "pos_hr_executive", "position_name": "HR Executive",
          "department_id": "dept_hr", "department_name": "Human Resource",
          "has_levels": False, "available_levels": [], "is_system": True, "created_at": now},
-        {"position_id": "pos_hr_manager_hr", "position_name": "HR Manager",
-         "department_id": "dept_hr", "department_name": "Human Resource",
-         "has_levels": False, "available_levels": [], "is_system": True, "created_at": now},
     ]
     for pos in hr_positions:
         if not await db.job_positions.find_one({"position_id": pos["position_id"]}):
             await db.job_positions.insert_one(pos)
+    # Remove the duplicate HR Manager from HR dept if it exists
+    await db.job_positions.delete_one({"position_id": "pos_hr_manager_hr"})
     return {"message": "Seeded v2 successfully"}
 
 
