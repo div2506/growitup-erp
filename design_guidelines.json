@@ -1,0 +1,103 @@
+{
+  "theme": "dark",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "design_philosophy": "E1 Anti-AI Designer logic. Functional, hyper-crisp, high-contrast monochrome UI (Notion-esque) with very specific red/accent triggers.",
+  "colors": {
+    "background": "#191919",
+    "surface": "#2F2F2F",
+    "border": "rgba(255, 255, 255, 0.1)",
+    "text_primary": "#FFFFFF",
+    "text_secondary": "#B3B3B3",
+    "accent_primary": "#E53935",
+    "accent_hover": "#F44336",
+    "logo_gradient": "bg-gradient-to-r from-blue-500 to-cyan-400",
+    "status": {
+      "online": "#10B981",
+      "offline": "#6B7280"
+    }
+  },
+  "typography": {
+    "heading_font": "Manrope, sans-serif",
+    "body_font": "Inter, sans-serif",
+    "h1": "text-4xl sm:text-5xl tracking-tight font-bold text-white",
+    "h2": "text-2xl sm:text-3xl tracking-tight font-semibold text-white",
+    "h3": "text-xl sm:text-2xl tracking-tight font-medium text-white",
+    "h4": "text-lg sm:text-xl font-medium text-white",
+    "body": "text-base text-[#B3B3B3] leading-relaxed",
+    "small_label": "text-xs tracking-[0.1em] uppercase text-[#B3B3B3] font-medium"
+  },
+  "layout_and_spacing": {
+    "sidebar": "w-64 fixed top-0 left-0 h-screen bg-[#191919] border-r border-white/10 z-40",
+    "main_content": "ml-64 p-8 min-h-screen bg-[#191919] flex flex-col gap-8",
+    "card_grid": "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6",
+    "employee_card": {
+      "container": "relative bg-[#2F2F2F] rounded-xl border border-white/10 p-5 hover:-translate-y-1 transition-transform duration-200 shadow-sm hover:shadow-lg",
+      "layout": "flex items-start gap-4",
+      "avatar_wrapper": "relative shrink-0",
+      "avatar": "w-14 h-14 rounded-full object-cover border border-white/20",
+      "status_dot": "w-3 h-3 rounded-full absolute bottom-0 right-0 border-2 border-[#2F2F2F]",
+      "content": "flex-1 min-w-0 pr-6",
+      "name_id_group": "flex items-baseline gap-2 mb-1",
+      "name": "font-bold text-white truncate text-base",
+      "id": "text-xs text-[#B3B3B3]",
+      "email": "text-sm text-[#B3B3B3] truncate mb-2",
+      "position": "text-sm font-medium text-white truncate",
+      "department": "text-xs text-[#B3B3B3] mt-1 truncate px-2 py-0.5 bg-white/5 rounded w-max",
+      "menu_button": "absolute top-4 right-4 text-[#B3B3B3] hover:text-white"
+    }
+  },
+  "components": {
+    "button": {
+      "fab": "fixed bottom-8 right-8 bg-[#E53935] hover:bg-[#F44336] text-white rounded-full p-4 shadow-xl flex items-center justify-center gap-2 z-50 transition-colors",
+      "primary": "bg-white text-black hover:bg-gray-200 font-medium rounded-lg px-4 py-2",
+      "secondary": "bg-[#2F2F2F] text-white border border-white/10 hover:bg-white/10 rounded-lg px-4 py-2",
+      "danger": "bg-[#E53935] text-white hover:bg-[#F44336] rounded-lg px-4 py-2"
+    },
+    "inputs": "bg-[#191919] border border-white/10 text-white placeholder-[#B3B3B3] rounded-lg focus:border-white/30 focus:ring-1 focus:ring-white/30 transition-all",
+    "modal": "bg-[#2F2F2F] border border-white/10 shadow-2xl rounded-xl text-white",
+    "tabs": {
+      "list": "bg-[#191919] p-1 rounded-lg border border-white/10 w-full inline-flex",
+      "trigger": "flex-1 text-sm font-medium text-[#B3B3B3] data-[state=active]:bg-[#2F2F2F] data-[state=active]:text-white rounded-md py-1.5 transition-all"
+    },
+    "table": {
+      "container": "rounded-xl border border-white/10 bg-[#2F2F2F] overflow-hidden",
+      "header": "bg-[#191919] border-b border-white/10",
+      "header_cell": "text-xs font-medium text-[#B3B3B3] uppercase tracking-wider py-3 px-4",
+      "row": "border-b border-white/10 hover:bg-white/5 transition-colors",
+      "cell": "py-4 px-4 text-sm text-white"
+    }
+  },
+  "media_urls": {
+    "logo": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/f01237da-b074-442a-8928-2bb02a0d751a/images/5b076fe5b949f10d2a338de5b0450680980d8bd1096ce704d123da4c41f306eb.png",
+      "alt": "GrowItUp logo (blue gradient bar chart icon)",
+      "usage": "Top left of sidebar navigation"
+    },
+    "login_background": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/f01237da-b074-442a-8928-2bb02a0d751a/images/f378a40bdc55e806f7963cfbdbd9c7ac47666d31ea25afa55d2566b963c8abc3.png",
+      "alt": "Dark geometric abstract background",
+      "usage": "Full width/height background for the login page with a bg-black/60 overlay"
+    },
+    "avatars": [
+      "https://images.unsplash.com/photo-1666867540898-aaa1993ffabc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwzfHxwcm9mZXNzaW9uYWwlMjBkaXZlcnNlJTIwZW1wbG95ZWUlMjBwb3J0cmFpdHxlbnwwfHx8fDE3NzUzMDM4Njl8MA&ixlib=rb-4.1.0&q=85",
+      "https://images.unsplash.com/photo-1666867936058-de34bfd5b320?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwyfHxwcm9mZXNzaW9uYWwlMjBkaXZlcnNlJTIwZW1wbG95ZWUlMjBwb3J0cmFpdHxlbnwwfHx8fDE3NzUzMDM4Njl8MA&ixlib=rb-4.1.0&q=85",
+      "https://images.unsplash.com/photo-1573496130141-209d200cebd8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBkaXZlcnNlJTIwZW1wbG95ZWUlMjBwb3J0cmFpdHxlbnwwfHx8fDE3NzUzMDM4Njl8MA&ixlib=rb-4.1.0&q=85"
+    ]
+  },
+  "icons_library": "lucide-react",
+  "testing": {
+    "data_testid_rules": "All interactive and key informational elements MUST include a data-testid attribute formatted as kebab-case role-based (e.g., data-testid='login-button', data-testid='employee-card', data-testid='add-employee-fab', data-testid='delete-confirm-button')"
+  },
+  "instructions_to_main_agent": [
+    "Build a standard React app using Tailwind CSS. Apply Shadcn UI components but heavily override their styles to match the dark `#2F2F2F` surface and `#191919` background.",
+    "Do not use default white cards; adapt all Dialogs, Cards, and DropdownMenus to have a bg-[#2F2F2F] and a border-white/10.",
+    "The login page must use 'login_background' as a full-screen image with an overlay (`bg-black/60`). The login card itself should be glassmorphic (`bg-[#2F2F2F]/80 backdrop-blur-xl border border-white/10`) containing ONLY the Google Sign-In button.",
+    "For the main dashboard, strictly adhere to the left sidebar layout (width 64).",
+    "Employee Cards must render in a 4-column grid (`xl:grid-cols-4`). Implement the card design exactly as described in `layout_and_spacing.employee_card`.",
+    "The 'Add New Employee' button must be a fixed FAB anchored to the bottom right (`bottom-8 right-8`), using the `accent_primary` red color (`#E53935`).",
+    "The 3-dot menu should use Shadcn DropdownMenu, placed inside the employee card top right (`absolute top-4 right-4`).",
+    "Employee Add/Edit is a modal Dialog containing Tabs (Personal Info, Work Info, Bank Info).",
+    "Departments and Job Positions pages should display standard list/table views using the custom table classes.",
+    "Provide confirmation dialog on employee deletion with the danger button styling."
+  ]
+}
