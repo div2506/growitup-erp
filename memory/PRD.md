@@ -38,6 +38,13 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 7. Performance UI: 3-level drill-down based on role (Admin→Team→Employee→Table, Manager→Employee→Table, Employee→Direct Table)
 8. Settings page: 4 tabs — Departments, Job Positions, Teams, Notion Integration
 
+### Module 2 Access Control & UI (COMPLETE - 2026-04-04)
+1. Sidebar user profile: Shows employee's profile_picture, first_name+last_name, work_email from Employees table (NOT Google account data)
+2. Settings nav: Only visible to employees in "Admin" department (or is_admin=true)
+3. Employees section: Admin dept = full access (all employees, edit/delete, FAB). Other depts = own card only, edit only, no FAB
+4. No online/offline status dots or text on employee cards
+5. AuthContext now loads myEmployee centrally (no per-component re-fetching)
+
 ## What's Been Implemented
 
 ### Backend (server.py)
