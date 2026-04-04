@@ -106,7 +106,6 @@ function PerformanceTable({ employeeId, employeeName, onBack, showBackLabel }) {
               <tr>
                 <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Task</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Type</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Status</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Deadline</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Ratings</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Changes</th>
@@ -129,21 +128,9 @@ function PerformanceTable({ employeeId, employeeName, onBack, showBackLabel }) {
                     </div>
                   </td>
                   <td className="py-3.5 px-4">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="px-2 py-0.5 text-[10px] rounded-full bg-blue-500/15 text-blue-400 w-fit">{record.database_type || "—"}</span>
-                      {record.task_type && (
-                        <span className="text-[10px] text-[#B3B3B3]">{record.task_type}</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <span className={`px-2 py-0.5 text-[10px] rounded-full font-medium ${
-                      record.status === "Approved" ? "bg-green-500/15 text-green-400" :
-                      record.status === "Review" ? "bg-amber-500/15 text-amber-400" :
-                      record.status === "Changes" ? "bg-red-500/15 text-red-400" :
-                      record.status === "Final Review" ? "bg-blue-500/15 text-blue-400" :
-                      "bg-white/5 text-[#B3B3B3]"
-                    }`}>{record.status || "—"}</span>
+                    <span className="px-2 py-0.5 text-[10px] rounded-full bg-blue-500/15 text-blue-400 w-fit">
+                      {record.task_type || record.database_type || "—"}
+                    </span>
                   </td>
                   <td className="py-3.5 px-4"><DeadlineBadge status={record.deadline_status} /></td>
                   <td className="py-3.5 px-4">
