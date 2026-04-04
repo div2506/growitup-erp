@@ -676,6 +676,35 @@ def compute_performance_score(
 
 # ===================== WEBHOOK ROUTES =====================
 
+@api_router.post("/webhooks/notion/debug-capture")
+async def notion_webhook_debug(request: Request):
+    """Captures raw payload for debugging - no auth required"""
+    try:
+        payload = await request.json()
+    except Exception as e:
+        payload = {"error": str(e)}
+    doc = {
+        "received_at": datetime.now(timezone.utc).isoformat(),
+        "payload": payload,
+    }
+    await db.webhook_debug.insert_one(doc)
+    logger.info(f"[WEBHOOK DEBUG] Payload keys: {list(payload.keys()) if isinstance(payload, dict) else type(payload).__name__}")
+    if isinstance(payload, dict):
+        data = payload.get("data", payload)
+        if isinstance(data, dict):
+            props = data.get("properties", {})
+            logger.info(f"[WEBHOOK DEBUG] Page object: id={data.get('id')}, props_count={len(props)}, prop_names={list(props.keys())[:15]}")
+    return {"message": "Debug payload captured", "keys": list(payload.keys()) if isinstance(payload, dict) else []}
+
+
+@api_router.get("/webhooks/notion/debug-last")
+async def get_last_debug_payload(request: Request):
+    """Returns last 3 captured debug payloads"""
+    await get_current_user(request)
+    docs = await db.webhook_debug.find({}, {"_id": 0}).sort("received_at", -1).limit(3).to_list(3)
+    return docs
+
+
 @api_router.post("/webhooks/notion/{notion_database_id}")
 async def notion_webhook(notion_database_id: str, request: Request):
     try:
@@ -683,16 +712,18 @@ async def notion_webhook(notion_database_id: str, request: Request):
     except Exception:
         return {"message": "Invalid JSON payload"}
 
-    # Extract page object — Notion automation sends {"source": {...}, "data": {page object}}
-    page = payload.get("data", payload)
-    if not isinstance(page, dict) or page.get("object") != "page":
+    logger.info(f"[WEBHOOK] db_id={notion_database_id}, top_keys={list(payload.keys()) if isinstance(payload, dict) else 'not-dict'}")
+
+    # Extract page object from webhook payload (get page_id at minimum)
+    page_stub = payload.get("data", payload)
+    if not isinstance(page_stub, dict) or page_stub.get("object") != "page":
         for v in payload.values():
             if isinstance(v, dict) and v.get("object") == "page":
-                page = v
+                page_stub = v
                 break
 
-    if not isinstance(page, dict) or not page.get("id"):
-        logger.info(f"Notion webhook: no valid page in payload for db {notion_database_id}")
+    if not isinstance(page_stub, dict) or not page_stub.get("id"):
+        logger.info(f"[WEBHOOK] No valid page for db {notion_database_id}. Payload: {str(payload)[:500]}")
         return {"message": "No page data found"}
 
     notion_db = await db.notion_databases.find_one(
@@ -701,9 +732,41 @@ async def notion_webhook(notion_database_id: str, request: Request):
     if not notion_db:
         return {"message": "Database not configured or inactive"}
 
+    page_id_raw = page_stub.get("id", "")  # UUID with dashes
+    api_token = notion_db.get("notion_api_token", "")
+
+    # Notion webhook payloads often have empty properties — fetch full page from Notion API
+    try:
+        notion_resp = http_requests.get(
+            f"https://api.notion.com/v1/pages/{page_id_raw}",
+            headers={"Authorization": f"Bearer {api_token}", "Notion-Version": "2022-06-28"},
+            timeout=10
+        )
+        if notion_resp.status_code == 200:
+            page = notion_resp.json()
+            logger.info(f"[WEBHOOK] Fetched full page from Notion API, props_count={len(page.get('properties', {}))}")
+        else:
+            logger.warning(f"[WEBHOOK] Notion API returned {notion_resp.status_code}, falling back to payload")
+            page = page_stub
+    except Exception as e:
+        logger.warning(f"[WEBHOOK] Failed to fetch from Notion API: {e}, falling back to payload")
+        page = page_stub
+
     properties = page.get("properties", {})
-    page_id = page.get("id", "").replace("-", "")
-    page_url = page.get("url", "")
+    page_id = page_id_raw.replace("-", "")
+    page_url = page.get("url", page_stub.get("url", ""))
+
+    logger.info(f"[WEBHOOK] page_id={page_id}, properties_count={len(properties)}, property_names={list(properties.keys())[:15]}")
+
+    # Store debug snapshot
+    await db.webhook_debug.insert_one({
+        "received_at": datetime.now(timezone.utc).isoformat(),
+        "notion_database_id": notion_database_id,
+        "page_id": page_id,
+        "payload_keys": list(payload.keys()),
+        "page_keys": list(page.keys()),
+        "property_names": list(properties.keys()),
+    })
 
     # Title
     title = ""
@@ -712,12 +775,14 @@ async def notion_webhook(notion_database_id: str, request: Request):
             title = " ".join(t.get("plain_text", "") for t in prop.get("title", []))
             break
 
-    # Assignee
+    # Assignee — Notion people property: [{name: "...", ...}]
     assignee_name = ""
     for pname, prop in properties.items():
-        if prop.get("type") == "people" and pname.lower() in ("assignee", "assigned to"):
-            assignee_name = ", ".join(p.get("name", "") for p in prop.get("people", []))
-            break
+        if prop.get("type") == "people":
+            people = prop.get("people", [])
+            if people:
+                assignee_name = ", ".join(p.get("name", "") for p in people)
+                break
 
     # Due date
     due_date = None
@@ -782,20 +847,15 @@ async def notion_webhook(notion_database_id: str, request: Request):
     existing = await db.performance_data.find_one({"page_id": page_id}, {"_id": 0})
 
     if existing:
+        # Always update with latest Notion data (Notion API is the source of truth)
         update = {
             "title": title, "page_url": page_url, "assignee_name": assignee_name,
             "employee_id": employee_id, "team_id": team_id, "database_type": database_type,
             "deadline_status": deadline_status, "performance_score": performance_score,
-            "changes_count": changes_count, "updated_at": now
+            "changes_count": changes_count, "updated_at": now,
+            "intro_rating": intro_rating, "overall_rating": overall_rating,
+            "thumbnail_rating": thumbnail_rating, "script_rating": script_rating,
         }
-        if existing.get("intro_rating") is None and intro_rating is not None:
-            update["intro_rating"] = intro_rating
-        if existing.get("overall_rating") is None and overall_rating is not None:
-            update["overall_rating"] = overall_rating
-        if existing.get("thumbnail_rating") is None and thumbnail_rating is not None:
-            update["thumbnail_rating"] = thumbnail_rating
-        if existing.get("script_rating") is None and script_rating is not None:
-            update["script_rating"] = script_rating
         await db.performance_data.update_one({"page_id": page_id}, {"$set": update})
     else:
         doc = {
