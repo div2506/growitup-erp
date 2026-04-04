@@ -160,10 +160,11 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
   };
 
   const handleManagerChange = (empId) => {
-    const emp = allEmployees.find(e => e.employee_id === empId);
+    const actualId = empId === "__none__" ? "" : empId;
+    const emp = allEmployees.find(e => e.employee_id === actualId);
     setForm(prev => ({
       ...prev,
-      reporting_manager_id: empId,
+      reporting_manager_id: actualId,
       reporting_manager_name: emp ? `${emp.first_name} ${emp.last_name}` : ""
     }));
   };
@@ -434,10 +435,10 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
               )}
 
               <FormField label="Reporting Manager" error={errors.reporting_manager_id}>
-                <Select value={form.reporting_manager_id || ""} onValueChange={handleManagerChange}>
+                <Select value={form.reporting_manager_id || "__none__"} onValueChange={handleManagerChange}>
                   <SelectTrigger data-testid="manager-select" className={`${inputCls} focus:ring-0`}><SelectValue placeholder="Select manager" /></SelectTrigger>
                   <SelectContent className="bg-[#2F2F2F] border-white/10 max-h-52">
-                    <SelectItem value="" className="text-[#B3B3B3] focus:bg-white/10">None</SelectItem>
+                    <SelectItem value="__none__" className="text-[#B3B3B3] focus:bg-white/10">None</SelectItem>
                     {managerOptions.map(e => (
                       <SelectItem key={e.employee_id} value={e.employee_id} className="text-white focus:bg-white/10">
                         {e.first_name} {e.last_name} ({e.employee_id})

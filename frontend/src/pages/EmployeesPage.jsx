@@ -195,7 +195,7 @@ export default function EmployeesPage() {
                   {/* Status dot */}
                   <span
                     className="w-3 h-3 rounded-full absolute bottom-0 right-0 border-2 border-[#2F2F2F]"
-                    style={{ backgroundColor: emp.status === "Active" ? "#6B7280" : "#374151" }}
+                    style={{ backgroundColor: emp.status === "Active" ? "#10B981" : "#6B7280" }}
                   />
                 </div>
 
@@ -232,7 +232,7 @@ export default function EmployeesPage() {
       <button
         data-testid="add-employee-fab"
         onClick={() => { setEditEmployee(null); setShowModal(true); }}
-        className="fixed bottom-8 right-8 bg-[#E53935] hover:bg-[#F44336] text-white rounded-full px-5 py-3.5 shadow-xl flex items-center gap-2 z-50 transition-colors font-medium text-sm"
+        className="fixed bottom-20 right-8 bg-[#E53935] hover:bg-[#F44336] text-white rounded-full px-5 py-3.5 shadow-xl flex items-center gap-2 z-50 transition-colors font-medium text-sm"
       >
         <Plus size={20} />
         Add Employee
