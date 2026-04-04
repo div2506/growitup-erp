@@ -143,8 +143,8 @@ export default function EmployeesPage() {
                 data-testid="employee-card"
                 className="employee-card relative bg-[#2F2F2F] rounded-xl border border-white/10 p-5"
               >
-                {/* 3-dot menu — admin sees edit+delete, others see edit only (own card) */}
-                {(isAdminDept || isOwnCard) && (
+                {/* 3-dot menu — admin dept only */}
+                {isAdminDept && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
