@@ -853,6 +853,13 @@ async def notion_webhook(notion_database_id: str, request: Request):
         elif pname == "Video Length" and prop.get("type") == "number":
             video_length = prop.get("number")
 
+    # Task type (multi_select) — extracted exactly as getMultiSelectNames_() in the appscript
+    task_type = ""
+    for pname, prop in properties.items():
+        if pname == "Task type" and prop.get("type") == "multi_select":
+            task_type = ", ".join(i.get("name", "") for i in prop.get("multi_select", []))
+            break
+
     database_type = notion_db.get("database_type", "Video Editing")
     team_id = notion_db.get("team_id", "")
     deadline_status = get_deadline_status(due_date, moved_to_review)
@@ -907,6 +914,7 @@ async def notion_webhook(notion_database_id: str, request: Request):
                 "perf_id": perf_id,
                 "title": title, "page_url": page_url, "assignee_name": assignee_name,
                 "employee_id": employee_id, "team_id": team_id, "database_type": database_type,
+                "task_type": task_type,
                 "status": page_status, "deadline_status": deadline_status,
                 "video_length": video_length, "updated_at": now,
             }
@@ -955,7 +963,8 @@ async def notion_webhook(notion_database_id: str, request: Request):
             doc = {
                 "perf_id": perf_id, "page_id": page_id, "title": title, "page_url": page_url,
                 "assignee_name": assignee_name, "employee_id": employee_id,
-                "team_id": team_id, "database_type": database_type, "status": page_status,
+                "team_id": team_id, "database_type": database_type, "task_type": task_type,
+                "status": page_status,
                 "deadline_status": deadline_status, "performance_score": perf_score,
                 "intro_rating": r_intro, "overall_rating": r_overall,
                 "thumbnail_rating": r_thumbnail, "script_rating": r_script,
