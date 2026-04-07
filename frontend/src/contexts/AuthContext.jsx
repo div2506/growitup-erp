@@ -12,8 +12,18 @@ export function AuthProvider({ children }) {
   const checkAuth = useCallback(async () => {
     try {
       const response = await fetch(`${API}/auth/me`, { credentials: "include" });
-      if (!response.ok) throw new Error("Not authenticated");
+      if (!response.ok) {
+        setUser(null);
+        setMyEmployee(null);
+        return;
+      }
       const userData = await response.json();
+      // Backend returns null when not authenticated (200 with null body)
+      if (!userData || !userData.user_id) {
+        setUser(null);
+        setMyEmployee(null);
+        return;
+      }
       setUser(userData);
       // Load employee profile right after auth
       try {

@@ -201,7 +201,28 @@ async def google_login(body: GoogleAuth, response: Response):
 
 @api_router.get("/auth/me")
 async def get_me(request: Request):
-    return await get_current_user(request)
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            session_token = auth[7:]
+    if not session_token:
+        return None
+
+    session = await db.user_sessions.find_one({"session_token": session_token}, {"_id": 0})
+    if not session:
+        return None
+
+    expires_at = session["expires_at"]
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        return None
+
+    user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
+    return user or None
 
 
 @api_router.post("/auth/logout")
@@ -1479,6 +1500,7 @@ class ReflectOriginCORSMiddleware(BaseHTTPMiddleware):
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
             response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Cookie, X-Requested-With"
             response.headers["Access-Control-Max-Age"] = "86400"
+            response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
             return response
 
         response = await call_next(request)
@@ -1489,6 +1511,7 @@ class ReflectOriginCORSMiddleware(BaseHTTPMiddleware):
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
             response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Cookie, X-Requested-With"
 
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
         return response
 
 app.add_middleware(ReflectOriginCORSMiddleware)
