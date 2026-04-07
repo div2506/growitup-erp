@@ -14,6 +14,126 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
+// ── Read-Only Profile Modal ───────────────────────────────────────────────────
+
+function ReadOnlyProfileModal({ employee: emp, onClose }) {
+  const [tab, setTab] = useState("personal");
+
+  if (!emp) return null;
+
+  const Row = ({ label, value }) => (
+    <div className="py-2 border-b border-white/5 last:border-0">
+      <p className="text-[#B3B3B3] text-xs mb-0.5">{label}</p>
+      <p className="text-white text-sm">{value || "—"}</p>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-[#2F2F2F] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
+          <div className="flex items-center gap-3">
+            {emp.profile_picture ? (
+              <img src={emp.profile_picture} alt={emp.first_name} className="w-10 h-10 rounded-full object-cover border border-white/10" />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500/40 to-purple-500/40 border border-white/10 flex items-center justify-center text-white font-bold">
+                {(emp.first_name?.[0] || "?").toUpperCase()}{(emp.last_name?.[0] || "").toUpperCase()}
+              </div>
+            )}
+            <div>
+              <h3 className="text-white font-semibold text-sm">{emp.first_name} {emp.last_name}</h3>
+              <p className="text-[#B3B3B3] text-xs">{emp.employee_id} · {emp.department_name}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-[#B3B3B3] hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors text-lg leading-none">×</button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-white/10 shrink-0">
+          {[["personal", "Personal Info"], ["work", "Work Info"], ["bank", "Bank Info"]].map(([v, l]) => (
+            <button key={v} onClick={() => setTab(v)}
+              className={`px-5 py-3 text-sm font-medium transition-colors ${tab === v ? "text-white border-b-2 border-white" : "text-[#B3B3B3] hover:text-white"}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="px-5 py-4 overflow-y-auto flex-1">
+          {tab === "personal" && (
+            <div className="space-y-0.5">
+              <div className="grid grid-cols-2 gap-x-6">
+                <Row label="First Name" value={emp.first_name} />
+                <Row label="Last Name" value={emp.last_name} />
+                <Row label="Personal Email" value={emp.personal_email} />
+                <Row label="Phone" value={emp.phone} />
+                <Row label="Date of Birth" value={emp.date_of_birth} />
+                <Row label="Gender" value={emp.gender} />
+              </div>
+              <Row label="Qualification" value={emp.qualification} />
+              <Row label="Address" value={emp.address} />
+              <div className="grid grid-cols-3 gap-x-6">
+                <Row label="City" value={emp.city_name} />
+                <Row label="State" value={emp.state_name} />
+                <Row label="Country" value={emp.country} />
+              </div>
+              <Row label="Zipcode" value={emp.zipcode} />
+              <div className="mt-3 pt-2 border-t border-white/10">
+                <p className="text-[#B3B3B3] text-xs uppercase tracking-wider mb-2">Emergency Contact</p>
+                <div className="grid grid-cols-3 gap-x-6">
+                  <Row label="Name" value={emp.emergency_contact_name} />
+                  <Row label="Number" value={emp.emergency_contact_number} />
+                  <Row label="Relation" value={emp.emergency_contact_relation} />
+                </div>
+              </div>
+            </div>
+          )}
+          {tab === "work" && (
+            <div className="space-y-0.5">
+              <Row label="Work Email" value={emp.work_email} />
+              <Row label="Employee ID" value={emp.employee_id} />
+              <div className="grid grid-cols-2 gap-x-6">
+                <Row label="Department" value={emp.department_name} />
+                <Row label="Job Position" value={emp.job_position_name} />
+                <Row label="Level" value={emp.level} />
+                <Row label="Employment Type" value={emp.employee_type} />
+                <Row label="Joining Date" value={emp.joining_date} />
+                <Row label="Status" value={emp.status} />
+              </div>
+              <Row label="Basic Salary" value={emp.basic_salary ? `₹${emp.basic_salary.toLocaleString()}` : null} />
+              {emp.teams?.length > 0 && (
+                <div className="py-2">
+                  <p className="text-[#B3B3B3] text-xs mb-1">Teams</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {emp.teams.map((t, i) => (
+                      <span key={i} className="px-2 py-0.5 bg-white/5 rounded-md text-white text-xs">{t}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {tab === "bank" && (
+            <div className="space-y-0.5">
+              <Row label="Bank Name" value={emp.bank_name} />
+              <Row label="Account Name" value={emp.account_name} />
+              <Row label="Account Number" value={emp.account_number ? `••••••${emp.account_number.slice(-4)}` : null} />
+              <Row label="IFSC Code" value={emp.ifsc_code} />
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-white/10 shrink-0">
+          <p className="text-[#B3B3B3] text-xs text-center">Read-only view — contact HR to make changes</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+
 export default function EmployeesPage() {
   const { user, myEmployee } = useAuth();
   const [employees, setEmployees] = useState([]);
@@ -23,6 +143,7 @@ export default function EmployeesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editEmployee, setEditEmployee] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [viewEmployee, setViewEmployee] = useState(null);
 
   const isAdminDept = user?.is_admin || myEmployee?.department_name === "Admin";
 
@@ -41,10 +162,6 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     let result = employees;
-    // Non-admin dept: only show own profile
-    if (!isAdminDept && myEmployee?.employee_id) {
-      result = result.filter(e => e.employee_id === myEmployee.employee_id);
-    }
     if (search.trim()) {
       const sl = search.toLowerCase();
       result = result.filter(e =>
@@ -56,7 +173,18 @@ export default function EmployeesPage() {
       );
     }
     setFiltered(result);
-  }, [employees, search, isAdminDept, myEmployee]);
+  }, [employees, search]);
+
+  const handleCardClick = (emp) => {
+    if (isAdminDept) {
+      setEditEmployee(emp);
+      setShowModal(true);
+    } else if (emp.employee_id === myEmployee?.employee_id) {
+      setViewEmployee(emp);
+    } else {
+      toast("You don't have permission to view this profile", { description: "Only your own profile is accessible." });
+    }
+  };
 
   const handleDelete = async (emp) => {
     try {
@@ -89,22 +217,20 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* Search — only show for admin dept */}
-      {isAdminDept && (
-        <div className="flex items-center gap-3 mb-6">
-          <div className="flex-1 relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#B3B3B3]" />
-            <input
-              data-testid="employee-search"
-              type="text"
-              placeholder="Search by name, email, ID, department..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-[#2F2F2F] border border-white/10 text-white placeholder-[#B3B3B3] rounded-lg pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-white/30 transition-colors"
-            />
-          </div>
+      {/* Search */}
+      <div className="flex items-center gap-3 mb-6">
+        <div className="flex-1 relative">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#B3B3B3]" />
+          <input
+            data-testid="employee-search"
+            type="text"
+            placeholder="Search by name, email, ID, department..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full bg-[#2F2F2F] border border-white/10 text-white placeholder-[#B3B3B3] rounded-lg pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-white/30 transition-colors"
+          />
         </div>
-      )}
+      </div>
 
       {/* Employee Grid */}
       {loading ? (
@@ -137,11 +263,17 @@ export default function EmployeesPage() {
           {filtered.map((emp) => {
             const isOwnCard = emp.employee_id === myEmployee?.employee_id;
             const canDelete = isAdminDept && !isOwnCard;
+            const isClickable = isAdminDept || isOwnCard;
             return (
               <div
                 key={emp.employee_id}
                 data-testid="employee-card"
-                className="employee-card relative bg-[#2F2F2F] rounded-xl border border-white/10 p-5"
+                onClick={() => handleCardClick(emp)}
+                className={`employee-card relative bg-[#2F2F2F] rounded-xl border border-white/10 p-5 transition-all ${
+                  isClickable
+                    ? "cursor-pointer hover:border-white/25 hover:bg-[#363636]"
+                    : "cursor-default"
+                }`}
               >
                 {/* 3-dot menu — admin dept only */}
                 {isAdminDept && (
@@ -149,6 +281,7 @@ export default function EmployeesPage() {
                     <DropdownMenuTrigger asChild>
                       <button
                         data-testid="employee-menu-button"
+                        onClick={e => e.stopPropagation()}
                         className="absolute top-4 right-4 text-[#B3B3B3] hover:text-white p-1 rounded hover:bg-white/10 transition-colors"
                       >
                         <MoreVertical size={16} />
@@ -179,7 +312,6 @@ export default function EmployeesPage() {
                 )}
 
                 <div className="flex items-start gap-4">
-                  {/* Avatar — no status dot */}
                   <div className="shrink-0">
                     {emp.profile_picture ? (
                       <img
@@ -194,7 +326,6 @@ export default function EmployeesPage() {
                     )}
                   </div>
 
-                  {/* Info */}
                   <div className="flex-1 min-w-0 pr-5">
                     <div className="flex items-baseline gap-1.5 mb-0.5 flex-wrap">
                       <span className="font-bold text-white text-sm leading-tight">
@@ -229,12 +360,20 @@ export default function EmployeesPage() {
         </button>
       )}
 
-      {/* Modals */}
+      {/* Admin edit/add modal */}
       {showModal && (
         <EmployeeModal
           employee={editEmployee}
           onClose={() => { setShowModal(false); setEditEmployee(null); }}
           onSaved={fetchEmployees}
+        />
+      )}
+
+      {/* Non-admin read-only view modal */}
+      {viewEmployee && (
+        <ReadOnlyProfileModal
+          employee={viewEmployee}
+          onClose={() => setViewEmployee(null)}
         />
       )}
 
