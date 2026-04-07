@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Plus, Pencil, Trash2, Building2, Briefcase, Users, Database, Lock, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import axios from "axios";
@@ -38,15 +38,15 @@ function DepartmentsTab() {
   const [error, setError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
 
-  const fetchDepts = async () => {
+  const fetchDepts = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API}/departments`, { withCredentials: true });
       setDepartments(data);
     } catch { toast.error("Failed to load departments"); }
     finally { setLoading(false); }
-  };
+  }, []);
 
-  useEffect(() => { fetchDepts(); }, []);
+  useEffect(() => { fetchDepts(); }, [fetchDepts]);
 
   const openAdd = () => { setEditDept(null); setName(""); setError(""); setShowModal(true); };
   const openEdit = (d) => { setEditDept(d); setName(d.department_name); setError(""); setShowModal(true); };
@@ -175,7 +175,7 @@ function JobPositionsTab() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [filterDept, setFilterDept] = useState("all");
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [posRes, deptRes] = await Promise.all([
         axios.get(`${API}/job-positions`, { withCredentials: true }),
@@ -185,9 +185,9 @@ function JobPositionsTab() {
       setDepartments(deptRes.data);
     } catch { toast.error("Failed to load data"); }
     finally { setLoading(false); }
-  };
+  }, []);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const filtered = filterDept === "all" ? positions : positions.filter(p => p.department_id === filterDept);
 
@@ -386,7 +386,7 @@ function TeamsTab() {
   const [error, setError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [teamsRes, empsRes] = await Promise.all([
         axios.get(`${API}/teams`, { withCredentials: true }),
@@ -396,9 +396,9 @@ function TeamsTab() {
       setEmployees(empsRes.data);
     } catch { toast.error("Failed to load teams"); }
     finally { setLoading(false); }
-  };
+  }, []);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const openAdd = () => { setEditTeam(null); setForm({ team_name: "", team_manager_id: "" }); setError(""); setShowModal(true); };
   const openEdit = (t) => { setEditTeam(t); setForm({ team_name: t.team_name, team_manager_id: t.team_manager_id || "" }); setError(""); setShowModal(true); };
@@ -536,7 +536,7 @@ function NotionIntegrationTab() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const API_URL = process.env.REACT_APP_BACKEND_URL;
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [dbRes, teamsRes] = await Promise.all([
         axios.get(`${API}/notion-databases`, { withCredentials: true }),
@@ -546,9 +546,9 @@ function NotionIntegrationTab() {
       setTeams(teamsRes.data);
     } catch { toast.error("Failed to load data"); }
     finally { setLoading(false); }
-  };
+  }, []);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const openAdd = () => {
     setEditDb(null);

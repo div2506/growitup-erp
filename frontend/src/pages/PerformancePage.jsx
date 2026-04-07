@@ -776,14 +776,18 @@ export default function PerformancePage() {
   const [selectedEmployee, setSelectedEmployee] = useState(null);
 
   const loadRole = useCallback(async () => {
+    // Don't run until we know who the user is
+    if (!user) return;
     try {
       const teamsRes = await axios.get(`${API}/teams`, { withCredentials: true });
       if (myEmployee?.employee_id) {
         setMyManagedTeams(teamsRes.data.filter(t => t.team_manager_id === myEmployee.employee_id));
+      } else {
+        setMyManagedTeams([]);
       }
     } catch {}
     finally { setRoleLoading(false); }
-  }, [myEmployee]);
+  }, [myEmployee, user]);
 
   useEffect(() => { loadRole(); }, [loadRole]);
 
