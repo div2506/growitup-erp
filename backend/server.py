@@ -1458,24 +1458,40 @@ async def root():
 
 app.include_router(api_router)
 
-# CORS: wildcard '*' is incompatible with allow_credentials=True (browser blocks it).
-# We read a comma-separated CORS_ORIGINS env var; if it's '*' we use allow_origins=["*"]
-# with credentials disabled for preflight, otherwise we pass the explicit list.
-_cors_origins_raw = os.environ.get('CORS_ORIGINS', '*').strip()
-if _cors_origins_raw == '*':
-    _allow_origins = ["*"]
-    _allow_credentials = False
-else:
-    _allow_origins = [o.strip() for o in _cors_origins_raw.split(',') if o.strip()]
-    _allow_credentials = True
+# Custom CORS middleware that always reflects the request Origin back.
+# This is required because allow_credentials=True is incompatible with
+# allow_origins=["*"] per the CORS spec — browsers block it.
+# By echoing the exact Origin header, cookies work on any frontend domain.
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response as StarletteResponse
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=_allow_credentials,
-    allow_origins=_allow_origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+class ReflectOriginCORSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: StarletteRequest, call_next):
+        origin = request.headers.get("origin", "")
+
+        # Handle preflight OPTIONS request
+        if request.method == "OPTIONS":
+            response = StarletteResponse(status_code=204)
+            if origin:
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Cookie, X-Requested-With"
+            response.headers["Access-Control-Max-Age"] = "86400"
+            return response
+
+        response = await call_next(request)
+
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Cookie, X-Requested-With"
+
+        return response
+
+app.add_middleware(ReflectOriginCORSMiddleware)
 
 
 @app.on_event("shutdown")
