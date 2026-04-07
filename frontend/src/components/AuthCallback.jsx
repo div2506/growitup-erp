@@ -6,7 +6,7 @@ import { API } from "@/contexts/AuthContext";
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function AuthCallback() {
   const navigate = useNavigate();
-  const { setUser } = useAuth();
+  const { setUser, setMyEmployee } = useAuth();
   const hasProcessed = useRef(false);
 
   useEffect(() => {
@@ -41,6 +41,14 @@ export default function AuthCallback() {
 
         const data = await response.json();
         setUser(data.user);
+        // Load employee profile so sidebar/performance show correct data immediately
+        try {
+          const empRes = await fetch(`${API}/me/employee`, { credentials: "include" });
+          if (empRes.ok) {
+            const empData = await empRes.json();
+            if (empData?.employee_id) setMyEmployee(empData);
+          }
+        } catch {}
         // Clear hash from URL and navigate to app
         window.history.replaceState(null, "", window.location.pathname);
         navigate("/employees", { replace: true, state: { user: data.user } });
@@ -50,7 +58,7 @@ export default function AuthCallback() {
     };
 
     exchangeSession();
-  }, [navigate, setUser]);
+  }, [navigate, setUser, setMyEmployee]);
 
   return (
     <div className="min-h-screen bg-[#191919] flex flex-col items-center justify-center gap-4">

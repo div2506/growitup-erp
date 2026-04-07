@@ -3,7 +3,7 @@ import { useAuth, API } from "@/contexts/AuthContext";
 import { Users, Settings, BarChart2, LogOut } from "lucide-react";
 
 export default function Layout() {
-  const { user, setUser, myEmployee } = useAuth();
+  const { user, setUser, myEmployee, setMyEmployee } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -12,6 +12,7 @@ export default function Layout() {
       await fetch(`${API}/auth/logout`, { method: "POST", credentials: "include" });
     } catch {}
     setUser(null);
+    setMyEmployee(null);
     navigate("/login", { replace: true });
   };
 
