@@ -32,13 +32,6 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    // CRITICAL: If returning from OAuth callback, skip the /me check.
-    // AuthCallback will exchange the session_id and establish the session first.
-    // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-    if (window.location.hash?.includes("session_id=")) {
-      setLoading(false);
-      return;
-    }
     checkAuth();
   }, [checkAuth]);
 

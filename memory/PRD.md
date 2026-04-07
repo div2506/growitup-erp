@@ -149,3 +149,10 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 ## Test Results
 - Module 1 (2026-04-04): Backend 100% (21/21), Frontend 95% (all major flows pass)
 - Module 2 (2026-04-04): Backend 100% (10/10), Frontend 100% (all features pass)
+
+
+### Auth: Custom Google OAuth (COMPLETE - 2026-04-07)
+- Replaced Emergent-managed auth with user's own Google OAuth
+- Frontend: @react-oauth/google (useGoogleLogin implicit flow) → fetches userinfo from Google → POST /api/auth/google
+- Backend: accepts userinfo dict, validates email against Employees table, creates session
+- Credentials: GOOGLE_CLIENT_ID + REACT_APP_GOOGLE_CLIENT_ID in .env

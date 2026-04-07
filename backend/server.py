@@ -16,7 +16,11 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 ADMIN_EMAIL = "info.growitup@gmail.com"
-EMERGENT_AUTH_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
+
+
+class GoogleAuth(BaseModel):
+    credential: dict  # userinfo dict from Google (email, name, picture, sub)
 
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
@@ -32,7 +36,7 @@ logger = logging.getLogger(__name__)
 # ===================== MODELS =====================
 
 class SessionExchange(BaseModel):
-    session_id: str
+    session_id: str  # kept for backward compat (unused)
 
 class DepartmentCreate(BaseModel):
     department_name: str
@@ -140,21 +144,17 @@ async def get_next_employee_id():
 
 # ===================== AUTH ROUTES =====================
 
-@api_router.post("/auth/session")
-async def exchange_session(body: SessionExchange, response: Response):
-    try:
-        headers = {"X-Session-ID": body.session_id}
-        r = http_requests.get(EMERGENT_AUTH_URL, headers=headers, timeout=10)
-        if r.status_code != 200:
-            raise HTTPException(400, "Invalid session ID")
-        data = r.json()
-    except http_requests.RequestException as e:
-        raise HTTPException(500, f"Auth service error: {str(e)}")
+@api_router.post("/auth/google")
+async def google_login(body: GoogleAuth, response: Response):
+    # REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+    info = body.credential  # userinfo dict sent from frontend after access_token exchange
 
-    email = data.get("email", "")
-    name = data.get("name", "")
-    picture = data.get("picture")
-    session_token = data.get("session_token")
+    email = info.get("email", "")
+    name = info.get("name", "")
+    picture = info.get("picture", "")
+
+    if not email:
+        raise HTTPException(400, "No email returned from Google")
 
     is_admin = (email.lower() == ADMIN_EMAIL.lower())
     if not is_admin:
@@ -162,7 +162,7 @@ async def exchange_session(body: SessionExchange, response: Response):
             {"work_email": {"$regex": f"^{email}$", "$options": "i"}}, {"_id": 0}
         )
         if not employee:
-            raise HTTPException(403, "Access denied. Contact admin.")
+            raise HTTPException(403, "Access denied. Your email is not registered in the system.")
 
     existing = await db.users.find_one({"email": email}, {"_id": 0})
     if existing:
@@ -179,6 +179,7 @@ async def exchange_session(body: SessionExchange, response: Response):
             "created_at": datetime.now(timezone.utc).isoformat()
         })
 
+    session_token = str(uuid.uuid4())
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     await db.user_sessions.delete_many({"user_id": user_id})
     await db.user_sessions.insert_one({
