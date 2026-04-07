@@ -38,7 +38,12 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 7. Performance UI: 3-level drill-down based on role (Admin→Team→Employee→Table, Manager→Employee→Table, Employee→Direct Table)
 8. Settings page: 4 tabs — Departments, Job Positions, Teams, Notion Integration
 
-### Performance Screen Updates (COMPLETE - 2026-04-07)
+### Employee List Access Control Update (COMPLETE - 2026-04-07)
+1. All users now see all employee cards (removed non-admin filter)
+2. Search bar visible to all users
+3. Card click behavior: Admin → opens edit modal; Non-admin own card → ReadOnlyProfileModal; Non-admin other card → permission toast
+4. ReadOnlyProfileModal: 3 tabs (Personal Info, Work Info, Bank Info), bank account masked, read-only, no edit inputs
+5. 3-dot menu (Edit/Delete) + FAB remain admin-only
 1. Fill-once fields: due_date, moved_to_review, deadline_status, all rating fields — never overwrite once set
 2. title, page_url, task_type — INSERT only, never overwrite
 3. performance_score — always recalculates from effective values
