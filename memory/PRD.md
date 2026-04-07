@@ -38,6 +38,13 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 7. Performance UI: 3-level drill-down based on role (Admin→Team→Employee→Table, Manager→Employee→Table, Employee→Direct Table)
 8. Settings page: 4 tabs — Departments, Job Positions, Teams, Notion Integration
 
+### Employee Self-Edit (COMPLETE - 2026-04-07)
+1. Non-admin clicking own card shows SelfProfileModal with "Edit Profile" button
+2. Edit mode: editable fields (address, zipcode, state, city, emergency contact, bank info, profile picture) shown as inputs; locked fields (name, email, phone, DOB, dept, salary, etc.) grayed out with opacity-50
+3. Work Info tab always read-only with note "Work information can only be updated by HR Admin"
+4. PATCH /api/employees/{emp_id}/self — ownership check (work_email = session email), 403 if not owner
+5. After save: myEmployee in AuthContext updated (sidebar refreshes), employee list refreshes
+
 ### Employee List Access Control Update (COMPLETE - 2026-04-07)
 1. All users now see all employee cards (removed non-admin filter)
 2. Search bar visible to all users
