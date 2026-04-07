@@ -3,8 +3,10 @@ import axios from "axios";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   ChevronRight, ChevronLeft, ExternalLink, Users, User, BarChart2,
-  Search, Calendar
+  Search, Calendar, Pencil, Trash2, TrendingUp
 } from "lucide-react";
+import DeleteConfirm from "@/components/DeleteConfirm";
+import { toast } from "sonner";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const ITEMS_PER_PAGE = 10;
@@ -203,9 +205,108 @@ function filterByPeriod(records, period, customFrom, customTo) {
   return records;
 }
 
+// ── Edit Performance Modal ────────────────────────────────────────────────────
+
+function EditModal({ record, onClose, onSaved }) {
+  const dbType = record?.database_type;
+  const [vals, setVals] = useState({
+    intro_rating: record?.intro_rating ?? "",
+    overall_rating: record?.overall_rating ?? "",
+    changes_count: record?.changes_count ?? "",
+    video_length: record?.video_length ?? "",
+    thumbnail_rating: record?.thumbnail_rating ?? "",
+    script_rating: record?.script_rating ?? "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const set = (k, v) => setVals(p => ({ ...p, [k]: v }));
+  const numOrNull = v => v === "" ? null : Number(v);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const id = record.perf_id || record.page_id;
+      const payload = {
+        intro_rating: numOrNull(vals.intro_rating),
+        overall_rating: numOrNull(vals.overall_rating),
+        changes_count: numOrNull(vals.changes_count),
+        video_length: numOrNull(vals.video_length),
+        thumbnail_rating: numOrNull(vals.thumbnail_rating),
+        script_rating: numOrNull(vals.script_rating),
+      };
+      const { data } = await axios.put(`${API}/performance/${id}`, payload, { withCredentials: true });
+      toast.success("Performance entry updated");
+      onSaved(data);
+    } catch {
+      toast.error("Failed to update entry");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const Field = ({ label, fkey, min = 0, max = 99, step = 1 }) => (
+    <div>
+      <label className="text-[#B3B3B3] text-xs block mb-1">{label}</label>
+      <input
+        type="number" min={min} max={max} step={step}
+        value={vals[fkey]}
+        onChange={e => set(fkey, e.target.value)}
+        className="w-full bg-[#191919] border border-white/10 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-white/20"
+      />
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-[#2F2F2F] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+          <div>
+            <h3 className="text-white font-semibold text-sm">Edit Performance Entry</h3>
+            <p className="text-[#B3B3B3] text-xs truncate max-w-xs mt-0.5">{record?.title || "Untitled"}</p>
+          </div>
+          <button onClick={onClose} className="text-[#B3B3B3] hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors text-lg leading-none">×</button>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          {/* Read-only info */}
+          <div className="grid grid-cols-2 gap-3 mb-1">
+            <div><p className="text-[#B3B3B3] text-xs">Type</p><p className="text-white text-sm">{dbType || "—"}</p></div>
+            <div><p className="text-[#B3B3B3] text-xs">Deadline</p><p className="text-white text-sm">{record?.deadline_status || "—"}</p></div>
+          </div>
+          {/* Editable fields by type */}
+          {dbType === "Video Editing" && (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Intro Rating (1-5)" fkey="intro_rating" min={1} max={5} />
+                <Field label="Overall Rating (1-5)" fkey="overall_rating" min={1} max={5} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Changes Count" fkey="changes_count" min={0} max={999} />
+                <Field label="Video Length (min)" fkey="video_length" min={0} max={999} step={0.1} />
+              </div>
+            </>
+          )}
+          {dbType === "Thumbnail" && (
+            <Field label="Thumbnail Rating (1-5)" fkey="thumbnail_rating" min={1} max={5} />
+          )}
+          {dbType === "Script" && (
+            <Field label="Script Rating (1-5)" fkey="script_rating" min={1} max={5} />
+          )}
+        </div>
+        <div className="px-5 py-4 border-t border-white/10 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-[#B3B3B3] hover:text-white border border-white/10 rounded-lg transition-colors">Cancel</button>
+          <button onClick={handleSave} disabled={saving}
+            className="px-4 py-2 text-sm bg-white text-[#191919] font-semibold rounded-lg hover:bg-white/90 disabled:opacity-50 transition-colors">
+            {saving ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Performance View (Level 3) ────────────────────────────────────────────────
 
-function PerformanceView({ employeeId, employeeName, onBack, showBackLabel }) {
+function PerformanceView({ employeeId, employeeName, onBack, showBackLabel, isAdminDept }) {
   const [allRecords, setAllRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState("current");
@@ -215,14 +316,18 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel }) {
   const [typeFilter, setTypeFilter] = useState("all");
   const [deadlineFilter, setDeadlineFilter] = useState("all");
   const [page, setPage] = useState(1);
+  const [editRecord, setEditRecord] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
-  useEffect(() => {
+  const loadRecords = useCallback(() => {
     setLoading(true);
     axios.get(`${API}/performance?employee_id=${employeeId}`, { withCredentials: true })
       .then(r => setAllRecords(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [employeeId]);
+
+  useEffect(() => { loadRecords(); }, [loadRecords]);
 
   // Reset page when filters change
   useEffect(() => { setPage(1); }, [search, typeFilter, deadlineFilter, selectedPeriod, customFrom, customTo]);
@@ -269,6 +374,29 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel }) {
     ? (avg.reduce((s, r) => s + r.performance_score, 0) / avg.length).toFixed(1)
     : null;
 
+  // 90-day avg for Upgrade button (independent of period filter)
+  const ninety90Cutoff = useMemo(() => { const d = new Date(); d.setDate(d.getDate() - 90); return d; }, []);
+  const last90Records = useMemo(
+    () => allRecords.filter(r => { const d = new Date(r.due_date || r.updated_at); return !isNaN(d) && d >= ninety90Cutoff && r.performance_score != null; }),
+    [allRecords, ninety90Cutoff]
+  );
+  const avg90 = last90Records.length > 0
+    ? last90Records.reduce((s, r) => s + r.performance_score, 0) / last90Records.length
+    : null;
+  const upgradeEnabled = avg90 !== null && avg90 >= 7;
+
+  const handleDelete = async () => {
+    try {
+      const id = deleteTarget.perf_id || deleteTarget.page_id;
+      await axios.delete(`${API}/performance/${id}`, { withCredentials: true });
+      toast.success("Performance entry deleted");
+      setAllRecords(prev => prev.filter(r => (r.perf_id || r.page_id) !== id));
+    } catch {
+      toast.error("Failed to delete entry");
+    }
+    setDeleteTarget(null);
+  };
+
   return (
     <div>
       {/* Header */}
@@ -294,7 +422,26 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel }) {
             </div>
           )}
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-3 flex-wrap justify-end">
+          {/* Upgrade Your Level button — always visible, enabled based on 90-day avg */}
+          <button
+            data-testid="upgrade-level-btn"
+            disabled={!upgradeEnabled}
+            title={avg90 !== null ? `90-day avg: ${avg90.toFixed(1)}/10 (need ≥ 7 to upgrade)` : "Not enough data in last 90 days"}
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+              upgradeEnabled
+                ? "bg-green-500/15 border-green-500/30 text-green-400 hover:bg-green-500/25 cursor-pointer"
+                : "bg-white/5 border-white/10 text-[#B3B3B3] cursor-not-allowed opacity-60"
+            }`}
+          >
+            <TrendingUp size={15} />
+            Upgrade Your Level
+            {avg90 !== null && (
+              <span className={`text-xs font-bold ml-1 ${upgradeEnabled ? "text-green-300" : "text-[#B3B3B3]"}`}>
+                {avg90.toFixed(1)}/10
+              </span>
+            )}
+          </button>
           <TimePeriodSelector
             value={selectedPeriod}
             onChange={v => setSelectedPeriod(v)}
@@ -372,6 +519,7 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel }) {
                   <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Changes</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Vid Len</th>
                   <th className="text-center py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Score</th>
+                  {isAdminDept && <th className="text-center py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Actions</th>}
                 </tr>
               </thead>
               <tbody className="bg-[#2F2F2F] divide-y divide-white/5">
@@ -413,6 +561,28 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel }) {
                       {record.database_type === "Video Editing" && record.video_length != null ? `${record.video_length} min` : "—"}
                     </td>
                     <td className="py-3.5 px-4 text-center"><ScoreBadge score={record.performance_score} /></td>
+                    {isAdminDept && (
+                      <td className="py-3.5 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            data-testid="edit-performance-btn"
+                            onClick={() => setEditRecord(record)}
+                            className="p-1.5 text-[#B3B3B3] hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                            title="Edit"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            data-testid="delete-performance-btn"
+                            onClick={() => setDeleteTarget(record)}
+                            className="p-1.5 text-[#B3B3B3] hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -449,6 +619,29 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel }) {
           )}
         </>
       )}
+
+      {/* Edit Modal */}
+      {editRecord && (
+        <EditModal
+          record={editRecord}
+          onClose={() => setEditRecord(null)}
+          onSaved={(updated) => {
+            setAllRecords(prev => prev.map(r =>
+              (r.perf_id || r.page_id) === (updated.perf_id || updated.page_id) ? updated : r
+            ));
+            setEditRecord(null);
+          }}
+        />
+      )}
+
+      {/* Delete Confirm */}
+      <DeleteConfirm
+        open={!!deleteTarget}
+        title="Delete Performance Entry"
+        description={deleteTarget ? `Are you sure you want to delete "${deleteTarget.title || "this entry"}"? This cannot be undone.` : ""}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }
@@ -595,6 +788,7 @@ export default function PerformancePage() {
   useEffect(() => { loadRole(); }, [loadRole]);
 
   const isAdmin = user?.is_admin;
+  const isAdminDept = user?.is_admin || myEmployee?.department_name === "Admin";
   const isManager = !isAdmin && myManagedTeams.length > 0;
   const isEmployee = !isAdmin && !isManager && !!myEmployee?.employee_id;
 
@@ -636,7 +830,8 @@ export default function PerformancePage() {
           {selectedTeam && selectedEmployee && (
             <PerformanceView employeeId={selectedEmployee.employee_id}
               employeeName={`${selectedEmployee.first_name} ${selectedEmployee.last_name}`}
-              onBack={() => setSelectedEmployee(null)} showBackLabel={selectedTeam.team_name} />
+              onBack={() => setSelectedEmployee(null)} showBackLabel={selectedTeam.team_name}
+              isAdminDept={isAdminDept} />
           )}
         </>
       )}
@@ -650,7 +845,8 @@ export default function PerformancePage() {
           {selectedEmployee && (
             <PerformanceView employeeId={selectedEmployee.employee_id}
               employeeName={`${selectedEmployee.first_name} ${selectedEmployee.last_name}`}
-              onBack={() => setSelectedEmployee(null)} showBackLabel="My Team" />
+              onBack={() => setSelectedEmployee(null)} showBackLabel="My Team"
+              isAdminDept={isAdminDept} />
           )}
         </>
       )}
@@ -658,7 +854,7 @@ export default function PerformancePage() {
       {isEmployee && (
         <PerformanceView employeeId={myEmployee.employee_id}
           employeeName={`${myEmployee.first_name} ${myEmployee.last_name}`}
-          onBack={null} />
+          onBack={null} isAdminDept={isAdminDept} />
       )}
 
       {!isAdmin && !isManager && !isEmployee && (

@@ -1052,6 +1052,63 @@ async def get_performance(
     return data
 
 
+class PerformanceEdit(BaseModel):
+    intro_rating: Optional[int] = None
+    overall_rating: Optional[int] = None
+    changes_count: Optional[int] = None
+    video_length: Optional[float] = None
+    thumbnail_rating: Optional[int] = None
+    script_rating: Optional[int] = None
+
+
+@api_router.put("/performance/{perf_id}")
+async def update_performance(perf_id: str, body: PerformanceEdit, request: Request):
+    await get_current_user(request)
+    query = {"$or": [{"perf_id": perf_id}, {"page_id": perf_id}]}
+    existing = await db.performance_data.find_one(query, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Performance record not found")
+
+    update: dict = {}
+    if body.intro_rating is not None:
+        update["intro_rating"] = body.intro_rating
+    if body.overall_rating is not None:
+        update["overall_rating"] = body.overall_rating
+    if body.changes_count is not None:
+        update["changes_count"] = body.changes_count
+    if body.video_length is not None:
+        update["video_length"] = body.video_length
+    if body.thumbnail_rating is not None:
+        update["thumbnail_rating"] = body.thumbnail_rating
+    if body.script_rating is not None:
+        update["script_rating"] = body.script_rating
+
+    merged = {**existing, **update}
+    update["performance_score"] = compute_performance_score(
+        merged.get("database_type"),
+        merged.get("intro_rating"),
+        merged.get("overall_rating"),
+        merged.get("thumbnail_rating"),
+        merged.get("script_rating"),
+        merged.get("deadline_status"),
+        merged.get("changes_count"),
+    )
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.performance_data.update_one(query, {"$set": update})
+    return {**existing, **update}
+
+
+@api_router.delete("/performance/{perf_id}")
+async def delete_performance(perf_id: str, request: Request):
+    await get_current_user(request)
+    result = await db.performance_data.delete_one(
+        {"$or": [{"perf_id": perf_id}, {"page_id": perf_id}]}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Performance record not found")
+    return {"message": "Deleted"}
+
+
 # ===================== SEED V2 =====================
 
 @api_router.post("/seed-v2")
