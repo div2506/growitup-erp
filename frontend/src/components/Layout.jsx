@@ -36,12 +36,12 @@ export default function Layout() {
         <div className="px-6 py-5 border-b border-white/10">
           <div className="flex items-center gap-3">
             <img
-              src="https://customer-assets.emergentagent.com/job_team-roster-95/artifacts/0sko7shb_Growitup.png1"
+              src="https://customer-assets.emergentagent.com/job_team-roster-95/artifacts/sxoanuv0_Growitup.pngi"
               alt="GrowItUp"
               className="w-9 h-9 rounded-lg object-cover"
               onError={(e) => {
                 e.target.onerror = null;
-                e.target.src = "https://static.prod-images.emergentagent.com/jobs/f01237da-b074-442a-8928-2bb02a0d751a/images/5b076fe5b949f10d2a338de5b0450680980d8bd1096ce704d123da4c41f306eb.png";
+                e.target.src = "https://customer-assets.emergentagent.com/job_team-roster-95/artifacts/sxoanuv0_Growitup.pngi";
               }}
             />
             <div>

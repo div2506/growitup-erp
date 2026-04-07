@@ -102,12 +102,12 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <img
-            src="https://customer-assets.emergentagent.com/job_team-roster-95/artifacts/0sko7shb_Growitup.png1"
+            src="https://customer-assets.emergentagent.com/job_team-roster-95/artifacts/sxoanuv0_Growitup.pngi"
             alt="GrowItUp"
             className="w-16 h-16 rounded-2xl mb-4 object-cover"
             onError={(e) => {
               e.target.onerror = null;
-              e.target.src = "https://static.prod-images.emergentagent.com/jobs/f01237da-b074-442a-8928-2bb02a0d751a/images/5b076fe5b949f10d2a338de5b0450680980d8bd1096ce704d123da4c41f306eb.png";
+              e.target.src = "https://customer-assets.emergentagent.com/job_team-roster-95/artifacts/sxoanuv0_Growitup.pngi";
             }}
           />
           <h1 className="text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
