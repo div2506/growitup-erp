@@ -417,8 +417,26 @@ async def update_employee(emp_id: str, body: EmployeeCreate, request: Request):
     if dup:
         raise HTTPException(400, "Work email already in use by another employee")
 
+    old_email = existing.get("work_email", "")
+    new_email = body.work_email
+    email_changed = old_email.lower() != new_email.lower()
+
     update = {**body.model_dump(), "updated_at": datetime.now(timezone.utc).isoformat()}
     await db.employees.update_one({"employee_id": emp_id}, {"$set": update})
+
+    # If work_email changed: invalidate all sessions for the old email and update the user record
+    if email_changed and old_email:
+        old_user = await db.users.find_one(
+            {"email": {"$regex": f"^{old_email}$", "$options": "i"}}, {"_id": 0}
+        )
+        if old_user:
+            await db.user_sessions.delete_many({"user_id": old_user["user_id"]})
+            await db.users.update_one(
+                {"user_id": old_user["user_id"]},
+                {"$set": {"email": new_email}}
+            )
+            logger.info(f"[EMAIL CHANGE] Invalidated sessions for '{old_email}', updated user to '{new_email}'")
+
     return {**existing, **update}
 
 

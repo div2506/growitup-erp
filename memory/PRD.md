@@ -41,9 +41,11 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 ### Module 2 Access Control & UI (COMPLETE - 2026-04-04)
 1. Sidebar user profile: Shows employee's profile_picture, first_name+last_name, work_email from Employees table (NOT Google account data)
 2. Settings nav: Only visible to employees in "Admin" department (or is_admin=true)
-3. Employees section: Admin dept = full access (all employees, edit/delete, FAB). Other depts = own card only, edit only, no FAB
+3. Employees section: Admin dept = full access (all employees, edit/delete, FAB). Other depts = own card only, read-only (no menu)
 4. No online/offline status dots or text on employee cards
 5. AuthContext now loads myEmployee centrally (no per-component re-fetching)
+6. Work email change: auto-invalidates old login sessions + updates user record email (2026-04-04)
+7. Webhook assignee matching: uses first_name+last_name match (NOT email), stores employee_id — immune to email changes
 
 ## What's Been Implemented
 
