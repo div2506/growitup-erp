@@ -1,0 +1,43 @@
+{
+  "summary": "Tested Employee self-edit permissions feature. All 12 specified features verified. Backend PATCH /api/employees/{emp_id}/self works correctly with ownership check. Frontend SelfProfileModal shows Edit Profile button, edit mode with locked/editable fields, Work Info read-only, Bank Info editable, save/cancel flows all working.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_self_edit.py",
+    "/app/test_reports/pytest/self_edit_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": ["/app/backend/tests/test_self_edit.py"],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100%"},
+  "test_credentials": {
+    "admin_session": "test_session_1775319753739 (GM001)",
+    "nonadmin_session": "gm002_test_session (GM002, gauravs.growitup@gmail.com)"
+  },
+  "seed_data_creation": "Recreated gm002_test_session for GM002 user (user_11ce3a3a7d8d)",
+  "test_results": {
+    "self_edit_toggle_btn_visible": "PASS - Edit Profile button in SelfProfileModal header",
+    "edit_mode_personal_info": "PASS - Address, City, State, Zipcode, Emergency Contact fields are editable inputs",
+    "locked_fields_count": "PASS - 8 opacity-50 locked fields (First Name, Last Name, Email, Phone, DOB, Gender, Qualification, Country)",
+    "emergency_contact_editable": "PASS - Name, Number, Relation all editable",
+    "work_info_readonly": "PASS - Work Info tab all read-only with 'Work information can only be updated by HR Admin.' note",
+    "bank_info_editable": "PASS - Bank Name, Account Name, Account Number, IFSC Code all editable",
+    "camera_icon_edit_mode": "PASS - Camera/edit icon on avatar visible in edit mode",
+    "save_button": "PASS - Save Changes button calls PATCH and shows 'Profile updated successfully' toast",
+    "returns_to_view_mode": "PASS - After save, Edit Profile button reappears (view mode restored)",
+    "cancel_button": "PASS - Cancel button visible",
+    "admin_gets_403_on_gm002_self": "PASS - Admin session returns 403 for PATCH /GM002/self",
+    "gm002_own_self_edit": "PASS - GM002 session returns 200 for PATCH /GM002/self with updated fields",
+    "locked_fields_not_updatable": "PASS - first_name not changed when sent via self endpoint (Pydantic model excludes it)"
+  },
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Self-edit feature fully working. Admin session: test_session_1775319753739, GM002 session: gm002_test_session (recreated, valid 24h). Backend tests in /app/backend/tests/test_self_edit.py"
+}

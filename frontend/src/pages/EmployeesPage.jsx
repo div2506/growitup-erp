@@ -14,19 +14,111 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-// ── Read-Only Profile Modal ───────────────────────────────────────────────────
+// ── Self Profile Modal (non-admin employees — own profile, partial edit) ────────
 
-function ReadOnlyProfileModal({ employee: emp, onClose }) {
+const SELF_EDITABLE = ["profile_picture", "address", "zipcode", "state_name", "city_name",
+  "emergency_contact_name", "emergency_contact_number", "emergency_contact_relation",
+  "bank_name", "account_name", "account_number", "ifsc_code"];
+
+function SelfProfileModal({ employee: initialEmp, onClose, onSaved }) {
+  const { setMyEmployee } = useAuth();
+  const [emp, setEmp] = useState(initialEmp);
   const [tab, setTab] = useState("personal");
+  const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    profile_picture: initialEmp?.profile_picture || null,
+    address: initialEmp?.address || "",
+    zipcode: initialEmp?.zipcode || "",
+    state_name: initialEmp?.state_name || "",
+    city_name: initialEmp?.city_name || "",
+    emergency_contact_name: initialEmp?.emergency_contact_name || "",
+    emergency_contact_number: initialEmp?.emergency_contact_number || "",
+    emergency_contact_relation: initialEmp?.emergency_contact_relation || "",
+    bank_name: initialEmp?.bank_name || "",
+    account_name: initialEmp?.account_name || "",
+    account_number: initialEmp?.account_number || "",
+    ifsc_code: initialEmp?.ifsc_code || "",
+  });
 
   if (!emp) return null;
 
-  const Row = ({ label, value }) => (
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => set("profile_picture", ev.target.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const { data } = await axios.patch(`${API}/employees/${emp.employee_id}/self`, form, { withCredentials: true });
+      setEmp(data);
+      setMyEmployee(data);
+      onSaved(data);
+      setIsEditing(false);
+      toast.success("Profile updated successfully");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to update profile");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setForm({
+      profile_picture: emp?.profile_picture || null,
+      address: emp?.address || "",
+      zipcode: emp?.zipcode || "",
+      state_name: emp?.state_name || "",
+      city_name: emp?.city_name || "",
+      emergency_contact_name: emp?.emergency_contact_name || "",
+      emergency_contact_number: emp?.emergency_contact_number || "",
+      emergency_contact_relation: emp?.emergency_contact_relation || "",
+      bank_name: emp?.bank_name || "",
+      account_name: emp?.account_name || "",
+      account_number: emp?.account_number || "",
+      ifsc_code: emp?.ifsc_code || "",
+    });
+    setIsEditing(false);
+  };
+
+  // View-mode field
+  const ReadField = ({ label, value }) => (
     <div className="py-2 border-b border-white/5 last:border-0">
       <p className="text-[#B3B3B3] text-xs mb-0.5">{label}</p>
       <p className="text-white text-sm">{value || "—"}</p>
     </div>
   );
+
+  // Locked field in edit mode (not editable)
+  const LockedField = ({ label, value }) => (
+    <div className="py-2 border-b border-white/5 last:border-0 opacity-50">
+      <p className="text-[#B3B3B3] text-xs mb-0.5">{label}</p>
+      <p className="text-[#B3B3B3] text-sm">{value || "—"}</p>
+    </div>
+  );
+
+  // Editable input in edit mode
+  const EditField = ({ label, fkey, type = "text", placeholder = "" }) => (
+    <div className="py-1.5">
+      <label className="text-[#B3B3B3] text-xs block mb-1">{label}</label>
+      <input
+        type={type}
+        data-testid={`self-edit-${fkey}`}
+        value={form[fkey] || ""}
+        onChange={e => set(fkey, e.target.value)}
+        placeholder={placeholder}
+        className="w-full bg-[#191919] border border-white/15 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-white/30 transition-colors placeholder-[#555]"
+      />
+    </div>
+  );
+
+  const displayPicture = isEditing ? (form.profile_picture || null) : (emp.profile_picture || null);
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -34,19 +126,38 @@ function ReadOnlyProfileModal({ employee: emp, onClose }) {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
           <div className="flex items-center gap-3">
-            {emp.profile_picture ? (
-              <img src={emp.profile_picture} alt={emp.first_name} className="w-10 h-10 rounded-full object-cover border border-white/10" />
-            ) : (
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500/40 to-purple-500/40 border border-white/10 flex items-center justify-center text-white font-bold">
-                {(emp.first_name?.[0] || "?").toUpperCase()}{(emp.last_name?.[0] || "").toUpperCase()}
-              </div>
-            )}
+            <div className="relative shrink-0">
+              {displayPicture ? (
+                <img src={displayPicture} alt={emp.first_name} className="w-11 h-11 rounded-full object-cover border border-white/10" />
+              ) : (
+                <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-500/40 to-purple-500/40 border border-white/10 flex items-center justify-center text-white font-bold">
+                  {(emp.first_name?.[0] || "?").toUpperCase()}{(emp.last_name?.[0] || "").toUpperCase()}
+                </div>
+              )}
+              {isEditing && (
+                <label className="absolute -bottom-1 -right-1 w-6 h-6 bg-[#E53935] rounded-full flex items-center justify-center cursor-pointer hover:bg-[#F44336] transition-colors" title="Change photo">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" data-testid="self-edit-profile-picture-input" />
+                </label>
+              )}
+            </div>
             <div>
               <h3 className="text-white font-semibold text-sm">{emp.first_name} {emp.last_name}</h3>
               <p className="text-[#B3B3B3] text-xs">{emp.employee_id} · {emp.department_name}</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-[#B3B3B3] hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors text-lg leading-none">×</button>
+          <div className="flex items-center gap-2">
+            {!isEditing && (
+              <button
+                data-testid="self-edit-toggle-btn"
+                onClick={() => setIsEditing(true)}
+                className="px-3 py-1.5 text-xs font-medium bg-white/10 hover:bg-white/15 text-white rounded-lg transition-colors border border-white/10"
+              >
+                Edit Profile
+              </button>
+            )}
+            <button onClick={onClose} className="text-[#B3B3B3] hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors text-lg leading-none">×</button>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -61,71 +172,123 @@ function ReadOnlyProfileModal({ employee: emp, onClose }) {
 
         {/* Content */}
         <div className="px-5 py-4 overflow-y-auto flex-1">
-          {tab === "personal" && (
+          {tab === "personal" && !isEditing && (
             <div className="space-y-0.5">
               <div className="grid grid-cols-2 gap-x-6">
-                <Row label="First Name" value={emp.first_name} />
-                <Row label="Last Name" value={emp.last_name} />
-                <Row label="Personal Email" value={emp.personal_email} />
-                <Row label="Phone" value={emp.phone} />
-                <Row label="Date of Birth" value={emp.date_of_birth} />
-                <Row label="Gender" value={emp.gender} />
+                <ReadField label="First Name" value={emp.first_name} />
+                <ReadField label="Last Name" value={emp.last_name} />
+                <ReadField label="Personal Email" value={emp.personal_email} />
+                <ReadField label="Phone" value={emp.phone} />
+                <ReadField label="Date of Birth" value={emp.date_of_birth} />
+                <ReadField label="Gender" value={emp.gender} />
               </div>
-              <Row label="Qualification" value={emp.qualification} />
-              <Row label="Address" value={emp.address} />
+              <ReadField label="Qualification" value={emp.qualification} />
+              <ReadField label="Address" value={emp.address} />
               <div className="grid grid-cols-3 gap-x-6">
-                <Row label="City" value={emp.city_name} />
-                <Row label="State" value={emp.state_name} />
-                <Row label="Country" value={emp.country} />
+                <ReadField label="City" value={emp.city_name} />
+                <ReadField label="State" value={emp.state_name} />
+                <ReadField label="Country" value={emp.country} />
               </div>
-              <Row label="Zipcode" value={emp.zipcode} />
+              <ReadField label="Zipcode" value={emp.zipcode} />
               <div className="mt-3 pt-2 border-t border-white/10">
                 <p className="text-[#B3B3B3] text-xs uppercase tracking-wider mb-2">Emergency Contact</p>
                 <div className="grid grid-cols-3 gap-x-6">
-                  <Row label="Name" value={emp.emergency_contact_name} />
-                  <Row label="Number" value={emp.emergency_contact_number} />
-                  <Row label="Relation" value={emp.emergency_contact_relation} />
+                  <ReadField label="Name" value={emp.emergency_contact_name} />
+                  <ReadField label="Number" value={emp.emergency_contact_number} />
+                  <ReadField label="Relation" value={emp.emergency_contact_relation} />
+                </div>
+              </div>
+            </div>
+          )}
+          {tab === "personal" && isEditing && (
+            <div className="space-y-1">
+              <div className="grid grid-cols-2 gap-x-4">
+                <LockedField label="First Name" value={emp.first_name} />
+                <LockedField label="Last Name" value={emp.last_name} />
+                <LockedField label="Personal Email" value={emp.personal_email} />
+                <LockedField label="Phone" value={emp.phone} />
+                <LockedField label="Date of Birth" value={emp.date_of_birth} />
+                <LockedField label="Gender" value={emp.gender} />
+              </div>
+              <LockedField label="Qualification" value={emp.qualification} />
+              <EditField label="Address" fkey="address" placeholder="Enter address" />
+              <div className="grid grid-cols-3 gap-x-3">
+                <EditField label="City" fkey="city_name" placeholder="City" />
+                <EditField label="State" fkey="state_name" placeholder="State" />
+                <LockedField label="Country" value={emp.country} />
+              </div>
+              <EditField label="Zipcode" fkey="zipcode" placeholder="Zipcode" />
+              <div className="mt-3 pt-2 border-t border-white/10">
+                <p className="text-[#B3B3B3] text-xs uppercase tracking-wider mb-2">Emergency Contact</p>
+                <div className="grid grid-cols-3 gap-x-3">
+                  <EditField label="Name" fkey="emergency_contact_name" placeholder="Contact name" />
+                  <EditField label="Number" fkey="emergency_contact_number" placeholder="Number" />
+                  <EditField label="Relation" fkey="emergency_contact_relation" placeholder="Relation" />
                 </div>
               </div>
             </div>
           )}
           {tab === "work" && (
             <div className="space-y-0.5">
-              <Row label="Work Email" value={emp.work_email} />
-              <Row label="Employee ID" value={emp.employee_id} />
+              <ReadField label="Work Email" value={emp.work_email} />
+              <ReadField label="Employee ID" value={emp.employee_id} />
               <div className="grid grid-cols-2 gap-x-6">
-                <Row label="Department" value={emp.department_name} />
-                <Row label="Job Position" value={emp.job_position_name} />
-                <Row label="Level" value={emp.level} />
-                <Row label="Employment Type" value={emp.employee_type} />
-                <Row label="Joining Date" value={emp.joining_date} />
-                <Row label="Status" value={emp.status} />
+                <ReadField label="Department" value={emp.department_name} />
+                <ReadField label="Job Position" value={emp.job_position_name} />
+                <ReadField label="Level" value={emp.level} />
+                <ReadField label="Employment Type" value={emp.employee_type} />
+                <ReadField label="Joining Date" value={emp.joining_date} />
+                <ReadField label="Status" value={emp.status} />
               </div>
-              <Row label="Basic Salary" value={emp.basic_salary ? `₹${emp.basic_salary.toLocaleString()}` : null} />
+              <ReadField label="Basic Salary" value={emp.basic_salary ? `₹${emp.basic_salary.toLocaleString()}` : null} />
               {emp.teams?.length > 0 && (
                 <div className="py-2">
                   <p className="text-[#B3B3B3] text-xs mb-1">Teams</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {emp.teams.map((t, i) => (
-                      <span key={i} className="px-2 py-0.5 bg-white/5 rounded-md text-white text-xs">{t}</span>
-                    ))}
+                    {emp.teams.map((t, i) => <span key={i} className="px-2 py-0.5 bg-white/5 rounded-md text-white text-xs">{t}</span>)}
                   </div>
                 </div>
               )}
+              {isEditing && <p className="text-[#B3B3B3] text-xs mt-3 italic">Work information can only be updated by HR Admin.</p>}
             </div>
           )}
-          {tab === "bank" && (
+          {tab === "bank" && !isEditing && (
             <div className="space-y-0.5">
-              <Row label="Bank Name" value={emp.bank_name} />
-              <Row label="Account Name" value={emp.account_name} />
-              <Row label="Account Number" value={emp.account_number ? `••••••${emp.account_number.slice(-4)}` : null} />
-              <Row label="IFSC Code" value={emp.ifsc_code} />
+              <ReadField label="Bank Name" value={emp.bank_name} />
+              <ReadField label="Account Name" value={emp.account_name} />
+              <ReadField label="Account Number" value={emp.account_number ? `••••••${emp.account_number.slice(-4)}` : null} />
+              <ReadField label="IFSC Code" value={emp.ifsc_code} />
+            </div>
+          )}
+          {tab === "bank" && isEditing && (
+            <div className="space-y-1">
+              <EditField label="Bank Name" fkey="bank_name" placeholder="Bank name" />
+              <EditField label="Account Name" fkey="account_name" placeholder="Account holder name" />
+              <EditField label="Account Number" fkey="account_number" placeholder="Account number" />
+              <EditField label="IFSC Code" fkey="ifsc_code" placeholder="IFSC code" />
             </div>
           )}
         </div>
 
-        <div className="px-5 py-3 border-t border-white/10 shrink-0">
-          <p className="text-[#B3B3B3] text-xs text-center">Read-only view — contact HR to make changes</p>
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-white/10 shrink-0 flex items-center justify-between">
+          {isEditing ? (
+            <>
+              <p className="text-[#B3B3B3] text-xs">Editable fields are highlighted · Others are locked</p>
+              <div className="flex gap-2">
+                <button onClick={handleCancelEdit} className="px-4 py-1.5 text-sm text-[#B3B3B3] hover:text-white border border-white/10 rounded-lg transition-colors">Cancel</button>
+                <button
+                  data-testid="self-edit-save-btn"
+                  onClick={handleSave} disabled={saving}
+                  className="px-4 py-1.5 text-sm bg-white text-[#191919] font-semibold rounded-lg hover:bg-white/90 disabled:opacity-50 transition-colors"
+                >
+                  {saving ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="text-[#B3B3B3] text-xs w-full text-center">Contact HR Admin to update locked fields</p>
+          )}
         </div>
       </div>
     </div>
@@ -369,11 +532,15 @@ export default function EmployeesPage() {
         />
       )}
 
-      {/* Non-admin read-only view modal */}
+      {/* Non-admin read-only / self-edit modal */}
       {viewEmployee && (
-        <ReadOnlyProfileModal
+        <SelfProfileModal
           employee={viewEmployee}
           onClose={() => setViewEmployee(null)}
+          onSaved={(updated) => {
+            setEmployees(prev => prev.map(e => e.employee_id === updated.employee_id ? updated : e));
+            setViewEmployee(updated);
+          }}
         />
       )}
 

@@ -450,6 +450,35 @@ async def delete_employee(emp_id: str, request: Request):
     return {"message": "Deleted"}
 
 
+class SelfEditBody(BaseModel):
+    profile_picture: Optional[str] = None
+    address: Optional[str] = None
+    zipcode: Optional[str] = None
+    state_name: Optional[str] = None
+    city_name: Optional[str] = None
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_number: Optional[str] = None
+    emergency_contact_relation: Optional[str] = None
+    bank_name: Optional[str] = None
+    account_name: Optional[str] = None
+    account_number: Optional[str] = None
+    ifsc_code: Optional[str] = None
+
+
+@api_router.patch("/employees/{emp_id}/self")
+async def self_update_employee(emp_id: str, body: SelfEditBody, request: Request):
+    user = await get_current_user(request)
+    existing = await db.employees.find_one({"employee_id": emp_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Employee not found")
+    if existing.get("work_email", "").lower() != user.get("email", "").lower():
+        raise HTTPException(403, "You can only edit your own profile")
+    update = {k: v for k, v in body.model_dump().items() if v is not None}
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.employees.update_one({"employee_id": emp_id}, {"$set": update})
+    return {**existing, **update}
+
+
 # ===================== ME / CURRENT EMPLOYEE =====================
 
 @api_router.get("/me/employee")
