@@ -36,13 +36,9 @@ export default function Layout() {
         <div className="px-6 py-5 border-b border-white/10">
           <div className="flex items-center gap-3">
             <img
-              src="https://customer-assets.emergentagent.com/job_team-roster-95/artifacts/sxoanuv0_Growitup.pngi"
+              src="/growitup-logo.png"
               alt="GrowItUp"
               className="w-9 h-9 rounded-lg object-cover"
-              onError={(e) => {
-                e.target.onerror = null;
-                e.target.src = "https://customer-assets.emergentagent.com/job_team-roster-95/artifacts/sxoanuv0_Growitup.pngi";
-              }}
             />
             <div>
               <p className="text-white font-semibold text-sm" style={{ fontFamily: "Manrope, sans-serif" }}>GrowItUp</p>

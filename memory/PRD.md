@@ -156,3 +156,10 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 - Frontend: @react-oauth/google (useGoogleLogin implicit flow) → fetches userinfo from Google → POST /api/auth/google
 - Backend: accepts userinfo dict, validates email against Employees table, creates session
 - Credentials: GOOGLE_CLIENT_ID + REACT_APP_GOOGLE_CLIENT_ID in .env
+
+### White-Labeling (COMPLETE - 2026-04-07)
+- Removed `emergent-main.js` badge-injecting script from index.html
+- Updated favicon to GrowItUp logo (growitup-logo.png → favicon.ico)
+- Fixed broken logo URL (typo `pngi`) in Layout.jsx and LoginPage.jsx → now uses local `/growitup-logo.png`
+- Updated meta description to "GrowItUp Employee Management System"
+- Tab title: "GrowItUp"

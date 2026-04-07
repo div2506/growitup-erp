@@ -102,13 +102,9 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <img
-            src="https://customer-assets.emergentagent.com/job_team-roster-95/artifacts/sxoanuv0_Growitup.pngi"
+            src="/growitup-logo.png"
             alt="GrowItUp"
             className="w-16 h-16 rounded-2xl mb-4 object-cover"
-            onError={(e) => {
-              e.target.onerror = null;
-              e.target.src = "https://customer-assets.emergentagent.com/job_team-roster-95/artifacts/sxoanuv0_Growitup.pngi";
-            }}
           />
           <h1 className="text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
             GrowItUp
