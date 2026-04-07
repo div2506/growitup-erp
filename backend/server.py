@@ -937,14 +937,34 @@ async def notion_webhook(notion_database_id: str, request: Request):
             eff_script = existing.get("script_rating")
             eff_changes = existing.get("changes_count")
 
+            # "Always update" fields
             update: dict = {
                 "perf_id": perf_id,
-                "title": title, "page_url": page_url, "assignee_name": assignee_name,
-                "employee_id": employee_id, "team_id": team_id, "database_type": database_type,
-                "task_type": task_type, "due_date": due_date,
-                "status": page_status, "deadline_status": deadline_status,
-                "video_length": video_length, "updated_at": now,
+                "assignee_name": assignee_name,
+                "employee_id": employee_id,
+                "team_id": team_id,
+                "database_type": database_type,
+                "status": page_status,
+                "video_length": video_length,
+                "updated_at": now,
             }
+
+            # title, page_url, task_type — set on INSERT only, never overwrite
+
+            # "Fill once if empty, never overwrite" — due_date / moved_to_review / deadline_status
+            eff_due_date = existing.get("due_date")
+            eff_moved_to_review = existing.get("moved_to_review")
+            eff_deadline_status = existing.get("deadline_status")
+
+            if eff_due_date is None and due_date is not None:
+                update["due_date"] = due_date
+                eff_due_date = due_date
+            if eff_moved_to_review is None and moved_to_review is not None:
+                update["moved_to_review"] = moved_to_review
+                eff_moved_to_review = moved_to_review
+            if eff_deadline_status is None and deadline_status is not None:
+                update["deadline_status"] = deadline_status
+                eff_deadline_status = deadline_status
 
             # Only fill rating fields when status allows AND field is currently empty
             if write_ratings:
@@ -967,7 +987,7 @@ async def notion_webhook(notion_database_id: str, request: Request):
             # Always recalculate performance_score with effective values
             update["performance_score"] = compute_performance_score(
                 database_type, eff_intro, eff_overall, eff_thumbnail, eff_script,
-                deadline_status, eff_changes
+                eff_deadline_status, eff_changes
             )
 
             await db.performance_data.update_one(
@@ -991,7 +1011,7 @@ async def notion_webhook(notion_database_id: str, request: Request):
                 "perf_id": perf_id, "page_id": page_id, "title": title, "page_url": page_url,
                 "assignee_name": assignee_name, "employee_id": employee_id,
                 "team_id": team_id, "database_type": database_type, "task_type": task_type,
-                "due_date": due_date, "status": page_status,
+                "due_date": due_date, "moved_to_review": moved_to_review, "status": page_status,
                 "deadline_status": deadline_status, "performance_score": perf_score,
                 "intro_rating": r_intro, "overall_rating": r_overall,
                 "thumbnail_rating": r_thumbnail, "script_rating": r_script,

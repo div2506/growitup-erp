@@ -18,21 +18,6 @@ function fmtDate(dateStr) {
   } catch { return "—"; }
 }
 
-function fmtMonth(ym) {
-  const [y, m] = ym.split("-").map(Number);
-  return new Date(y, m - 1, 1).toLocaleString("default", { month: "long", year: "numeric" });
-}
-
-function getRecordMonth(r) {
-  const d = new Date(r.due_date || r.updated_at);
-  return isNaN(d) ? null : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function currentYM() {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
-}
-
 // ── UI Atoms ─────────────────────────────────────────────────────────────────
 
 function ScoreBadge({ score }) {
@@ -70,8 +55,10 @@ function MetricCard({ label, value, accent }) {
   );
 }
 
-function scoreAccent(v) { return v === "—" ? "default" : parseFloat(v) >= 70 ? "green" : parseFloat(v) >= 50 ? "amber" : "red"; }
+function scoreAccent(pct) { return pct === "—" ? "default" : parseFloat(pct) >= 70 ? "green" : parseFloat(pct) >= 50 ? "amber" : "red"; }
 function perfAccent(v) { return v === "—" ? "default" : parseFloat(v) >= 7 ? "green" : parseFloat(v) >= 5 ? "amber" : "red"; }
+function qualAccent10(v) { return v === "—" ? "default" : parseFloat(v) >= 7 ? "green" : parseFloat(v) >= 5 ? "amber" : "red"; }
+function qualAccent5(v) { return v === "—" ? "default" : parseFloat(v) >= 3.5 ? "green" : parseFloat(v) >= 2.5 ? "amber" : "red"; }
 
 function MetricsSection({ records, dbType }) {
   const total = records.length;
@@ -91,25 +78,30 @@ function MetricsSection({ records, dbType }) {
   if (dbType === "Video Editing") {
     const withQ = records.filter(r => r.intro_rating != null && r.overall_rating != null);
     const qual = withQ.length > 0
-      ? ((withQ.reduce((s, r) => s + r.intro_rating + r.overall_rating, 0) / (2 * withQ.length)) * 100).toFixed(1) + "%"
+      ? ((withQ.reduce((s, r) => s + r.intro_rating + r.overall_rating, 0) / withQ.length)).toFixed(1) + "/10"
       : "—";
     const totalLen = records.reduce((s, r) => s + (r.video_length || 0), 0);
+    const withChanges = records.filter(r => r.changes_count != null);
+    const avgChanges = withChanges.length > 0
+      ? (withChanges.reduce((s, r) => s + r.changes_count, 0) / withChanges.length).toFixed(1) + " changes"
+      : "—";
     row1 = [
-      <MetricCard key="q" label="Quality Score" value={qual} accent={scoreAccent(qual)} />,
+      <MetricCard key="q" label="Quality Score" value={qual} accent={qualAccent10(qual)} />,
       <MetricCard key="d" label="Deadline Score" value={dlScore} accent={dlAccent} />,
       <MetricCard key="p" label="Performance Score" value={avgPerf} accent={perfAccent(avgPerf)} />,
     ];
     row2 = [
       <MetricCard key="v" label="Total Videos" value={total} />,
       <MetricCard key="l" label="Total Length" value={`${totalLen} min`} />,
+      <MetricCard key="c" label="Avg Changes" value={avgChanges} />,
     ];
   } else if (dbType === "Thumbnail") {
     const withQ = records.filter(r => r.thumbnail_rating != null);
     const qual = withQ.length > 0
-      ? ((withQ.reduce((s, r) => s + r.thumbnail_rating, 0) / withQ.length) * 20).toFixed(1) + "%"
+      ? (withQ.reduce((s, r) => s + r.thumbnail_rating, 0) / withQ.length).toFixed(1) + "/5"
       : "—";
     row1 = [
-      <MetricCard key="q" label="Quality Score" value={qual} accent={scoreAccent(qual)} />,
+      <MetricCard key="q" label="Quality Score" value={qual} accent={qualAccent5(qual)} />,
       <MetricCard key="d" label="Deadline Score" value={dlScore} accent={dlAccent} />,
       <MetricCard key="p" label="Performance Score" value={avgPerf} accent={perfAccent(avgPerf)} />,
     ];
@@ -117,10 +109,10 @@ function MetricsSection({ records, dbType }) {
   } else if (dbType === "Script") {
     const withQ = records.filter(r => r.script_rating != null);
     const qual = withQ.length > 0
-      ? ((withQ.reduce((s, r) => s + r.script_rating, 0) / withQ.length) * 20).toFixed(1) + "%"
+      ? (withQ.reduce((s, r) => s + r.script_rating, 0) / withQ.length).toFixed(1) + "/5"
       : "—";
     row1 = [
-      <MetricCard key="q" label="Quality Score" value={qual} accent={scoreAccent(qual)} />,
+      <MetricCard key="q" label="Quality Score" value={qual} accent={qualAccent5(qual)} />,
       <MetricCard key="d" label="Deadline Score" value={dlScore} accent={dlAccent} />,
       <MetricCard key="p" label="Performance Score" value={avgPerf} accent={perfAccent(avgPerf)} />,
     ];
@@ -138,7 +130,7 @@ function MetricsSection({ records, dbType }) {
       <p className="text-[#B3B3B3] text-xs uppercase tracking-wider mb-2 font-medium">{dbType}</p>
       <div className="grid grid-cols-3 gap-3 mb-3">{row1}</div>
       {row2.length > 0 && (
-        <div className={`grid gap-3 mb-3`} style={{ gridTemplateColumns: `repeat(${row2.length}, minmax(0,1fr))` }}>
+        <div className="grid gap-3 mb-3" style={{ gridTemplateColumns: `repeat(${row2.length}, minmax(0,1fr))` }}>
           {row2}
         </div>
       )}
@@ -146,34 +138,69 @@ function MetricsSection({ records, dbType }) {
   );
 }
 
-// ── Month Selector ────────────────────────────────────────────────────────────
+// ── Time Period Selector ──────────────────────────────────────────────────────
 
-function MonthSelector({ records, value, onChange }) {
-  const months = useMemo(() => {
-    const s = new Set();
-    records.forEach(r => { const m = getRecordMonth(r); if (m) s.add(m); });
-    return Array.from(s).sort().reverse();
-  }, [records]);
-
-  const cur = currentYM();
-
+function TimePeriodSelector({ value, onChange, customFrom, customTo, onCustomFromChange, onCustomToChange }) {
   return (
-    <div className="flex items-center gap-2">
-      <Calendar size={15} className="text-[#B3B3B3]" />
+    <div className="flex items-center gap-2 flex-wrap">
+      <Calendar size={15} className="text-[#B3B3B3] shrink-0" />
       <select
-        data-testid="month-selector"
+        data-testid="period-selector"
         value={value}
         onChange={e => onChange(e.target.value)}
         className="bg-[#2F2F2F] border border-white/10 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-white/20 appearance-none cursor-pointer"
       >
-        <option value="current">Current Month ({fmtMonth(cur)})</option>
-        {months.filter(m => m !== cur).map(m => (
-          <option key={m} value={m}>{fmtMonth(m)}</option>
-        ))}
+        <option value="current">Current Month</option>
+        <option value="last">Last Month</option>
+        <option value="90days">Last 90 Days</option>
         <option value="all">All Time</option>
+        <option value="custom">Custom</option>
       </select>
+      {value === "custom" && (
+        <>
+          <input
+            type="date"
+            data-testid="custom-from"
+            value={customFrom}
+            onChange={e => onCustomFromChange(e.target.value)}
+            className="bg-[#2F2F2F] border border-white/10 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-white/20"
+          />
+          <span className="text-[#B3B3B3] text-xs">to</span>
+          <input
+            type="date"
+            data-testid="custom-to"
+            value={customTo}
+            onChange={e => onCustomToChange(e.target.value)}
+            className="bg-[#2F2F2F] border border-white/10 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-white/20"
+          />
+        </>
+      )}
     </div>
   );
+}
+
+function filterByPeriod(records, period, customFrom, customTo) {
+  const now = new Date();
+  if (period === "all") return records;
+  if (period === "current") {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return records.filter(r => { const d = new Date(r.due_date || r.updated_at); return !isNaN(d) && d >= start; });
+  }
+  if (period === "last") {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+    return records.filter(r => { const d = new Date(r.due_date || r.updated_at); return !isNaN(d) && d >= start && d <= end; });
+  }
+  if (period === "90days") {
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 90);
+    return records.filter(r => { const d = new Date(r.due_date || r.updated_at); return !isNaN(d) && d >= cutoff; });
+  }
+  if (period === "custom" && customFrom && customTo) {
+    const from = new Date(customFrom);
+    const to = new Date(customTo); to.setHours(23, 59, 59, 999);
+    return records.filter(r => { const d = new Date(r.due_date || r.updated_at); return !isNaN(d) && d >= from && d <= to; });
+  }
+  return records;
 }
 
 // ── Performance View (Level 3) ────────────────────────────────────────────────
@@ -181,7 +208,9 @@ function MonthSelector({ records, value, onChange }) {
 function PerformanceView({ employeeId, employeeName, onBack, showBackLabel }) {
   const [allRecords, setAllRecords] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedMonth, setSelectedMonth] = useState("current");
+  const [selectedPeriod, setSelectedPeriod] = useState("current");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [deadlineFilter, setDeadlineFilter] = useState("all");
@@ -196,15 +225,13 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel }) {
   }, [employeeId]);
 
   // Reset page when filters change
-  useEffect(() => { setPage(1); }, [search, typeFilter, deadlineFilter, selectedMonth]);
+  useEffect(() => { setPage(1); }, [search, typeFilter, deadlineFilter, selectedPeriod, customFrom, customTo]);
 
-  // Records filtered by month only → for metrics
-  const monthRecords = useMemo(() => {
-    if (selectedMonth === "all") return allRecords;
-    const cur = currentYM();
-    const target = selectedMonth === "current" ? cur : selectedMonth;
-    return allRecords.filter(r => getRecordMonth(r) === target);
-  }, [allRecords, selectedMonth]);
+  // Records filtered by period only → for metrics
+  const monthRecords = useMemo(
+    () => filterByPeriod(allRecords, selectedPeriod, customFrom, customTo),
+    [allRecords, selectedPeriod, customFrom, customTo]
+  );
 
   // Records filtered by all filters → for table
   const tableRecords = useMemo(() => {
@@ -268,7 +295,14 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel }) {
           )}
         </div>
         <div className="ml-auto">
-          <MonthSelector records={allRecords} value={selectedMonth} onChange={v => { setSelectedMonth(v); }} />
+          <TimePeriodSelector
+            value={selectedPeriod}
+            onChange={v => setSelectedPeriod(v)}
+            customFrom={customFrom}
+            customTo={customTo}
+            onCustomFromChange={setCustomFrom}
+            onCustomToChange={setCustomTo}
+          />
         </div>
       </div>
 
