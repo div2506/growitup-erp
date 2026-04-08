@@ -879,10 +879,9 @@ export default function PerformancePage() {
 
   useEffect(() => { loadRole(); }, [loadRole]);
 
-  const isAdmin = user?.is_admin;
   const isAdminDept = user?.is_admin || myEmployee?.department_name === "Admin";
-  const isManager = !isAdmin && myManagedTeams.length > 0;
-  const isEmployee = !isAdmin && !isManager && !!myEmployee?.employee_id;
+  const isManager = !isAdminDept && myManagedTeams.length > 0;
+  const isEmployee = !isAdminDept && !isManager && !!myEmployee?.employee_id;
 
   // Breadcrumbs
   const crumbs = ["Performance"];
@@ -913,7 +912,7 @@ export default function PerformancePage() {
         </div>
       </div>
 
-      {isAdmin && (
+      {isAdminDept && (
         <>
           {!selectedTeam && <TeamSelection onSelectTeam={setSelectedTeam} />}
           {selectedTeam && !selectedEmployee && (
@@ -953,7 +952,7 @@ export default function PerformancePage() {
           onBack={null} isAdminDept={isAdminDept} />
       )}
 
-      {!isAdmin && !isManager && !isEmployee && (
+      {!isAdminDept && !isManager && !isEmployee && (
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <BarChart2 size={40} className="text-[#B3B3B3] mb-4" />
           <p className="text-white font-medium text-lg">Performance data unavailable</p>
