@@ -708,7 +708,95 @@ function EmployeeSelection({ teamId, teamName, onSelectEmployee, onBack }) {
   );
 }
 
-// ── Team Selection (Level 1) ──────────────────────────────────────────────────
+// ── Multi-Team Employee Selection (for managers with multiple teams) ──────────
+
+function MultiTeamEmployeeSelection({ teams, onSelectEmployee }) {
+  const [teamEmployees, setTeamEmployees] = useState({}); // { team_id: [emp, ...] }
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!teams || teams.length === 0) { setLoading(false); return; }
+    Promise.all(
+      teams.map(t =>
+        axios.get(`${API}/employees?team_id=${t.team_id}`, { withCredentials: true })
+          .then(r => ({ team_id: t.team_id, employees: r.data }))
+          .catch(() => ({ team_id: t.team_id, employees: [] }))
+      )
+    ).then(results => {
+      const map = {};
+      results.forEach(({ team_id, employees }) => { map[team_id] = employees; });
+      setTeamEmployees(map);
+    }).finally(() => setLoading(false));
+  }, [teams]);
+
+  const totalCount = Object.values(teamEmployees).reduce((s, arr) => s + arr.length, 0);
+  const showTeamHeaders = teams.length > 1;
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h2 className="text-white font-semibold" style={{ fontFamily: "Manrope, sans-serif" }}>
+          {showTeamHeaders ? `My Teams (${teams.length})` : (teams[0]?.team_name || "My Team")}
+        </h2>
+        <p className="text-[#B3B3B3] text-xs mt-0.5">Select an employee to view performance</p>
+      </div>
+
+      {loading ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {[...Array(6)].map((_, i) => <div key={i} className="h-24 bg-[#2F2F2F] rounded-xl animate-pulse border border-white/10" />)}
+        </div>
+      ) : totalCount === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <User size={32} className="text-[#B3B3B3] mb-3" />
+          <p className="text-white font-medium">No employees in your team{teams.length > 1 ? "s" : ""}</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {teams.map(team => {
+            const emps = teamEmployees[team.team_id] || [];
+            if (emps.length === 0) return null;
+            return (
+              <div key={team.team_id}>
+                {/* Team header — only shown when managing multiple teams */}
+                {showTeamHeaders && (
+                  <div className="flex items-center gap-2 mb-3">
+                    <Users size={14} className="text-[#B3B3B3]" />
+                    <span className="text-[#B3B3B3] text-xs font-semibold uppercase tracking-wider">
+                      {team.team_name}
+                    </span>
+                    <span className="text-[#B3B3B3] text-xs">· {emps.length} member{emps.length !== 1 ? "s" : ""}</span>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" data-testid="employee-selection-grid">
+                  {emps.map(emp => (
+                    <button key={emp.employee_id} data-testid="employee-select-card"
+                      onClick={() => onSelectEmployee(emp)}
+                      className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4 text-left hover:border-white/30 hover:-translate-y-0.5 transition-all duration-200 group">
+                      <div className="flex items-center gap-3 mb-2">
+                        {emp.profile_picture ? (
+                          <img src={emp.profile_picture} alt={emp.first_name} className="w-10 h-10 rounded-full object-cover border border-white/20" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white font-bold text-sm border border-white/20">
+                            {emp.first_name?.[0]?.toUpperCase()}{emp.last_name?.[0]?.toUpperCase()}
+                          </div>
+                        )}
+                        <ChevronRight size={16} className="ml-auto text-[#B3B3B3] group-hover:text-white transition-colors" />
+                      </div>
+                      <p className="text-white font-medium text-sm truncate">{emp.first_name} {emp.last_name}</p>
+                      <p className="text-[#B3B3B3] text-xs truncate">{emp.job_position_name || emp.department_name || "—"}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 
 function TeamSelection({ onSelectTeam }) {
   const [teams, setTeams] = useState([]);
@@ -798,6 +886,7 @@ export default function PerformancePage() {
 
   // Breadcrumbs
   const crumbs = ["Performance"];
+  if (isManager && !selectedEmployee) crumbs.push(myManagedTeams.length > 1 ? "My Teams" : (myManagedTeams[0]?.team_name || "My Team"));
   if (selectedTeam) crumbs.push(selectedTeam.team_name);
   if (selectedEmployee) crumbs.push(`${selectedEmployee.first_name} ${selectedEmployee.last_name}`);
 
@@ -843,13 +932,16 @@ export default function PerformancePage() {
       {isManager && (
         <>
           {!selectedEmployee && (
-            <EmployeeSelection teamId={myManagedTeams[0]?.team_id} teamName={myManagedTeams[0]?.team_name || "My Team"}
-              onSelectEmployee={setSelectedEmployee} onBack={null} />
+            <MultiTeamEmployeeSelection
+              teams={myManagedTeams}
+              onSelectEmployee={setSelectedEmployee}
+            />
           )}
           {selectedEmployee && (
             <PerformanceView employeeId={selectedEmployee.employee_id}
               employeeName={`${selectedEmployee.first_name} ${selectedEmployee.last_name}`}
-              onBack={() => setSelectedEmployee(null)} showBackLabel="My Team"
+              onBack={() => setSelectedEmployee(null)}
+              showBackLabel={myManagedTeams.length > 1 ? "My Teams" : (myManagedTeams[0]?.team_name || "My Team")}
               isAdminDept={isAdminDept} />
           )}
         </>
