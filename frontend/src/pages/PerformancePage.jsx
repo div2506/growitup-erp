@@ -351,6 +351,12 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel, isAd
   const totalPages = Math.ceil(tableRecords.length / ITEMS_PER_PAGE);
   const pageRecords = tableRecords.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
 
+  // Only show Video Editing-specific columns when at least one visible record is that type
+  const hasVideoEditing = useMemo(
+    () => tableRecords.some(r => r.database_type === "Video Editing"),
+    [tableRecords]
+  );
+
   // Group month records by database_type for metrics
   const byType = useMemo(() => {
     const g = {};
@@ -508,7 +514,7 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel, isAd
       ) : (
         <>
           <div className="rounded-xl border border-white/10 overflow-hidden overflow-x-auto">
-            <table className="w-full min-w-[960px]" data-testid="performance-table">
+            <table className={`w-full ${hasVideoEditing ? "min-w-[960px]" : "min-w-[720px]"}`} data-testid="performance-table">
               <thead className="bg-[#191919] border-b border-white/10">
                 <tr>
                   <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Task</th>
@@ -516,8 +522,8 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel, isAd
                   <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Due Date</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Deadline</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Ratings</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Changes</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Vid Len</th>
+                  {hasVideoEditing && <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Changes</th>}
+                  {hasVideoEditing && <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Vid Len</th>}
                   <th className="text-center py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Score</th>
                   {isAdminDept && <th className="text-center py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Actions</th>}
                 </tr>
@@ -554,12 +560,16 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel, isAd
                         <StarRating value={record.script_rating} />
                       ) : <span className="text-[#B3B3B3] text-xs">—</span>}
                     </td>
-                    <td className="py-3.5 px-4 text-sm text-[#B3B3B3]">
-                      {record.changes_count != null ? record.changes_count : "—"}
-                    </td>
-                    <td className="py-3.5 px-4 text-sm text-[#B3B3B3]">
-                      {record.database_type === "Video Editing" && record.video_length != null ? `${record.video_length} min` : "—"}
-                    </td>
+                    {hasVideoEditing && (
+                      <td className="py-3.5 px-4 text-sm text-[#B3B3B3]">
+                        {record.database_type === "Video Editing" && record.changes_count != null ? record.changes_count : "—"}
+                      </td>
+                    )}
+                    {hasVideoEditing && (
+                      <td className="py-3.5 px-4 text-sm text-[#B3B3B3]">
+                        {record.database_type === "Video Editing" && record.video_length != null ? `${record.video_length} min` : "—"}
+                      </td>
+                    )}
                     <td className="py-3.5 px-4 text-center"><ScoreBadge score={record.performance_score} /></td>
                     {isAdminDept && (
                       <td className="py-3.5 px-4 text-center">
