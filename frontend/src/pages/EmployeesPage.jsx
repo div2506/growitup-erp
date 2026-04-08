@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { MoreVertical, Plus, Search, User } from "lucide-react";
 import { toast } from "sonner";
 import axios from "axios";
@@ -300,7 +300,6 @@ function SelfProfileModal({ employee: initialEmp, onClose, onSaved }) {
 export default function EmployeesPage() {
   const { user, myEmployee } = useAuth();
   const [employees, setEmployees] = useState([]);
-  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -311,6 +310,7 @@ export default function EmployeesPage() {
   const isAdminDept = user?.is_admin || myEmployee?.department_name === "Admin";
 
   const fetchEmployees = useCallback(async () => {
+    setLoading(true);
     try {
       const { data } = await axios.get(`${API}/employees`, { withCredentials: true });
       setEmployees(data);
@@ -323,19 +323,18 @@ export default function EmployeesPage() {
 
   useEffect(() => { fetchEmployees(); }, [fetchEmployees]);
 
-  useEffect(() => {
-    let result = employees;
-    if (search.trim()) {
-      const sl = search.toLowerCase();
-      result = result.filter(e =>
-        (e.first_name + " " + e.last_name).toLowerCase().includes(sl) ||
-        e.work_email?.toLowerCase().includes(sl) ||
-        e.employee_id?.toLowerCase().includes(sl) ||
-        e.department_name?.toLowerCase().includes(sl) ||
-        e.job_position_name?.toLowerCase().includes(sl)
-      );
-    }
-    setFiltered(result);
+  // Compute filtered list synchronously via useMemo — no separate state,
+  // so there's never a frame where loading=false and filtered=[] at the same time.
+  const filtered = useMemo(() => {
+    if (!search.trim()) return employees;
+    const sl = search.toLowerCase();
+    return employees.filter(e =>
+      (e.first_name + " " + e.last_name).toLowerCase().includes(sl) ||
+      e.work_email?.toLowerCase().includes(sl) ||
+      e.employee_id?.toLowerCase().includes(sl) ||
+      e.department_name?.toLowerCase().includes(sl) ||
+      e.job_position_name?.toLowerCase().includes(sl)
+    );
   }, [employees, search]);
 
   const handleCardClick = (emp) => {
@@ -376,7 +375,9 @@ export default function EmployeesPage() {
           <h1 className="text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
             Employees
           </h1>
-          <p className="text-[#B3B3B3] text-sm mt-0.5">{filtered.length} total</p>
+          <p className="text-[#B3B3B3] text-sm mt-0.5">
+            {loading ? "Loading..." : `${filtered.length} total`}
+          </p>
         </div>
       </div>
 
