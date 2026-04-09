@@ -38,10 +38,12 @@ function AppRouter() {
 }
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID || "placeholder";
+
 function App() {
   return (
     <div className="App">
-      <GoogleOAuthProvider clientId={process.env.REACT_APP_GOOGLE_CLIENT_ID}>
+      <GoogleOAuthProvider clientId={googleClientId}>
         <BrowserRouter>
           <AuthProvider>
             <AppRouter />
