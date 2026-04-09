@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { Plus, Pencil, Trash2, Building2, Briefcase, Users, Database, Lock, ExternalLink } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Plus, Pencil, Trash2, Building2, Briefcase, Users, Database, Lock, ExternalLink, Upload, FileJson } from "lucide-react";
 import { toast } from "sonner";
 import axios from "axios";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import DeleteConfirm from "@/components/DeleteConfirm";
+import { useAuth } from "@/contexts/AuthContext";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const DB_TYPES = ["Video Editing", "Thumbnail", "Script"];
@@ -722,14 +723,165 @@ function NotionIntegrationTab() {
   );
 }
 
+// ================== DATA IMPORT TAB ==================
+function DataImportTab() {
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState("");
+  const fileInputRef = useRef(null);
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (!file.name.endsWith(".json")) {
+        toast.error("Only .json files are accepted");
+        return;
+      }
+      setSelectedFile(file);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!selectedFile) return;
+    setImporting(true);
+    setProgress("Validating...");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      setProgress("Processing...");
+      await new Promise(r => setTimeout(r, 300));
+      setProgress("Importing...");
+
+      const response = await fetch(`${API}/import/performance`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        toast.error(`Error: ${data.detail || "Import failed"}`);
+      } else {
+        toast.success(`Successfully imported ${data.imported} documents${data.skipped > 0 ? `, skipped ${data.skipped} duplicates` : ""}`);
+        setSelectedFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    } catch {
+      toast.error("Error: Failed to connect to server");
+    } finally {
+      setImporting(false);
+      setProgress("");
+    }
+  };
+
+  const formatSize = (bytes) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  return (
+    <div className="max-w-lg">
+      <div className="mb-5">
+        <h2 className="text-white text-base font-semibold" style={{ fontFamily: "Manrope, sans-serif" }}>
+          Import Performance Data
+        </h2>
+        <p className="text-[#B3B3B3] text-xs mt-1">
+          Upload a JSON file containing performance data. File must be a JSON array with performance records.
+        </p>
+      </div>
+
+      <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-6 space-y-5">
+        {/* File Upload Area */}
+        <div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleFileChange}
+            className="hidden"
+            id="json-file-input"
+            data-testid="json-file-input"
+          />
+          <label htmlFor="json-file-input">
+            <div
+              data-testid="file-upload-area"
+              className="border border-dashed border-white/20 rounded-lg p-8 text-center cursor-pointer hover:border-white/40 hover:bg-white/5 transition-all"
+            >
+              <FileJson size={28} className="text-[#B3B3B3] mx-auto mb-3" />
+              <p className="text-white text-sm font-medium mb-1">Choose File</p>
+              <p className="text-[#B3B3B3] text-xs">Click to browse or drag and drop</p>
+              <p className="text-[#B3B3B3] text-[10px] mt-1">Accepts .json files only</p>
+            </div>
+          </label>
+        </div>
+
+        {/* Selected File Info */}
+        {selectedFile && (
+          <div data-testid="selected-file-info" className="flex items-center gap-3 bg-[#191919] rounded-lg px-4 py-3 border border-white/10">
+            <FileJson size={18} className="text-blue-400 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-white text-sm truncate">{selectedFile.name}</p>
+              <p className="text-[#B3B3B3] text-xs">{formatSize(selectedFile.size)}</p>
+            </div>
+            <button
+              onClick={() => {
+                setSelectedFile(null);
+                if (fileInputRef.current) fileInputRef.current.value = "";
+              }}
+              className="text-[#B3B3B3] hover:text-red-400 transition-colors text-xs px-2 py-1 rounded hover:bg-red-400/10"
+              data-testid="remove-file-button"
+            >
+              Remove
+            </button>
+          </div>
+        )}
+
+        {/* Progress */}
+        {importing && progress && (
+          <div data-testid="import-progress" className="flex items-center gap-3 text-[#B3B3B3] text-sm">
+            <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin shrink-0" />
+            {progress}
+          </div>
+        )}
+
+        {/* Import Button */}
+        <button
+          data-testid="import-button"
+          onClick={handleImport}
+          disabled={!selectedFile || importing}
+          className="w-full flex items-center justify-center gap-2 bg-[#E53935] hover:bg-[#F44336] text-white rounded-lg px-4 py-2.5 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Upload size={15} />
+          {importing ? "Importing..." : "Import"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
 // ================== MAIN SETTINGS PAGE ==================
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("departments");
+  const { myEmployee } = useAuth();
+  const isAdmin = myEmployee?.department_name?.toLowerCase() === "admin";
 
   useEffect(() => {
     // Auto-run seed-v2 to update is_system flags on existing data
     axios.post(`${API}/seed-v2`, {}, { withCredentials: true }).catch(() => {});
   }, []);
+
+  const tabs = [
+    { val: "departments", label: "Departments", icon: Building2 },
+    { val: "job-positions", label: "Job Positions", icon: Briefcase },
+    { val: "teams", label: "Teams", icon: Users },
+    { val: "notion", label: "Notion Integration", icon: Database },
+    ...(isAdmin ? [{ val: "data-import", label: "Data Import", icon: Upload }] : []),
+  ];
 
   return (
     <div className="p-8">
@@ -740,12 +892,7 @@ export default function SettingsPage() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="bg-[#191919] border border-white/10 p-1 rounded-lg mb-6 h-auto flex gap-1 w-fit">
-          {[
-            { val: "departments", label: "Departments", icon: Building2 },
-            { val: "job-positions", label: "Job Positions", icon: Briefcase },
-            { val: "teams", label: "Teams", icon: Users },
-            { val: "notion", label: "Notion Integration", icon: Database },
-          ].map(({ val, label, icon: Icon }) => (
+          {tabs.map(({ val, label, icon: Icon }) => (
             <TabsTrigger key={val} value={val} data-testid={`settings-tab-${val}`}
               className="data-[state=active]:bg-[#2F2F2F] data-[state=active]:text-white text-[#B3B3B3] rounded-md px-4 py-2 text-sm flex items-center gap-2 transition-all">
               <Icon size={15} />{label}
@@ -757,6 +904,9 @@ export default function SettingsPage() {
         <TabsContent value="job-positions"><JobPositionsTab /></TabsContent>
         <TabsContent value="teams"><TeamsTab /></TabsContent>
         <TabsContent value="notion"><NotionIntegrationTab /></TabsContent>
+        {isAdmin && (
+          <TabsContent value="data-import"><DataImportTab /></TabsContent>
+        )}
       </Tabs>
     </div>
   );

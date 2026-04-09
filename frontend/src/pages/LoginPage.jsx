@@ -109,10 +109,7 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
             GrowItUp
           </h1>
-          <p className="text-[#B3B3B3] text-sm mt-1">Employee Management System</p>
         </div>
-
-        <div className="border-t border-white/10 mb-8" />
 
         <div className="text-center mb-6">
           <p className="text-[#B3B3B3] text-sm">Sign in with your company Google account</p>

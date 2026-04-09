@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, UploadFile, File
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 import logging
+import json
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -162,7 +163,7 @@ async def google_login(body: GoogleAuth, response: Response):
             {"work_email": {"$regex": f"^{email}$", "$options": "i"}}, {"_id": 0}
         )
         if not employee:
-            raise HTTPException(403, "Access denied. Your email is not registered in the system.")
+            raise HTTPException(403, "You are not registered in the system. Please contact your HR department to get access.")
 
     existing = await db.users.find_one({"email": email}, {"_id": 0})
     if existing:
@@ -1099,7 +1100,7 @@ async def get_performance(
         query["team_id"] = team_id
     if employee_id:
         query["employee_id"] = employee_id
-    data = await db.performance_data.find(query, {"_id": 0}).sort("updated_at", -1).to_list(10000)
+    data = await db.performance_data.find(query, {"_id": 0}).sort("due_date", -1).to_list(10000)
     return data
 
 
@@ -1475,6 +1476,183 @@ async def seed_data():
 @api_router.get("/")
 async def root():
     return {"message": "GrowItUp Employee Management API"}
+
+
+# ===================== DATA IMPORT =====================
+
+VALID_DATABASE_TYPES = {"Video Editing", "Thumbnail", "Script"}
+ISO_DATE_RE = re.compile(
+    r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$'
+)
+
+REQUIRED_FIELDS_BASE = [
+    "page_id", "title", "page_url", "assignee_name", "employee_id",
+    "team_id", "database_type", "task_type", "due_date", "moved_to_review",
+    "status", "deadline_status", "performance_score", "created_at", "updated_at"
+]
+
+DB_TYPE_REQUIRED = {
+    "Video Editing": ["intro_rating", "overall_rating", "changes_count"],
+    "Thumbnail": ["thumbnail_rating"],
+    "Script": ["script_rating"],
+}
+
+
+def validate_iso_date(value: str) -> bool:
+    """Accept ISO 8601 strings like 2026-01-02T13:00:00.000+05:30"""
+    if not isinstance(value, str):
+        return False
+    return bool(ISO_DATE_RE.match(value))
+
+
+@api_router.post("/import/performance")
+async def import_performance_data(request: Request, file: UploadFile = File(...)):
+    user = await get_current_user(request)
+
+    # Access control: only Admin department employees can import
+    email = user.get("email", "")
+    emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}}, {"_id": 0}
+    )
+    # Allow admin system user or Admin dept employees
+    is_system_admin = email.lower() == ADMIN_EMAIL.lower()
+    is_admin_dept = emp and emp.get("department_name", "").strip().lower() == "admin"
+    if not is_system_admin and not is_admin_dept:
+        raise HTTPException(403, "Only Admin department employees can import data")
+
+    # Read and parse file
+    content = await file.read()
+    try:
+        records = json.loads(content)
+    except Exception:
+        raise HTTPException(400, "Invalid file format. Please upload a valid JSON file.")
+
+    if not isinstance(records, list):
+        raise HTTPException(400, "Invalid file format. Please upload a valid JSON file.")
+
+    if len(records) == 0:
+        raise HTTPException(400, "JSON array is empty. Nothing to import.")
+
+    # Pre-load valid employee_ids and team_ids
+    all_emp_ids = set(
+        e["employee_id"] for e in
+        await db.employees.find({}, {"_id": 0, "employee_id": 1}).to_list(10000)
+    )
+    all_team_ids = set(
+        t["team_id"] for t in
+        await db.teams.find({}, {"_id": 0, "team_id": 1}).to_list(10000)
+    )
+
+    # Validate all records first (fail entirely on first error)
+    for idx, doc in enumerate(records):
+        if not isinstance(doc, dict):
+            raise HTTPException(400, f"Document at index {idx} is not an object.")
+
+        # Check base required fields
+        for field in REQUIRED_FIELDS_BASE:
+            if field not in doc or doc[field] is None:
+                raise HTTPException(400, f"Document at index {idx} is missing required field: {field}")
+
+        # Validate database_type
+        db_type = doc.get("database_type", "")
+        if db_type not in VALID_DATABASE_TYPES:
+            raise HTTPException(400, "Database type must be 'Video Editing', 'Thumbnail', or 'Script'")
+
+        # Validate database-type specific fields
+        for field in DB_TYPE_REQUIRED.get(db_type, []):
+            if field not in doc or doc[field] is None:
+                raise HTTPException(400, f"Document at index {idx} is missing required field: {field}")
+
+        # Validate employee_id
+        emp_id_val = doc.get("employee_id", "")
+        if emp_id_val not in all_emp_ids:
+            raise HTTPException(400, f"Employee ID {emp_id_val} not found in system")
+
+        # Validate team_id
+        team_id_val = doc.get("team_id", "")
+        if team_id_val not in all_team_ids:
+            raise HTTPException(400, f"Team ID {team_id_val} not found in system")
+
+        # Validate date fields (strict ISO 8601 with timezone)
+        for date_field in ["due_date", "moved_to_review", "created_at", "updated_at"]:
+            val = doc.get(date_field)
+            if val is not None and not validate_iso_date(str(val)):
+                raise HTTPException(400, f"Invalid date format for {date_field} at document index {idx}")
+
+        # Validate performance_score is a number 0-10
+        score = doc.get("performance_score")
+        if score is not None:
+            try:
+                score_f = float(score)
+                if not (0 <= score_f <= 10):
+                    raise HTTPException(400, f"performance_score at index {idx} must be between 0 and 10")
+            except (TypeError, ValueError):
+                raise HTTPException(400, f"performance_score at index {idx} must be a number")
+
+    # Collect existing page_ids (normalize: strip dashes to match webhook-generated IDs)
+    existing_docs = await db.performance_data.find({}, {"_id": 0, "page_id": 1}).to_list(100000)
+    existing_page_ids = set()
+    for d in existing_docs:
+        pid = d.get("page_id", "")
+        if pid:
+            existing_page_ids.add(pid)
+            existing_page_ids.add(pid.replace("-", ""))
+
+    # Separate new vs duplicate records
+    to_insert = []
+    skipped = 0
+
+    for doc in records:
+        raw_pid = str(doc.get("page_id", ""))
+        norm_pid = raw_pid.replace("-", "")
+
+        if raw_pid in existing_page_ids or norm_pid in existing_page_ids:
+            skipped += 1
+            continue
+
+        # Build insert document
+        insert_doc = {
+            "page_id": raw_pid,
+            "title": doc.get("title"),
+            "page_url": doc.get("page_url"),
+            "assignee_name": doc.get("assignee_name"),
+            "employee_id": doc.get("employee_id"),
+            "team_id": doc.get("team_id"),
+            "database_type": doc.get("database_type"),
+            "task_type": doc.get("task_type"),
+            "due_date": doc.get("due_date"),
+            "moved_to_review": doc.get("moved_to_review"),
+            "status": doc.get("status"),
+            "deadline_status": doc.get("deadline_status"),
+            "performance_score": doc.get("performance_score"),
+            "intro_rating": doc.get("intro_rating"),
+            "overall_rating": doc.get("overall_rating"),
+            "changes_count": doc.get("changes_count"),
+            "thumbnail_rating": doc.get("thumbnail_rating"),
+            "script_rating": doc.get("script_rating"),
+            "video_length": doc.get("video_length"),
+            "created_at": doc.get("created_at"),
+            "updated_at": doc.get("updated_at"),
+        }
+        # Set perf_id for consistency with webhook-generated records
+        emp_id_val = doc.get("employee_id", "")
+        insert_doc["perf_id"] = f"{norm_pid}_{emp_id_val}"
+
+        to_insert.append(insert_doc)
+        # Track within-batch duplicates
+        existing_page_ids.add(raw_pid)
+        existing_page_ids.add(norm_pid)
+
+    imported = 0
+    if to_insert:
+        await db.performance_data.insert_many(to_insert, ordered=False)
+        imported = len(to_insert)
+
+    return {
+        "imported": imported,
+        "skipped": skipped,
+        "message": f"Imported {imported} new documents, skipped {skipped} duplicates"
+    }
 
 
 app.include_router(api_router)
