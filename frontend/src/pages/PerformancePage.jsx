@@ -6,6 +6,7 @@ import {
   Search, Calendar, Pencil, Trash2, TrendingUp
 } from "lucide-react";
 import DeleteConfirm from "@/components/DeleteConfirm";
+import UpgradeLevelModal from "@/components/UpgradeLevelModal";
 import { toast } from "sonner";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -307,6 +308,7 @@ function EditModal({ record, onClose, onSaved }) {
 // ── Performance View (Level 3) ────────────────────────────────────────────────
 
 function PerformanceView({ employeeId, employeeName, onBack, showBackLabel, isAdminDept }) {
+  const { myEmployee } = useAuth();
   const [allRecords, setAllRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState("current");
@@ -318,6 +320,7 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel, isAd
   const [page, setPage] = useState(1);
   const [editRecord, setEditRecord] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const loadRecords = useCallback(() => {
     setLoading(true);
@@ -433,6 +436,7 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel, isAd
           <button
             data-testid="upgrade-level-btn"
             disabled={!upgradeEnabled}
+            onClick={() => upgradeEnabled && setShowUpgradeModal(true)}
             title={avg90 !== null ? `90-day avg: ${avg90.toFixed(1)}/10 (need ≥ 7 to upgrade)` : "Not enough data in last 90 days"}
             className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
               upgradeEnabled
@@ -652,6 +656,14 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel, isAd
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      {/* Upgrade Level Modal */}
+      {showUpgradeModal && myEmployee && (
+        <UpgradeLevelModal
+          employee={myEmployee}
+          onClose={() => setShowUpgradeModal(false)}
+        />
+      )}
     </div>
   );
 }
