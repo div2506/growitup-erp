@@ -101,3 +101,103 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: "Test the 'Upgrade Your Level' popup feature on the Performance page"
+
+frontend:
+  - task: "Upgrade Your Level Modal - UI Components"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/UpgradeLevelModal.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Modal opens successfully. Employee Information section displays correctly with read-only fields (Name: Admin GrowItUp, Employee ID: GM001, Job Position: Director/CEO/COO, Current Level: No Level). Level dropdown shows correct 4 options for null level (Beginner, Intermediate, Advanced, Manager). Month dropdown shows 12 months in correct format with proper first month logic. Submit button state changes correctly based on selections. Cancel button closes modal without submission."
+  
+  - task: "Upgrade Your Level Modal - Level Dropdown Logic"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/UpgradeLevelModal.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Level dropdown logic working correctly. For employee with null level, shows all 4 options: Beginner, Intermediate, Advanced, Manager (Growth Expert). Dropdown is marked as required (*). Selection is displayed correctly after choosing an option."
+  
+  - task: "Upgrade Your Level Modal - Month Dropdown Logic"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/UpgradeLevelModal.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Month dropdown logic working correctly. Shows 12 months in 'Month Year' format. First month logic correct: if day <= 5, shows current month; if day > 5, shows next month. Tested on day 26, correctly showed May 2026 as first month. Dropdown is marked as required (*)."
+  
+  - task: "Upgrade Your Level Modal - Form Submission to Slack"
+    implemented: true
+    working: false
+    file: "/app/frontend/src/components/UpgradeLevelModal.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: false
+          agent: "testing"
+          comment: "CRITICAL ISSUE: Slack webhook submission fails due to CORS policy. Browser blocks the request to YOUR_SLACK_WEBHOOK_URL with error: 'Response to preflight request doesn't pass access control check'. This is a fundamental limitation of calling external webhooks directly from browser. SOLUTION REQUIRED: Create a backend proxy endpoint (e.g., POST /api/upgrade-level-request) that receives the form data and forwards it to Slack webhook. This is the standard pattern for webhook integrations in web applications."
+  
+  - task: "Upgrade Your Level Button - Visibility and Enable Logic"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/pages/PerformancePage.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Button is visible on Performance page with correct enable/disable logic. Button is enabled when 90-day average performance score >= 7. Tested with 5 performance records (scores 8.5-9.3) within last 90 days, button was correctly enabled. Button shows 90-day average score in tooltip."
+
+backend:
+  - task: "Performance Data API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Performance data API working correctly. GET /api/performance?employee_id=GM001 returns performance records. Data is used to calculate 90-day average for button enable logic."
+
+metadata:
+  created_by: "testing_agent"
+  version: "1.0"
+  test_sequence: 1
+  run_ui: true
+  test_date: "2026-04-26"
+
+test_plan:
+  current_focus:
+    - "Upgrade Your Level Modal - Form Submission to Slack"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "testing"
+      message: "Completed comprehensive testing of Upgrade Your Level modal feature. All UI components and logic working correctly. CRITICAL ISSUE FOUND: Slack webhook submission fails due to CORS policy - this is a fundamental browser security limitation. The feature cannot work as currently implemented. A backend proxy endpoint is required to forward the request to Slack. See detailed findings in status_history."
+    
+    - agent: "testing"
+      message: "SETUP NOTES: Created frontend/.env file with REACT_APP_BACKEND_URL=http://localhost:8001 (was missing, causing CORS errors). Created test data: user session, employee record (GM001), and 5 performance records with scores >= 8.5 to enable the Upgrade button. Created Test Team and added admin to it to access Performance view."
+    
+    - agent: "testing"
+      message: "TEST RESULTS SUMMARY: ✅ TC1-TC6 PASSED (Modal UI, Employee Info, Level Dropdown, Month Dropdown, Submit Button State, Cancel Button). ❌ TC7 FAILED (Form Submission - CORS error). ⚠ TC8 SKIPPED (Cannot verify Slack message due to TC7 failure). ⚠ TC9 SKIPPED (Error handling requires mocking)."
