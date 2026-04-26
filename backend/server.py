@@ -1655,6 +1655,62 @@ async def import_performance_data(request: Request, file: UploadFile = File(...)
     }
 
 
+# ===================== UPGRADE LEVEL REQUEST =====================
+
+class UpgradeLevelRequest(BaseModel):
+    employee_id: str
+    employee_name: str
+    job_position: str
+    current_level: str
+    requested_level: str
+    exam_month: str
+
+@api_router.post("/upgrade-level-request")
+async def submit_upgrade_request(body: UpgradeLevelRequest, request: Request):
+    user = await get_current_user(request)
+    
+    # Verify the request is for the logged-in user's employee
+    if user.get("is_admin"):
+        # Admin can submit for any employee
+        pass
+    else:
+        # Non-admin can only submit for their own employee record
+        my_emp = await db.employees.find_one(
+            {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+        )
+        if not my_emp or my_emp.get("employee_id") != body.employee_id:
+            raise HTTPException(403, "You can only submit upgrade requests for yourself")
+    
+    # Format Slack message
+    today = datetime.now(timezone.utc)
+    request_date = today.strftime("%B %d, %Y")
+    
+    slack_message = {
+        "text": f"🎓 Level Upgrade Request\n\nName: {body.employee_name}\nEmployee ID: {body.employee_id}\nCurrent Position: {body.job_position}\nCurrent Level: {body.current_level}\nRequested Exam Level: {body.requested_level}\nExam Month: {body.exam_month}\nRequest Date: {request_date}"
+    }
+    
+    # Send to Slack webhook
+    slack_webhook_url = "YOUR_SLACK_WEBHOOK_URL"
+    
+    try:
+        response = http_requests.post(
+            slack_webhook_url,
+            json=slack_message,
+            headers={"Content-Type": "application/json"},
+            timeout=10
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Slack webhook failed: {response.status_code} - {response.text}")
+            raise HTTPException(500, "Failed to submit upgrade request")
+        
+        return {"message": "Upgrade request submitted successfully"}
+    
+    except http_requests.exceptions.RequestException as e:
+        logger.error(f"Slack webhook error: {str(e)}")
+        raise HTTPException(500, "Failed to submit upgrade request")
+
+
 app.include_router(api_router)
 
 # Custom CORS middleware that always reflects the request Origin back.

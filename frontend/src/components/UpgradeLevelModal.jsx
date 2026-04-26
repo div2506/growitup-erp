@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { TrendingUp } from "lucide-react";
 
-const SLACK_WEBHOOK_URL = "YOUR_SLACK_WEBHOOK_URL";
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const labelCls = "text-[#B3B3B3] text-sm";
 const infoCls = "bg-[#191919] border border-white/10 text-white text-sm rounded-lg px-3 py-2";
@@ -66,38 +66,32 @@ export default function UpgradeLevelModal({ employee, onClose }) {
     }
 
     setSubmitting(true);
-    
-    const today = new Date();
-    const requestDate = today.toLocaleDateString('en-US', { 
-      month: 'long', 
-      day: 'numeric', 
-      year: 'numeric' 
-    });
 
-    const message = {
-      text: `🎓 Level Upgrade Request
-
-Name: ${employee.first_name} ${employee.last_name}
-Employee ID: ${employee.employee_id}
-Current Position: ${employee.job_position_name}
-Current Level: ${employee.level || "No Level"}
-Requested Exam Level: ${selectedLevel}
-Exam Month: ${selectedMonth}
-Request Date: ${requestDate}`
+    const requestData = {
+      employee_id: employee.employee_id,
+      employee_name: `${employee.first_name} ${employee.last_name}`,
+      job_position: employee.job_position_name,
+      current_level: employee.level || "No Level",
+      requested_level: selectedLevel,
+      exam_month: selectedMonth
     };
 
     try {
-      const response = await fetch(SLACK_WEBHOOK_URL, {
+      const response = await fetch(`${API}/upgrade-level-request`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(message)
+        headers: { 
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify(requestData)
       });
 
       if (response.ok) {
         toast.success("✅ Upgrade request submitted successfully!");
         onClose();
       } else {
-        throw new Error('Slack API error');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Submission failed');
       }
     } catch (error) {
       toast.error("❌ Failed to submit request. Please try again.");
