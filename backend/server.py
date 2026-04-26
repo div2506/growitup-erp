@@ -1689,8 +1689,12 @@ async def submit_upgrade_request(body: UpgradeLevelRequest, request: Request):
         "text": f"🎓 Level Upgrade Request\n\nName: {body.employee_name}\nEmployee ID: {body.employee_id}\nCurrent Position: {body.job_position}\nCurrent Level: {body.current_level}\nRequested Exam Level: {body.requested_level}\nExam Month: {body.exam_month}\nRequest Date: {request_date}"
     }
     
-    # Send to Slack webhook
-    slack_webhook_url = "YOUR_SLACK_WEBHOOK_URL"
+    # Send to Slack webhook - URL should be set in environment variable SLACK_WEBHOOK_URL
+    # Default fallback for backward compatibility
+    slack_webhook_url = os.environ.get(
+        'SLACK_WEBHOOK_URL',
+        'YOUR_SLACK_WEBHOOK_URL'
+    )
     
     try:
         response = http_requests.post(
