@@ -3,11 +3,12 @@ import axios from "axios";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   ChevronRight, ChevronLeft, ExternalLink, Users, User, BarChart2,
-  Search, Calendar, Pencil, Trash2, TrendingUp
+  Search, Calendar, Pencil, Trash2, TrendingUp, Trophy
 } from "lucide-react";
 import DeleteConfirm from "@/components/DeleteConfirm";
 import UpgradeLevelModal from "@/components/UpgradeLevelModal";
 import CreativeTeamOfMonth from "@/components/CreativeTeamOfMonth";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -881,50 +882,40 @@ function TeamSelection({ onSelectTeam }) {
 function EmployeePerformanceWithTabs({ myEmployee, isAdminDept }) {
   const [activeTab, setActiveTab] = useState("performance");
 
+  const tabs = [
+    { val: "performance", label: "My Performance", icon: BarChart2 },
+    { val: "team-of-month", label: "Creative Team of the Month", icon: Trophy },
+  ];
+
   return (
     <div>
-      {/* Tab Navigation */}
-      <div className="flex gap-2 mb-6 border-b border-white/10">
-        <button
-          onClick={() => setActiveTab("performance")}
-          className={`px-4 py-2 text-sm font-medium transition-colors relative ${
-            activeTab === "performance"
-              ? "text-white"
-              : "text-[#B3B3B3] hover:text-white"
-          }`}
-        >
-          My Performance
-          {activeTab === "performance" && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white"></div>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab("team-of-month")}
-          className={`px-4 py-2 text-sm font-medium transition-colors relative ${
-            activeTab === "team-of-month"
-              ? "text-white"
-              : "text-[#B3B3B3] hover:text-white"
-          }`}
-        >
-          Creative Team of the Month
-          {activeTab === "team-of-month" && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white"></div>
-          )}
-        </button>
-      </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="bg-[#191919] border border-white/10 p-1 rounded-lg mb-6 h-auto flex gap-1 w-fit">
+          {tabs.map(({ val, label, icon: Icon }) => (
+            <TabsTrigger
+              key={val}
+              value={val}
+              className="data-[state=active]:bg-[#2F2F2F] data-[state=active]:text-white text-[#B3B3B3] rounded-md px-4 py-2 text-sm flex items-center gap-2 transition-all"
+            >
+              <Icon size={15} />{label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
-      {/* Tab Content */}
-      {activeTab === "performance" ? (
-        <PerformanceView
-          employeeId={myEmployee.employee_id}
-          employeeName={`${myEmployee.first_name} ${myEmployee.last_name}`}
-          employee={myEmployee}
-          onBack={null}
-          isAdminDept={isAdminDept}
-        />
-      ) : (
-        <CreativeTeamOfMonth />
-      )}
+        <TabsContent value="performance">
+          <PerformanceView
+            employeeId={myEmployee.employee_id}
+            employeeName={`${myEmployee.first_name} ${myEmployee.last_name}`}
+            employee={myEmployee}
+            onBack={null}
+            isAdminDept={isAdminDept}
+          />
+        </TabsContent>
+
+        <TabsContent value="team-of-month">
+          <CreativeTeamOfMonth />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -934,62 +925,52 @@ function EmployeePerformanceWithTabs({ myEmployee, isAdminDept }) {
 function AdminManagerLanding({ isAdminDept, myEmployee, onViewTeamPerformance }) {
   const [activeTab, setActiveTab] = useState("team-of-month");
 
+  const tabs = [
+    { val: "team-of-month", label: "Creative Team of the Month", icon: Trophy },
+    { val: "my-performance", label: "My Performance", icon: BarChart2 },
+    { val: "view-teams", label: "View Team Members", icon: Users },
+  ];
+
   return (
     <div>
-      {/* Tab Navigation */}
-      <div className="flex gap-2 mb-6 border-b border-white/10">
-        <button
-          onClick={() => setActiveTab("team-of-month")}
-          className={`px-4 py-2 text-sm font-medium transition-colors relative ${
-            activeTab === "team-of-month"
-              ? "text-white"
-              : "text-[#B3B3B3] hover:text-white"
-          }`}
-        >
-          Creative Team of the Month
-          {activeTab === "team-of-month" && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white"></div>
-          )}
-        </button>
-        <button
-          onClick={() => { setActiveTab("my-performance"); if (myEmployee) {} }}
-          className={`px-4 py-2 text-sm font-medium transition-colors relative ${
-            activeTab === "my-performance"
-              ? "text-white"
-              : "text-[#B3B3B3] hover:text-white"
-          }`}
-        >
-          My Performance
-          {activeTab === "my-performance" && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white"></div>
-          )}
-        </button>
-        <button
-          onClick={() => { setActiveTab("view-teams"); if (onViewTeamPerformance) onViewTeamPerformance(); }}
-          className={`px-4 py-2 text-sm font-medium transition-colors relative ${
-            activeTab === "view-teams"
-              ? "text-white"
-              : "text-[#B3B3B3] hover:text-white"
-          }`}
-        >
-          View Team Members
-          {activeTab === "view-teams" && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white"></div>
-          )}
-        </button>
-      </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="bg-[#191919] border border-white/10 p-1 rounded-lg mb-6 h-auto flex gap-1 w-fit">
+          {tabs.map(({ val, label, icon: Icon }) => (
+            <TabsTrigger
+              key={val}
+              value={val}
+              onClick={() => {
+                if (val === "view-teams" && onViewTeamPerformance) {
+                  onViewTeamPerformance();
+                }
+              }}
+              className="data-[state=active]:bg-[#2F2F2F] data-[state=active]:text-white text-[#B3B3B3] rounded-md px-4 py-2 text-sm flex items-center gap-2 transition-all"
+            >
+              <Icon size={15} />{label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
-      {/* Tab Content */}
-      {activeTab === "team-of-month" && <CreativeTeamOfMonth />}
-      {activeTab === "my-performance" && myEmployee && (
-        <PerformanceView
-          employeeId={myEmployee.employee_id}
-          employeeName={`${myEmployee.first_name} ${myEmployee.last_name}`}
-          employee={myEmployee}
-          onBack={null}
-          isAdminDept={isAdminDept}
-        />
-      )}
+        <TabsContent value="team-of-month">
+          <CreativeTeamOfMonth />
+        </TabsContent>
+
+        <TabsContent value="my-performance">
+          {myEmployee && (
+            <PerformanceView
+              employeeId={myEmployee.employee_id}
+              employeeName={`${myEmployee.first_name} ${myEmployee.last_name}`}
+              employee={myEmployee}
+              onBack={null}
+              isAdminDept={isAdminDept}
+            />
+          )}
+        </TabsContent>
+
+        <TabsContent value="view-teams">
+          {/* This will be handled by onClick to trigger onViewTeamPerformance */}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
