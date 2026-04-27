@@ -922,14 +922,21 @@ function EmployeePerformanceWithTabs({ myEmployee, isAdminDept }) {
 
 // ── Admin/Manager Landing with Tabs ────────────────────────────────────────
 
-function AdminManagerLanding({ isAdminDept, myEmployee, onViewTeamPerformance, myManagedTeams }) {
+function AdminManagerLanding({ 
+  isAdminDept, 
+  myEmployee, 
+  myManagedTeams,
+  // Admin drill-down state lifted from PerformancePage so breadcrumbs stay in sync
+  adminSelectedTeam,
+  setAdminSelectedTeam,
+  adminSelectedEmployee,
+  setAdminSelectedEmployee,
+}) {
   // Determine if user is manager (has managed teams) vs admin
   const isManager = myManagedTeams && myManagedTeams.length > 0;
 
-  // Default to "team-performance" for managers (shows their team members);
-  // for admins (no teams) default to "team-of-month" since clicking team-performance
-  // auto-navigates and its content area is empty.
-  const [activeTab, setActiveTab] = useState(isManager ? "team-performance" : "team-of-month");
+  // Default tab = first tab (Team Performance / My Team Performance) for all roles.
+  const [activeTab, setActiveTab] = useState("team-performance");
   const [selectedEmployeeFromTab, setSelectedEmployeeFromTab] = useState(null);
 
   // Build tabs based on role — Team Performance is the FIRST tab,
@@ -937,16 +944,14 @@ function AdminManagerLanding({ isAdminDept, myEmployee, onViewTeamPerformance, m
   const tabs = [];
 
   if (isAdminDept && !isManager) {
-    // Admin (no teams): Team Performance (navigates to team selection) + Creative Team
     tabs.push({ val: "team-performance", label: "Team Performance", icon: BarChart2 });
   } else if (isManager) {
-    // Manager (has teams): My Team Performance (shows their team members) + Creative Team
     tabs.push({ val: "team-performance", label: "My Team Performance", icon: Users });
   }
 
   tabs.push({ val: "team-of-month", label: "Creative Team of the Month", icon: Trophy });
 
-  // If an employee is selected from the team members view, show their performance
+  // Manager: if employee selected via tab, show their performance view
   if (selectedEmployeeFromTab) {
     return (
       <PerformanceView
@@ -960,6 +965,20 @@ function AdminManagerLanding({ isAdminDept, myEmployee, onViewTeamPerformance, m
     );
   }
 
+  // Admin: if drilled into a specific employee, show performance view (full screen)
+  if (isAdminDept && !isManager && adminSelectedTeam && adminSelectedEmployee) {
+    return (
+      <PerformanceView
+        employeeId={adminSelectedEmployee.employee_id}
+        employeeName={`${adminSelectedEmployee.first_name} ${adminSelectedEmployee.last_name}`}
+        employee={adminSelectedEmployee}
+        onBack={() => setAdminSelectedEmployee(null)}
+        showBackLabel={adminSelectedTeam.team_name}
+        isAdminDept={isAdminDept}
+      />
+    );
+  }
+
   return (
     <div>
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -968,12 +987,6 @@ function AdminManagerLanding({ isAdminDept, myEmployee, onViewTeamPerformance, m
             <TabsTrigger
               key={val}
               value={val}
-              onClick={() => {
-                // For admin's "Team Performance" tab, trigger team selection navigation
-                if (val === "team-performance" && isAdminDept && !isManager && onViewTeamPerformance) {
-                  onViewTeamPerformance();
-                }
-              }}
               className="data-[state=active]:bg-[#2F2F2F] data-[state=active]:text-white text-[#B3B3B3] rounded-md px-4 py-2 text-sm flex items-center gap-2 transition-all"
             >
               <Icon size={15} />{label}
@@ -993,8 +1006,20 @@ function AdminManagerLanding({ isAdminDept, myEmployee, onViewTeamPerformance, m
               onSelectEmployee={setSelectedEmployeeFromTab}
             />
           ) : (
-            // Admin: This content won't show as onClick navigates to team selection
-            <div></div>
+            // Admin: render drill-down inline so tabs stay visible across the flow
+            <>
+              {!adminSelectedTeam && (
+                <TeamSelection onSelectTeam={setAdminSelectedTeam} />
+              )}
+              {adminSelectedTeam && !adminSelectedEmployee && (
+                <EmployeeSelection
+                  teamId={adminSelectedTeam.team_id}
+                  teamName={adminSelectedTeam.team_name}
+                  onSelectEmployee={setAdminSelectedEmployee}
+                  onBack={() => setAdminSelectedTeam(null)}
+                />
+              )}
+            </>
           )}
         </TabsContent>
       </Tabs>
@@ -1008,7 +1033,10 @@ export default function PerformancePage() {
   const { user, myEmployee } = useAuth();
   const [myManagedTeams, setMyManagedTeams] = useState([]);
   const [roleLoading, setRoleLoading] = useState(true);
-  const [selectedTeam, setSelectedTeam] = useState(null);
+  // Admin drill-down (lifted so tabs in AdminManagerLanding stay visible)
+  const [adminSelectedTeam, setAdminSelectedTeam] = useState(null);
+  const [adminSelectedEmployee, setAdminSelectedEmployee] = useState(null);
+  // Manager drill-down state (separate flow with no tabs once an employee is picked)
   const [selectedEmployee, setSelectedEmployee] = useState(null);
 
   const loadRole = useCallback(async () => {
@@ -1034,7 +1062,8 @@ export default function PerformancePage() {
   // Breadcrumbs
   const crumbs = ["Performance"];
   if (isManager && !selectedEmployee) crumbs.push(myManagedTeams.length > 1 ? "My Teams" : (myManagedTeams[0]?.team_name || "My Team"));
-  if (selectedTeam) crumbs.push(selectedTeam.team_name);
+  if (isAdminDept && adminSelectedTeam) crumbs.push(adminSelectedTeam.team_name);
+  if (isAdminDept && adminSelectedEmployee) crumbs.push(`${adminSelectedEmployee.first_name} ${adminSelectedEmployee.last_name}`);
   if (selectedEmployee) crumbs.push(`${selectedEmployee.first_name} ${selectedEmployee.last_name}`);
 
   if (roleLoading) {
@@ -1061,30 +1090,15 @@ export default function PerformancePage() {
       </div>
 
       {isAdminDept && (
-        <>
-          {!selectedTeam && (
-            <AdminManagerLanding 
-              isAdminDept={isAdminDept}
-              myEmployee={myEmployee}
-              myManagedTeams={myManagedTeams}
-              onViewTeamPerformance={() => setSelectedTeam({ showSelection: true })}
-            />
-          )}
-          {selectedTeam && selectedTeam.showSelection && (
-            <TeamSelection onSelectTeam={setSelectedTeam} />
-          )}
-          {selectedTeam && !selectedTeam.showSelection && !selectedEmployee && (
-            <EmployeeSelection teamId={selectedTeam.team_id} teamName={selectedTeam.team_name}
-              onSelectEmployee={setSelectedEmployee} onBack={() => setSelectedTeam(null)} />
-          )}
-          {selectedTeam && !selectedTeam.showSelection && selectedEmployee && (
-            <PerformanceView employeeId={selectedEmployee.employee_id}
-              employeeName={`${selectedEmployee.first_name} ${selectedEmployee.last_name}`}
-              employee={selectedEmployee}
-              onBack={() => setSelectedEmployee(null)} showBackLabel={selectedTeam.team_name}
-              isAdminDept={isAdminDept} />
-          )}
-        </>
+        <AdminManagerLanding 
+          isAdminDept={isAdminDept}
+          myEmployee={myEmployee}
+          myManagedTeams={myManagedTeams}
+          adminSelectedTeam={adminSelectedTeam}
+          setAdminSelectedTeam={setAdminSelectedTeam}
+          adminSelectedEmployee={adminSelectedEmployee}
+          setAdminSelectedEmployee={setAdminSelectedEmployee}
+        />
       )}
 
       {isManager && (
@@ -1094,10 +1108,6 @@ export default function PerformancePage() {
               isAdminDept={isAdminDept}
               myEmployee={myEmployee}
               myManagedTeams={myManagedTeams}
-              onViewTeamPerformance={() => {
-                // For managers, directly show employee selection
-                setSelectedEmployee({ showSelection: true });
-              }}
             />
           )}
           {selectedEmployee && selectedEmployee.showSelection && (
