@@ -408,10 +408,8 @@ export default function CreativeTeamOfMonth() {
   };
 
   const getRankStyle = (rank) => {
-    if (rank === 1) return "bg-gradient-to-r from-yellow-600/20 to-yellow-500/10 border-yellow-500/30";
-    if (rank === 2) return "bg-gradient-to-r from-gray-400/20 to-gray-300/10 border-gray-400/30";
-    if (rank === 3) return "bg-gradient-to-r from-orange-600/20 to-orange-500/10 border-orange-600/30";
-    return "bg-[#2F2F2F] border-white/10";
+    // Remove colored backgrounds - use clean dark theme for all rows
+    return "bg-[#2F2F2F] hover:bg-[#373737] border-white/5";
   };
 
   const getRankIcon = (rank) => {
@@ -493,27 +491,27 @@ export default function CreativeTeamOfMonth() {
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto bg-[#191919] rounded-lg border border-white/10">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-white/10">
-                <th className="text-left text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium">Rank</th>
-                <th className="text-left text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium">Team</th>
-                <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium">Client Performance</th>
-                <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium">Client Feedback</th>
-                <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium">Creative Task</th>
-                <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium">Total (This month)</th>
-                <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium">Total (Overall)</th>
+              <tr className="border-b border-[#3F3F3F]">
+                <th className="text-left text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Rank</th>
+                <th className="text-center text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Team</th>
+                <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Client Performance</th>
+                <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Client Feedback</th>
+                <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Creative Task</th>
+                <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Total (This month)</th>
+                <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Total (Overall)</th>
               </tr>
             </thead>
             <tbody>
-              {leaderboard.map((entry) => (
+              {leaderboard.map((entry, index) => (
                 <tr
                   key={entry.perf_id}
-                  className={`border border-transparent ${getRankStyle(entry.rank)} transition-colors`}
+                  className={`${getRankStyle(entry.rank)} transition-colors ${index !== leaderboard.length - 1 ? 'border-b border-[#3F3F3F]' : ''}`}
                 >
                   <td className="py-4 px-4">
-                    <div className="text-2xl font-bold text-white">{getRankIcon(entry.rank)}</div>
+                    <div className="text-xl font-bold text-white">{getRankIcon(entry.rank)}</div>
                   </td>
                   <td className="py-4 px-4">
                     <div className="flex flex-col items-center gap-2">
@@ -521,14 +519,14 @@ export default function CreativeTeamOfMonth() {
                         <img
                           src={entry.manager.profile_picture}
                           alt={entry.team_name}
-                          className="w-12 h-12 rounded-full object-cover"
+                          className="w-10 h-10 rounded-full object-cover border border-white/10"
                         />
                       ) : (
-                        <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white text-sm font-bold">
+                        <div className="w-10 h-10 rounded-full bg-[#191919] border border-white/10 flex items-center justify-center text-white text-xs font-bold">
                           {entry.manager.first_name[0]}{entry.manager.last_name[0]}
                         </div>
                       )}
-                      <span className="text-white font-medium text-sm">{entry.team_name}</span>
+                      <span className="text-white font-medium text-sm text-center">{entry.team_name}</span>
                     </div>
                   </td>
                   <td className="py-4 px-4 text-right">
