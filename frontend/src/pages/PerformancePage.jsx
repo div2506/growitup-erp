@@ -926,14 +926,20 @@ function AdminManagerLanding({ isAdminDept, myEmployee, onViewTeamPerformance, m
   const [activeTab, setActiveTab] = useState("team-of-month");
   const [selectedEmployeeFromTab, setSelectedEmployeeFromTab] = useState(null);
 
+  // Determine if user is manager (has managed teams) vs admin
+  const isManager = myManagedTeams && myManagedTeams.length > 0;
+
+  // Build tabs based on role
   const tabs = [
     { val: "team-of-month", label: "Creative Team of the Month", icon: Trophy },
-    { val: "my-performance", label: "My Performance", icon: BarChart2 },
   ];
 
-  // Only show "View Team Members" for managers with teams
-  if (myManagedTeams && myManagedTeams.length > 0) {
-    tabs.push({ val: "view-teams", label: "View Team Members", icon: Users });
+  if (isAdminDept && !isManager) {
+    // Admin (no teams): Creative Team + Team Performance (shows team selection)
+    tabs.push({ val: "team-performance", label: "Team Performance", icon: BarChart2 });
+  } else if (isManager) {
+    // Manager (has teams): Creative Team + My Team Performance (shows their team members)
+    tabs.push({ val: "team-performance", label: "My Team Performance", icon: Users });
   }
 
   // If an employee is selected from the team members view, show their performance
@@ -944,7 +950,7 @@ function AdminManagerLanding({ isAdminDept, myEmployee, onViewTeamPerformance, m
         employeeName={`${selectedEmployeeFromTab.first_name} ${selectedEmployeeFromTab.last_name}`}
         employee={selectedEmployeeFromTab}
         onBack={() => setSelectedEmployeeFromTab(null)}
-        showBackLabel="Team Members"
+        showBackLabel={isManager ? "My Team" : "Team Members"}
         isAdminDept={isAdminDept}
       />
     );
@@ -958,6 +964,12 @@ function AdminManagerLanding({ isAdminDept, myEmployee, onViewTeamPerformance, m
             <TabsTrigger
               key={val}
               value={val}
+              onClick={() => {
+                // For admin's "Team Performance" tab, trigger team selection navigation
+                if (val === "team-performance" && isAdminDept && !isManager && onViewTeamPerformance) {
+                  onViewTeamPerformance();
+                }
+              }}
               className="data-[state=active]:bg-[#2F2F2F] data-[state=active]:text-white text-[#B3B3B3] rounded-md px-4 py-2 text-sm flex items-center gap-2 transition-all"
             >
               <Icon size={15} />{label}
@@ -969,30 +981,16 @@ function AdminManagerLanding({ isAdminDept, myEmployee, onViewTeamPerformance, m
           <CreativeTeamOfMonth />
         </TabsContent>
 
-        <TabsContent value="my-performance">
-          {myEmployee && (
-            <PerformanceView
-              employeeId={myEmployee.employee_id}
-              employeeName={`${myEmployee.first_name} ${myEmployee.last_name}`}
-              employee={myEmployee}
-              onBack={null}
-              isAdminDept={isAdminDept}
-            />
-          )}
-        </TabsContent>
-
-        <TabsContent value="view-teams">
-          {myManagedTeams && myManagedTeams.length > 0 ? (
+        <TabsContent value="team-performance">
+          {isManager ? (
+            // Manager: Show their team members directly
             <MultiTeamEmployeeSelection
               teams={myManagedTeams}
               onSelectEmployee={setSelectedEmployeeFromTab}
             />
           ) : (
-            <div className="text-center py-16">
-              <Users size={48} className="mx-auto text-[#B3B3B3] mb-4" />
-              <p className="text-white font-medium">No team members found</p>
-              <p className="text-[#B3B3B3] text-sm mt-2">You don't manage any teams yet</p>
-            </div>
+            // Admin: This content won't show as onClick navigates to team selection
+            <div></div>
           )}
         </TabsContent>
       </Tabs>
