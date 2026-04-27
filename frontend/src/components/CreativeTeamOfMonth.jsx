@@ -269,17 +269,68 @@ export default function CreativeTeamOfMonth() {
   const [managers, setManagers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [availableMonths, setAvailableMonths] = useState([]);
 
   const isAdmin = user?.is_admin || myEmployee?.department_name === "Admin";
 
-  const monthOptions = getMonthOptions();
+  // Load available months from database
+  const loadAvailableMonths = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API}/manager-performance`, { withCredentials: true });
+      const performances = response.data;
 
-  // Set default month to current month
-  useEffect(() => {
-    if (!selectedMonth && monthOptions.length > 0) {
-      setSelectedMonth(monthOptions[0].value);
+      if (performances.length === 0) {
+        // No data exists, show only current month
+        const now = new Date();
+        const monthNames = ["January", "February", "March", "April", "May", "June",
+          "July", "August", "September", "October", "November", "December"];
+        const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+        setAvailableMonths([{
+          label: `${monthNames[now.getMonth()]} ${now.getFullYear()}`,
+          value: currentMonth
+        }]);
+        setSelectedMonth(currentMonth);
+      } else {
+        // Get distinct months from data
+        const uniqueMonths = [...new Set(performances.map(p => p.month))];
+        
+        // Convert to month options
+        const monthNames = ["January", "February", "March", "April", "May", "June",
+          "July", "August", "September", "October", "November", "December"];
+        
+        const options = uniqueMonths.map(monthStr => {
+          const date = new Date(monthStr);
+          return {
+            label: `${monthNames[date.getMonth()]} ${date.getFullYear()}`,
+            value: monthStr,
+            sortKey: new Date(monthStr).getTime()
+          };
+        });
+
+        // Sort descending (most recent first)
+        options.sort((a, b) => b.sortKey - a.sortKey);
+        
+        setAvailableMonths(options);
+        
+        // Set default to most recent month
+        if (!selectedMonth && options.length > 0) {
+          setSelectedMonth(options[0].value);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load available months:", error);
+      // Fallback to current month
+      const now = new Date();
+      const monthNames = ["January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"];
+      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      setAvailableMonths([{
+        label: `${monthNames[now.getMonth()]} ${now.getFullYear()}`,
+        value: currentMonth
+      }]);
+      setSelectedMonth(currentMonth);
     }
-  }, [monthOptions, selectedMonth]);
+  }, [selectedMonth]);
 
   const loadManagers = useCallback(async () => {
     try {
@@ -342,7 +393,8 @@ export default function CreativeTeamOfMonth() {
 
   useEffect(() => {
     loadManagers();
-  }, [loadManagers]);
+    loadAvailableMonths();
+  }, [loadManagers, loadAvailableMonths]);
 
   useEffect(() => {
     if (selectedMonth) {
@@ -352,6 +404,7 @@ export default function CreativeTeamOfMonth() {
 
   const handleAddSuccess = () => {
     loadLeaderboard();
+    loadAvailableMonths(); // Refresh available months after adding new data
   };
 
   const getRankStyle = (rank) => {
@@ -368,18 +421,15 @@ export default function CreativeTeamOfMonth() {
     return rank;
   };
 
-  const currentMonthLabel = monthOptions.find(opt => opt.value === selectedMonth)?.label || "";
+  const currentMonthLabel = availableMonths.find(opt => opt.value === selectedMonth)?.label || "";
 
   return (
     <div>
       {/* Header Section */}
       <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <Trophy size={28} className="text-yellow-500" />
-          <h2 className="text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
-            Team of the month
-          </h2>
-        </div>
+        <h2 className="text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
+          Creative Team of the Month
+        </h2>
         <div className="flex items-center gap-3">
           {isAdmin && (
             <button
@@ -395,7 +445,7 @@ export default function CreativeTeamOfMonth() {
               <SelectValue placeholder="Select month" />
             </SelectTrigger>
             <SelectContent className="bg-[#2F2F2F] border-white/10 max-h-[300px]">
-              {monthOptions.map(opt => (
+              {availableMonths.map(opt => (
                 <SelectItem
                   key={opt.value}
                   value={opt.value}
@@ -410,11 +460,23 @@ export default function CreativeTeamOfMonth() {
       </div>
 
       {/* Reward Banner */}
-      <div className="mb-6 p-6 bg-[#2F2F2F] border border-white/10 rounded-xl text-center">
-        <p className="text-[#B3B3B3] text-sm uppercase tracking-wider mb-3">Reward (This year)</p>
-        <div className="flex items-center justify-center">
-          <Trophy size={80} className="text-yellow-500" />
+      <div className="mb-6 p-8 bg-gradient-to-br from-[#2F2F2F] via-[#2F2F2F] to-[#252525] border border-white/10 rounded-xl text-center relative overflow-hidden">
+        {/* Background decoration */}
+        <div className="absolute top-0 left-0 w-full h-full opacity-5">
+          <div className="absolute top-4 left-4 w-16 h-16 border-2 border-yellow-500 rounded-full"></div>
+          <div className="absolute bottom-4 right-4 w-20 h-20 border-2 border-yellow-500 rounded-full"></div>
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 border-2 border-yellow-500 rounded-full"></div>
         </div>
+        
+        <p className="text-[#B3B3B3] text-sm uppercase tracking-wider mb-4 relative z-10">Reward (This year)</p>
+        <div className="flex items-center justify-center relative z-10">
+          {/* Improved trophy icon with glow effect */}
+          <div className="relative">
+            <div className="absolute inset-0 bg-yellow-500/20 blur-2xl rounded-full"></div>
+            <Trophy size={96} className="text-yellow-500 drop-shadow-[0_0_15px_rgba(234,179,8,0.5)] relative" strokeWidth={1.5} />
+          </div>
+        </div>
+        <p className="text-white/60 text-xs mt-4 relative z-10">Top performing team of the year</p>
       </div>
 
       {/* Leaderboard Table */}
