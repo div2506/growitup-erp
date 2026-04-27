@@ -1831,12 +1831,13 @@ async def create_manager_performance(body: ManagerPerformanceCreate, request: Re
     if existing:
         raise HTTPException(400, "Performance data for this manager and month already exists. Please edit the existing entry or select a different manager/month.")
     
-    # Calculate total points
-    total_points_month = round((
-        body.client_performance_score + 
-        body.client_feedback_score + 
-        body.creative_task_score
-    ) / 3, 2)
+    # Calculate total points (weighted: 45% Client Performance, 35% Client Feedback, 20% Creative Task)
+    total_points_month = round(
+        body.client_performance_score * 0.45 +
+        body.client_feedback_score * 0.35 +
+        body.creative_task_score * 0.20,
+        2
+    )
     
     # Create entry
     perf_entry = {
@@ -1894,12 +1895,13 @@ async def update_manager_performance(perf_id: str, body: ManagerPerformanceCreat
     if body.creative_task_notes and len(body.creative_task_notes) > 500:
         raise HTTPException(400, "Creative task notes must be 500 characters or less")
     
-    # Calculate new total points
-    total_points_month = round((
-        body.client_performance_score + 
-        body.client_feedback_score + 
-        body.creative_task_score
-    ) / 3, 2)
+    # Calculate new total points (weighted: 45% Client Performance, 35% Client Feedback, 20% Creative Task)
+    total_points_month = round(
+        body.client_performance_score * 0.45 +
+        body.client_feedback_score * 0.35 +
+        body.creative_task_score * 0.20,
+        2
+    )
     
     # Update entry
     await db.manager_performance.update_one(

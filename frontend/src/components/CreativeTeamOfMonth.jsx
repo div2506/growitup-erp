@@ -44,7 +44,11 @@ function AddDetailsModal({ onClose, onSuccess, selectedMonth, managers }) {
   const [submitting, setSubmitting] = useState(false);
 
   const totalPoints = formData.client_performance_score && formData.client_feedback_score && formData.creative_task_score
-    ? ((parseFloat(formData.client_performance_score) + parseFloat(formData.client_feedback_score) + parseFloat(formData.creative_task_score)) / 3).toFixed(2)
+    ? (
+        parseFloat(formData.client_performance_score) * 0.45 +
+        parseFloat(formData.client_feedback_score) * 0.35 +
+        parseFloat(formData.creative_task_score) * 0.20
+      ).toFixed(2)
     : "0.00";
 
   const canSubmit = formData.manager_id && formData.month &&
