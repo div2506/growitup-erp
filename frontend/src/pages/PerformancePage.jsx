@@ -321,6 +321,7 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel, isAd
   const [editRecord, setEditRecord] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [viewedEmployee, setViewedEmployee] = useState(null);
 
   const loadRecords = useCallback(() => {
     setLoading(true);
@@ -330,7 +331,20 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel, isAd
       .finally(() => setLoading(false));
   }, [employeeId]);
 
+  const loadViewedEmployee = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API}/employees`, { withCredentials: true });
+      const employee = response.data.find(emp => emp.employee_id === employeeId);
+      if (employee) {
+        setViewedEmployee(employee);
+      }
+    } catch (error) {
+      console.error("Failed to load employee data:", error);
+    }
+  }, [employeeId]);
+
   useEffect(() => { loadRecords(); }, [loadRecords]);
+  useEffect(() => { loadViewedEmployee(); }, [loadViewedEmployee]);
 
   // Reset page when filters change
   useEffect(() => { setPage(1); }, [search, typeFilter, deadlineFilter, selectedPeriod, customFrom, customTo]);
@@ -658,9 +672,9 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel, isAd
       />
 
       {/* Upgrade Level Modal */}
-      {showUpgradeModal && myEmployee && (
+      {showUpgradeModal && viewedEmployee && (
         <UpgradeLevelModal
-          employee={myEmployee}
+          employee={viewedEmployee}
           onClose={() => setShowUpgradeModal(false)}
         />
       )}
