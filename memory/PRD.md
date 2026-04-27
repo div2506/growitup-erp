@@ -163,3 +163,18 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 - Fixed broken logo URL (typo `pngi`) in Layout.jsx and LoginPage.jsx → now uses local `/growitup-logo.png`
 - Updated meta description to "GrowItUp Employee Management System"
 - Tab title: "GrowItUp"
+
+### Upgrade Your Level (COMPLETE - 2026-04-27)
+- New "Upgrade Your Level" modal (UpgradeLevelModal.jsx) launched from Performance screen
+- Backend proxy `POST /api/upgrade-level-request` forwards to Slack webhook (SLACK_WEBHOOK_URL in backend/.env) — bypasses CORS, hides webhook
+- Exam Month dropdown locks invalid months based on selected exam level
+- Modal sources viewed-employee data (not logged-in user) for accuracy
+
+### Creative Team of the Month (COMPLETE - 2026-04-27)
+- New leaderboard component (CreativeTeamOfMonth.jsx) tracking monthly manager performance
+- ManagerPerformance model + API: GET/POST/PUT /api/manager-performance, GET /api/managers-with-teams
+- Scores: Client Performance, Client Feedback, Creative Task — each with optional tooltip notes; total auto-calculated
+- "Add Details" admin modal (single-screen, no scroll), dark-theme leaderboard table with emoji ranks
+- Performance screen tabs: shadcn pill style; tab order standardized — **Team Performance / My Performance is FIRST tab; Creative Team of the Month is SECOND tab** for all roles (Admin, Manager, Employee)
+- Default landing tab: Manager → My Team Performance; Employee → My Performance; Admin (no teams) → Creative Team of the Month (since clicking Team Performance auto-navigates)
+- Pushed to GitHub repo `growitup-erp` (main) on 2026-04-27
