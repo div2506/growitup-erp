@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import DeleteConfirm from "@/components/DeleteConfirm";
 import UpgradeLevelModal from "@/components/UpgradeLevelModal";
+import CreativeTeamOfMonth from "@/components/CreativeTeamOfMonth";
 import { toast } from "sonner";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -875,6 +876,124 @@ function TeamSelection({ onSelectTeam }) {
   );
 }
 
+// ── Employee Performance with Tabs ────────────────────────────────────────────
+
+function EmployeePerformanceWithTabs({ myEmployee, isAdminDept }) {
+  const [activeTab, setActiveTab] = useState("performance");
+
+  return (
+    <div>
+      {/* Tab Navigation */}
+      <div className="flex gap-2 mb-6 border-b border-white/10">
+        <button
+          onClick={() => setActiveTab("performance")}
+          className={`px-4 py-2 text-sm font-medium transition-colors relative ${
+            activeTab === "performance"
+              ? "text-white"
+              : "text-[#B3B3B3] hover:text-white"
+          }`}
+        >
+          My Performance
+          {activeTab === "performance" && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white"></div>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab("team-of-month")}
+          className={`px-4 py-2 text-sm font-medium transition-colors relative ${
+            activeTab === "team-of-month"
+              ? "text-white"
+              : "text-[#B3B3B3] hover:text-white"
+          }`}
+        >
+          Creative Team of the Month
+          {activeTab === "team-of-month" && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white"></div>
+          )}
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === "performance" ? (
+        <PerformanceView
+          employeeId={myEmployee.employee_id}
+          employeeName={`${myEmployee.first_name} ${myEmployee.last_name}`}
+          employee={myEmployee}
+          onBack={null}
+          isAdminDept={isAdminDept}
+        />
+      ) : (
+        <CreativeTeamOfMonth />
+      )}
+    </div>
+  );
+}
+
+// ── Admin/Manager Landing with Tabs ────────────────────────────────────────
+
+function AdminManagerLanding({ isAdminDept, myEmployee, onViewTeamPerformance }) {
+  const [activeTab, setActiveTab] = useState("team-of-month");
+
+  return (
+    <div>
+      {/* Tab Navigation */}
+      <div className="flex gap-2 mb-6 border-b border-white/10">
+        <button
+          onClick={() => setActiveTab("team-of-month")}
+          className={`px-4 py-2 text-sm font-medium transition-colors relative ${
+            activeTab === "team-of-month"
+              ? "text-white"
+              : "text-[#B3B3B3] hover:text-white"
+          }`}
+        >
+          Creative Team of the Month
+          {activeTab === "team-of-month" && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white"></div>
+          )}
+        </button>
+        <button
+          onClick={() => { setActiveTab("my-performance"); if (myEmployee) {} }}
+          className={`px-4 py-2 text-sm font-medium transition-colors relative ${
+            activeTab === "my-performance"
+              ? "text-white"
+              : "text-[#B3B3B3] hover:text-white"
+          }`}
+        >
+          My Performance
+          {activeTab === "my-performance" && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white"></div>
+          )}
+        </button>
+        <button
+          onClick={() => { setActiveTab("view-teams"); if (onViewTeamPerformance) onViewTeamPerformance(); }}
+          className={`px-4 py-2 text-sm font-medium transition-colors relative ${
+            activeTab === "view-teams"
+              ? "text-white"
+              : "text-[#B3B3B3] hover:text-white"
+          }`}
+        >
+          View Team Members
+          {activeTab === "view-teams" && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white"></div>
+          )}
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === "team-of-month" && <CreativeTeamOfMonth />}
+      {activeTab === "my-performance" && myEmployee && (
+        <PerformanceView
+          employeeId={myEmployee.employee_id}
+          employeeName={`${myEmployee.first_name} ${myEmployee.last_name}`}
+          employee={myEmployee}
+          onBack={null}
+          isAdminDept={isAdminDept}
+        />
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function PerformancePage() {
@@ -935,12 +1054,21 @@ export default function PerformancePage() {
 
       {isAdminDept && (
         <>
-          {!selectedTeam && <TeamSelection onSelectTeam={setSelectedTeam} />}
-          {selectedTeam && !selectedEmployee && (
+          {!selectedTeam && (
+            <AdminManagerLanding 
+              isAdminDept={isAdminDept}
+              myEmployee={myEmployee}
+              onViewTeamPerformance={() => setSelectedTeam({ showSelection: true })}
+            />
+          )}
+          {selectedTeam && selectedTeam.showSelection && (
+            <TeamSelection onSelectTeam={setSelectedTeam} />
+          )}
+          {selectedTeam && !selectedTeam.showSelection && !selectedEmployee && (
             <EmployeeSelection teamId={selectedTeam.team_id} teamName={selectedTeam.team_name}
               onSelectEmployee={setSelectedEmployee} onBack={() => setSelectedTeam(null)} />
           )}
-          {selectedTeam && selectedEmployee && (
+          {selectedTeam && !selectedTeam.showSelection && selectedEmployee && (
             <PerformanceView employeeId={selectedEmployee.employee_id}
               employeeName={`${selectedEmployee.first_name} ${selectedEmployee.last_name}`}
               employee={selectedEmployee}
@@ -953,12 +1081,22 @@ export default function PerformancePage() {
       {isManager && (
         <>
           {!selectedEmployee && (
+            <AdminManagerLanding 
+              isAdminDept={isAdminDept}
+              myEmployee={myEmployee}
+              onViewTeamPerformance={() => {
+                // For managers, directly show employee selection
+                setSelectedEmployee({ showSelection: true });
+              }}
+            />
+          )}
+          {selectedEmployee && selectedEmployee.showSelection && (
             <MultiTeamEmployeeSelection
               teams={myManagedTeams}
               onSelectEmployee={setSelectedEmployee}
             />
           )}
-          {selectedEmployee && (
+          {selectedEmployee && !selectedEmployee.showSelection && (
             <PerformanceView employeeId={selectedEmployee.employee_id}
               employeeName={`${selectedEmployee.first_name} ${selectedEmployee.last_name}`}
               employee={selectedEmployee}
@@ -970,10 +1108,7 @@ export default function PerformancePage() {
       )}
 
       {isEmployee && (
-        <PerformanceView employeeId={myEmployee.employee_id}
-          employeeName={`${myEmployee.first_name} ${myEmployee.last_name}`}
-          employee={myEmployee}
-          onBack={null} isAdminDept={isAdminDept} />
+        <EmployeePerformanceWithTabs myEmployee={myEmployee} isAdminDept={isAdminDept} />
       )}
 
       {!isAdminDept && !isManager && !isEmployee && (

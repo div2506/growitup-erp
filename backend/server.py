@@ -99,6 +99,16 @@ class NotionDatabaseCreate(BaseModel):
     team_id: str
     is_active: bool = True
 
+class ManagerPerformanceCreate(BaseModel):
+    manager_id: str
+    month: str  # Format: "2026-04-01" (first day of month)
+    client_performance_score: float  # 0-100
+    client_feedback_score: float  # 0-100
+    creative_task_score: float  # 0-100
+    client_performance_notes: Optional[str] = None  # Optional, max 500 chars
+    client_feedback_notes: Optional[str] = None  # Optional, max 500 chars
+    creative_task_notes: Optional[str] = None  # Optional, max 500 chars
+
 
 # ===================== HELPERS =====================
 
@@ -1713,6 +1723,201 @@ async def submit_upgrade_request(body: UpgradeLevelRequest, request: Request):
     except http_requests.exceptions.RequestException as e:
         logger.error(f"Slack webhook error: {str(e)}")
         raise HTTPException(500, "Failed to submit upgrade request")
+
+
+# ===================== MANAGER PERFORMANCE ROUTES =====================
+
+@api_router.get("/manager-performance")
+async def get_manager_performance(request: Request, month: Optional[str] = None, manager_id: Optional[str] = None):
+    """Get manager performance data. Filter by month and/or manager_id if provided."""
+    await get_current_user(request)
+    
+    query = {}
+    if month:
+        query["month"] = month
+    if manager_id:
+        query["manager_id"] = manager_id
+    
+    performances = await db.manager_performance.find(query, {"_id": 0}).to_list(1000)
+    
+    # Enrich with manager details
+    for perf in performances:
+        manager = await db.employees.find_one({"employee_id": perf["manager_id"]}, {"_id": 0})
+        if manager:
+            perf["manager"] = {
+                "employee_id": manager.get("employee_id"),
+                "first_name": manager.get("first_name"),
+                "last_name": manager.get("last_name"),
+                "profile_picture": manager.get("profile_picture")
+            }
+    
+    return performances
+
+
+@api_router.get("/managers-with-teams")
+async def get_managers_with_teams(request: Request):
+    """Get list of all employees who are team managers."""
+    await get_current_user(request)
+    
+    # Get all teams
+    teams = await db.teams.find({}, {"_id": 0}).to_list(1000)
+    
+    # Extract unique manager IDs
+    manager_ids = list(set([team["team_manager_id"] for team in teams if team.get("team_manager_id")]))
+    
+    # Get employee details for these managers
+    managers = []
+    for manager_id in manager_ids:
+        manager = await db.employees.find_one({"employee_id": manager_id}, {"_id": 0})
+        if manager:
+            managers.append({
+                "employee_id": manager["employee_id"],
+                "first_name": manager["first_name"],
+                "last_name": manager["last_name"],
+                "profile_picture": manager.get("profile_picture")
+            })
+    
+    # Sort by name
+    managers.sort(key=lambda m: f"{m['first_name']} {m['last_name']}")
+    
+    return managers
+
+
+@api_router.post("/manager-performance")
+async def create_manager_performance(body: ManagerPerformanceCreate, request: Request):
+    """Create new manager performance entry."""
+    user = await get_current_user(request)
+    
+    # Only admin can create
+    if not user.get("is_admin"):
+        my_emp = await db.employees.find_one(
+            {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+        )
+        if not my_emp or my_emp.get("department_name") != "Admin":
+            raise HTTPException(403, "Only Admin department can add manager performance data")
+    
+    # Check if manager exists and is a team manager
+    manager = await db.employees.find_one({"employee_id": body.manager_id}, {"_id": 0})
+    if not manager:
+        raise HTTPException(404, "Manager not found")
+    
+    # Check if manager has a team
+    team = await db.teams.find_one({"team_manager_id": body.manager_id}, {"_id": 0})
+    if not team:
+        raise HTTPException(400, "This employee is not a team manager")
+    
+    # Validate scores
+    if not (0 <= body.client_performance_score <= 100):
+        raise HTTPException(400, "Client performance score must be between 0 and 100")
+    if not (0 <= body.client_feedback_score <= 100):
+        raise HTTPException(400, "Client feedback score must be between 0 and 100")
+    if not (0 <= body.creative_task_score <= 100):
+        raise HTTPException(400, "Creative task score must be between 0 and 100")
+    
+    # Validate notes length (optional fields)
+    if body.client_performance_notes and len(body.client_performance_notes) > 500:
+        raise HTTPException(400, "Client performance notes must be 500 characters or less")
+    if body.client_feedback_notes and len(body.client_feedback_notes) > 500:
+        raise HTTPException(400, "Client feedback notes must be 500 characters or less")
+    if body.creative_task_notes and len(body.creative_task_notes) > 500:
+        raise HTTPException(400, "Creative task notes must be 500 characters or less")
+    
+    # Check for duplicate (same manager + month)
+    existing = await db.manager_performance.find_one({
+        "manager_id": body.manager_id,
+        "month": body.month
+    }, {"_id": 0})
+    
+    if existing:
+        raise HTTPException(400, "Performance data for this manager and month already exists. Please edit the existing entry or select a different manager/month.")
+    
+    # Calculate total points
+    total_points_month = round((
+        body.client_performance_score + 
+        body.client_feedback_score + 
+        body.creative_task_score
+    ) / 3, 2)
+    
+    # Create entry
+    perf_entry = {
+        "perf_id": f"mperf_{uuid.uuid4().hex[:12]}",
+        "manager_id": body.manager_id,
+        "month": body.month,
+        "client_performance_score": body.client_performance_score,
+        "client_feedback_score": body.client_feedback_score,
+        "creative_task_score": body.creative_task_score,
+        "client_performance_notes": body.client_performance_notes or "",
+        "client_feedback_notes": body.client_feedback_notes or "",
+        "creative_task_notes": body.creative_task_notes or "",
+        "total_points_month": total_points_month,
+        "created_by": user.get("email"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.manager_performance.insert_one(perf_entry)
+    
+    return {k: v for k, v in perf_entry.items() if k != "_id"}
+
+
+@api_router.put("/manager-performance/{perf_id}")
+async def update_manager_performance(perf_id: str, body: ManagerPerformanceCreate, request: Request):
+    """Update existing manager performance entry."""
+    user = await get_current_user(request)
+    
+    # Only admin can update
+    if not user.get("is_admin"):
+        my_emp = await db.employees.find_one(
+            {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+        )
+        if not my_emp or my_emp.get("department_name") != "Admin":
+            raise HTTPException(403, "Only Admin department can update manager performance data")
+    
+    # Find existing entry
+    existing = await db.manager_performance.find_one({"perf_id": perf_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Performance entry not found")
+    
+    # Validate scores
+    if not (0 <= body.client_performance_score <= 100):
+        raise HTTPException(400, "Client performance score must be between 0 and 100")
+    if not (0 <= body.client_feedback_score <= 100):
+        raise HTTPException(400, "Client feedback score must be between 0 and 100")
+    if not (0 <= body.creative_task_score <= 100):
+        raise HTTPException(400, "Creative task score must be between 0 and 100")
+    
+    # Validate notes length (optional fields)
+    if body.client_performance_notes and len(body.client_performance_notes) > 500:
+        raise HTTPException(400, "Client performance notes must be 500 characters or less")
+    if body.client_feedback_notes and len(body.client_feedback_notes) > 500:
+        raise HTTPException(400, "Client feedback notes must be 500 characters or less")
+    if body.creative_task_notes and len(body.creative_task_notes) > 500:
+        raise HTTPException(400, "Creative task notes must be 500 characters or less")
+    
+    # Calculate new total points
+    total_points_month = round((
+        body.client_performance_score + 
+        body.client_feedback_score + 
+        body.creative_task_score
+    ) / 3, 2)
+    
+    # Update entry
+    await db.manager_performance.update_one(
+        {"perf_id": perf_id},
+        {"$set": {
+            "client_performance_score": body.client_performance_score,
+            "client_feedback_score": body.client_feedback_score,
+            "creative_task_score": body.creative_task_score,
+            "client_performance_notes": body.client_performance_notes or "",
+            "client_feedback_notes": body.client_feedback_notes or "",
+            "creative_task_notes": body.creative_task_notes or "",
+            "total_points_month": total_points_month,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    updated = await db.manager_performance.find_one({"perf_id": perf_id}, {"_id": 0})
+    return updated
 
 
 app.include_router(api_router)
