@@ -22,32 +22,57 @@ function getLevelOptions(currentLevel) {
   return options[currentLevel] || options[null];
 }
 
-function getExamMonths() {
+function getExamMonthsByLevel(selectedLevel) {
   const today = new Date();
   const currentDay = today.getDate();
+  const currentMonth = today.getMonth(); // 0-11
+  const currentYear = today.getFullYear();
+  
+  // Define allowed months for each level (0-based: 0=Jan, 1=Feb, etc.)
+  const levelMonths = {
+    "Beginner": [0, 3, 6, 9],              // Jan, Apr, Jul, Oct
+    "Intermediate": [1, 4, 7, 10],         // Feb, May, Aug, Nov
+    "Advanced": [2, 5, 8, 11],             // Mar, Jun, Sep, Dec
+    "Manager (Growth Expert)": [5, 11]      // Jun, Dec
+  };
+  
+  const allowedMonths = levelMonths[selectedLevel] || [];
+  if (allowedMonths.length === 0) return [];
+  
   const monthNames = ["January", "February", "March", "April", "May", "June", 
                       "July", "August", "September", "October", "November", "December"];
   
-  let startMonth = today.getMonth();
-  let startYear = today.getFullYear();
+  // Determine starting point based on 5th date cutoff
+  let searchStartMonth = currentMonth;
+  let searchStartYear = currentYear;
   
-  // If today is after 5th, skip current month
   if (currentDay > 5) {
-    startMonth++;
-    if (startMonth > 11) {
-      startMonth = 0;
-      startYear++;
+    // Skip current month
+    searchStartMonth++;
+    if (searchStartMonth > 11) {
+      searchStartMonth = 0;
+      searchStartYear++;
     }
   }
   
-  const months = [];
-  for (let i = 0; i < 12; i++) {
-    const month = (startMonth + i) % 12;
-    const year = startYear + Math.floor((startMonth + i) / 12);
-    months.push(`${monthNames[month]} ${year}`);
+  // Find next valid exam months (show next 4-6 occurrences)
+  const examMonths = [];
+  let checkMonth = searchStartMonth;
+  let checkYear = searchStartYear;
+  
+  // Look ahead 24 months to find valid exam months
+  for (let i = 0; i < 24 && examMonths.length < 6; i++) {
+    if (allowedMonths.includes(checkMonth)) {
+      examMonths.push(`${monthNames[checkMonth]} ${checkYear}`);
+    }
+    checkMonth++;
+    if (checkMonth > 11) {
+      checkMonth = 0;
+      checkYear++;
+    }
   }
   
-  return months;
+  return examMonths;
 }
 
 export default function UpgradeLevelModal({ employee, onClose }) {
@@ -56,8 +81,13 @@ export default function UpgradeLevelModal({ employee, onClose }) {
   const [submitting, setSubmitting] = useState(false);
 
   const levelOptions = getLevelOptions(employee?.level);
-  const monthOptions = getExamMonths();
+  const monthOptions = getExamMonthsByLevel(selectedLevel);
   const canSubmit = selectedLevel && selectedMonth && !submitting;
+
+  const handleLevelChange = (level) => {
+    setSelectedLevel(level);
+    setSelectedMonth(""); // Clear month selection when level changes
+  };
 
   const handleSubmit = async () => {
     if (!selectedLevel || !selectedMonth) {
@@ -149,7 +179,7 @@ export default function UpgradeLevelModal({ employee, onClose }) {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label className={labelCls}>Select Level Exam *</Label>
-              <Select value={selectedLevel} onValueChange={setSelectedLevel}>
+              <Select value={selectedLevel} onValueChange={handleLevelChange}>
                 <SelectTrigger className="bg-[#191919] border-white/10 text-white focus:ring-white/20 focus:border-white/30">
                   <SelectValue placeholder="Choose exam level" />
                 </SelectTrigger>
@@ -169,9 +199,13 @@ export default function UpgradeLevelModal({ employee, onClose }) {
 
             <div className="space-y-2">
               <Label className={labelCls}>Select Exam Month *</Label>
-              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                <SelectTrigger className="bg-[#191919] border-white/10 text-white focus:ring-white/20 focus:border-white/30">
-                  <SelectValue placeholder="Choose exam month" />
+              <Select 
+                value={selectedMonth} 
+                onValueChange={setSelectedMonth}
+                disabled={!selectedLevel || monthOptions.length === 0}
+              >
+                <SelectTrigger className="bg-[#191919] border-white/10 text-white focus:ring-white/20 focus:border-white/30 disabled:opacity-50 disabled:cursor-not-allowed">
+                  <SelectValue placeholder={selectedLevel ? "Choose exam month" : "First select exam level"} />
                 </SelectTrigger>
                 <SelectContent className="bg-[#2F2F2F] border-white/10 max-h-[300px]">
                   {monthOptions.map(month => (

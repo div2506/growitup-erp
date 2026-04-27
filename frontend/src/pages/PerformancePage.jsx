@@ -307,8 +307,7 @@ function EditModal({ record, onClose, onSaved }) {
 
 // ── Performance View (Level 3) ────────────────────────────────────────────────
 
-function PerformanceView({ employeeId, employeeName, onBack, showBackLabel, isAdminDept }) {
-  const { myEmployee } = useAuth();
+function PerformanceView({ employeeId, employeeName, employee, onBack, showBackLabel, isAdminDept }) {
   const [allRecords, setAllRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState("current");
@@ -321,7 +320,6 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel, isAd
   const [editRecord, setEditRecord] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [viewedEmployee, setViewedEmployee] = useState(null);
 
   const loadRecords = useCallback(() => {
     setLoading(true);
@@ -331,20 +329,7 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel, isAd
       .finally(() => setLoading(false));
   }, [employeeId]);
 
-  const loadViewedEmployee = useCallback(async () => {
-    try {
-      const response = await axios.get(`${API}/employees`, { withCredentials: true });
-      const employee = response.data.find(emp => emp.employee_id === employeeId);
-      if (employee) {
-        setViewedEmployee(employee);
-      }
-    } catch (error) {
-      console.error("Failed to load employee data:", error);
-    }
-  }, [employeeId]);
-
   useEffect(() => { loadRecords(); }, [loadRecords]);
-  useEffect(() => { loadViewedEmployee(); }, [loadViewedEmployee]);
 
   // Reset page when filters change
   useEffect(() => { setPage(1); }, [search, typeFilter, deadlineFilter, selectedPeriod, customFrom, customTo]);
@@ -672,9 +657,9 @@ function PerformanceView({ employeeId, employeeName, onBack, showBackLabel, isAd
       />
 
       {/* Upgrade Level Modal */}
-      {showUpgradeModal && viewedEmployee && (
+      {showUpgradeModal && employee && (
         <UpgradeLevelModal
-          employee={viewedEmployee}
+          employee={employee}
           onClose={() => setShowUpgradeModal(false)}
         />
       )}
@@ -958,6 +943,7 @@ export default function PerformancePage() {
           {selectedTeam && selectedEmployee && (
             <PerformanceView employeeId={selectedEmployee.employee_id}
               employeeName={`${selectedEmployee.first_name} ${selectedEmployee.last_name}`}
+              employee={selectedEmployee}
               onBack={() => setSelectedEmployee(null)} showBackLabel={selectedTeam.team_name}
               isAdminDept={isAdminDept} />
           )}
@@ -975,6 +961,7 @@ export default function PerformancePage() {
           {selectedEmployee && (
             <PerformanceView employeeId={selectedEmployee.employee_id}
               employeeName={`${selectedEmployee.first_name} ${selectedEmployee.last_name}`}
+              employee={selectedEmployee}
               onBack={() => setSelectedEmployee(null)}
               showBackLabel={myManagedTeams.length > 1 ? "My Teams" : (myManagedTeams[0]?.team_name || "My Team")}
               isAdminDept={isAdminDept} />
@@ -985,6 +972,7 @@ export default function PerformancePage() {
       {isEmployee && (
         <PerformanceView employeeId={myEmployee.employee_id}
           employeeName={`${myEmployee.first_name} ${myEmployee.last_name}`}
+          employee={myEmployee}
           onBack={null} isAdminDept={isAdminDept} />
       )}
 
