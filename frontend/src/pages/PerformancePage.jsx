@@ -884,7 +884,7 @@ function EmployeePerformanceWithTabs({ myEmployee, isAdminDept }) {
 
   const tabs = [
     { val: "performance", label: "My Performance", icon: BarChart2 },
-    { val: "team-of-month", label: "Creative Team of the Month", icon: Trophy },
+    { val: "team-of-month", label: "Team of the Month", icon: Trophy },
   ];
 
   return (
@@ -940,7 +940,7 @@ function AdminManagerLanding({
   const [selectedEmployeeFromTab, setSelectedEmployeeFromTab] = useState(null);
 
   // Build tabs based on role — Team Performance is the FIRST tab,
-  // Creative Team of the Month is the SECOND tab for all roles.
+  // Team of the Month is the SECOND tab for all roles.
   const tabs = [];
 
   if (isAdminDept && !isManager) {
@@ -949,7 +949,7 @@ function AdminManagerLanding({
     tabs.push({ val: "team-performance", label: "My Team Performance", icon: Users });
   }
 
-  tabs.push({ val: "team-of-month", label: "Creative Team of the Month", icon: Trophy });
+  tabs.push({ val: "team-of-month", label: "Team of the Month", icon: Trophy });
 
   // Manager: if employee selected via tab, show their performance view
   if (selectedEmployeeFromTab) {

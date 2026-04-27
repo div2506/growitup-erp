@@ -430,7 +430,7 @@ export default function CreativeTeamOfMonth() {
       {/* Header Section */}
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
-          Creative Team of the Month
+          Team of the Month
         </h2>
         <div className="flex items-center gap-3">
           {isAdmin && (
