@@ -192,7 +192,13 @@ async def google_login(body: GoogleAuth, response: Response):
 
     session_token = str(uuid.uuid4())
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-    await db.user_sessions.delete_many({"user_id": user_id})
+    # Allow multiple concurrent sessions (one per device) — do NOT delete existing sessions.
+    # Previously delete_many wiped all sessions on every login, causing other devices to go 401.
+    # Clean up only expired sessions for this user to keep the DB tidy.
+    await db.user_sessions.delete_many({
+        "user_id": user_id,
+        "expires_at": {"$lt": datetime.now(timezone.utc).isoformat()}
+    })
     await db.user_sessions.insert_one({
         "user_id": user_id, "session_token": session_token,
         "expires_at": expires_at.isoformat(),
