@@ -116,6 +116,9 @@ frontend:
         - working: true
           agent: "testing"
           comment: "Modal opens successfully. Employee Information section displays correctly with read-only fields (Name: Admin GrowItUp, Employee ID: GM001, Job Position: Director/CEO/COO, Current Level: No Level). Level dropdown shows correct 4 options for null level (Beginner, Intermediate, Advanced, Manager). Month dropdown shows 12 months in correct format with proper first month logic. Submit button state changes correctly based on selections. Cancel button closes modal without submission."
+        - working: true
+          agent: "testing"
+          comment: "BUG FIX VERIFIED (2026-04-27): Tested scenario where admin (GM001) views another employee's (GM002) performance page. Modal correctly displays VIEWED employee's information (Test Employee, GM002, Video Editor, Beginner) and NOT the logged-in admin's information. This confirms the bug fix is working - modal now shows the employee being viewed, not the logged-in user. Level dropdown correctly shows only 2 options (Beginner, Intermediate) for Beginner level employee, not all 4 options."
   
   - task: "Upgrade Your Level Modal - Level Dropdown Logic"
     implemented: true
@@ -155,6 +158,9 @@ frontend:
         - working: true
           agent: "testing"
           comment: "CORS FIX VERIFIED: Backend proxy endpoint implemented correctly. POST /api/upgrade-level-request endpoint added at line 1668-1711 in server.py with: (1) UpgradeLevelRequest model for request validation, (2) Authentication via get_current_user, (3) Authorization check (admin can submit for anyone, non-admin only for self), (4) Slack message formatting with all required fields, (5) HTTP POST to Slack webhook with proper error handling. Frontend updated at line 80 in UpgradeLevelModal.jsx to call ${API}/upgrade-level-request instead of Slack directly. CORS issue resolved - frontend now calls same-origin backend which forwards to Slack. Code review confirms proper implementation."
+        - working: true
+          agent: "testing"
+          comment: "E2E TEST VERIFIED (2026-04-27): Completed full end-to-end test of form submission. Admin (GM001) viewed GM002's performance page, opened modal, selected Intermediate level and May 2026 exam month, and submitted form. Form submission successful with success toast message displayed. Slack webhook integration working correctly - message sent with GM002's information (Name: Test Employee, Employee ID: GM002, Position: Video Editor, Current Level: Beginner, Requested Level: Intermediate, Exam Month: May 2026). Backend proxy endpoint functioning as expected."
   
   - task: "Upgrade Your Level Button - Visibility and Enable Logic"
     implemented: true
@@ -219,3 +225,6 @@ agent_communication:
     
     - agent: "testing"
       message: "CORS FIX VERIFICATION (2026-04-26): Verified backend proxy endpoint implementation. Backend endpoint POST /api/upgrade-level-request exists at line 1668 in server.py with proper authentication, authorization, and Slack webhook forwarding. Frontend UpgradeLevelModal.jsx updated to call backend API (line 80) instead of Slack directly. Code review confirms CORS issue is resolved - frontend now calls same-origin backend which forwards to Slack. Unable to complete full E2E test due to session authentication issues in test environment, but code implementation is correct and CORS fix is properly implemented."
+    
+    - agent: "testing"
+      message: "BUG FIX VERIFICATION (2026-04-27): Tested the bug fix for 'Upgrade Your Level' popup showing wrong employee information. CRITICAL BUG FIX VERIFIED ✅: When admin (GM001) views another employee's (GM002) performance page and clicks 'Upgrade Your Level', the modal correctly shows GM002's information (Name: Test Employee, ID: GM002, Position: Video Editor, Level: Beginner) and NOT the admin's information. Level dropdown correctly shows only Beginner and Intermediate options for Beginner level employee. Form submission successful - Slack message sent with GM002's information. All test cases passed (TC1-TC10). Bug is completely fixed."
