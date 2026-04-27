@@ -46,11 +46,19 @@ export default function LoginPage() {
       }
 
       const data = await res.json();
+      // Store session token in localStorage for cross-device/mobile cookie fallback
+      if (data.session_token) {
+        localStorage.setItem("session_token", data.session_token);
+      }
       setUser(data.user);
 
       // Load employee profile for sidebar/performance
       try {
-        const empRes = await fetch(`${API}/me/employee`, { credentials: "include" });
+        const token = data.session_token || localStorage.getItem("session_token");
+        const empRes = await fetch(`${API}/me/employee`, {
+          credentials: "include",
+          headers: token ? { "Authorization": `Bearer ${token}` } : {},
+        });
         if (empRes.ok) {
           const empData = await empRes.json();
           if (empData?.employee_id) setMyEmployee(empData);

@@ -11,7 +11,20 @@ import PerformancePage from "@/pages/PerformancePage";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Layout from "@/components/Layout";
 import { AuthProvider } from "@/contexts/AuthContext";
+import axios from "axios";
 import "@/App.css";
+
+// Set axios defaults so ALL requests include the session token as Bearer header.
+// This is the cross-device/mobile fallback when cookies are blocked (Safari, strict browsers).
+axios.defaults.withCredentials = true;
+axios.interceptors.request.use((config) => {
+  const token = localStorage.getItem("session_token");
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers["Authorization"] = `Bearer ${token}`;
+  }
+  return config;
+});
 
 function AppRouter() {
   return (

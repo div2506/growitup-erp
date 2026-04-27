@@ -9,8 +9,14 @@ export default function Layout() {
 
   const handleLogout = async () => {
     try {
-      await fetch(`${API}/auth/logout`, { method: "POST", credentials: "include" });
+      const token = localStorage.getItem("session_token");
+      await fetch(`${API}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+        headers: token ? { "Authorization": `Bearer ${token}` } : {},
+      });
     } catch {}
+    localStorage.removeItem("session_token");
     setUser(null);
     setMyEmployee(null);
     navigate("/login", { replace: true });

@@ -207,7 +207,7 @@ async def google_login(body: GoogleAuth, response: Response):
     return {"user": {
         "user_id": user_id, "email": email, "name": name,
         "picture": picture, "is_admin": is_admin
-    }}
+    }, "session_token": session_token}
 
 
 @api_router.get("/auth/me")
