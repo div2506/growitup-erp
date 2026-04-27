@@ -923,24 +923,28 @@ function EmployeePerformanceWithTabs({ myEmployee, isAdminDept }) {
 // ── Admin/Manager Landing with Tabs ────────────────────────────────────────
 
 function AdminManagerLanding({ isAdminDept, myEmployee, onViewTeamPerformance, myManagedTeams }) {
-  const [activeTab, setActiveTab] = useState("team-of-month");
-  const [selectedEmployeeFromTab, setSelectedEmployeeFromTab] = useState(null);
-
   // Determine if user is manager (has managed teams) vs admin
   const isManager = myManagedTeams && myManagedTeams.length > 0;
 
-  // Build tabs based on role
-  const tabs = [
-    { val: "team-of-month", label: "Creative Team of the Month", icon: Trophy },
-  ];
+  // Default to "team-performance" for managers (shows their team members);
+  // for admins (no teams) default to "team-of-month" since clicking team-performance
+  // auto-navigates and its content area is empty.
+  const [activeTab, setActiveTab] = useState(isManager ? "team-performance" : "team-of-month");
+  const [selectedEmployeeFromTab, setSelectedEmployeeFromTab] = useState(null);
+
+  // Build tabs based on role — Team Performance is the FIRST tab,
+  // Creative Team of the Month is the SECOND tab for all roles.
+  const tabs = [];
 
   if (isAdminDept && !isManager) {
-    // Admin (no teams): Creative Team + Team Performance (shows team selection)
+    // Admin (no teams): Team Performance (navigates to team selection) + Creative Team
     tabs.push({ val: "team-performance", label: "Team Performance", icon: BarChart2 });
   } else if (isManager) {
-    // Manager (has teams): Creative Team + My Team Performance (shows their team members)
+    // Manager (has teams): My Team Performance (shows their team members) + Creative Team
     tabs.push({ val: "team-performance", label: "My Team Performance", icon: Users });
   }
+
+  tabs.push({ val: "team-of-month", label: "Creative Team of the Month", icon: Trophy });
 
   // If an employee is selected from the team members view, show their performance
   if (selectedEmployeeFromTab) {
