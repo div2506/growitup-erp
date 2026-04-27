@@ -96,125 +96,141 @@ function AddDetailsModal({ onClose, onSuccess, selectedMonth, managers }) {
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="bg-[#2F2F2F] border-white/10 text-white max-w-[600px]">
+      <DialogContent className="bg-[#2F2F2F] border-white/10 text-white max-w-[750px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-white">Add Manager Performance Details</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 mt-4">
-          <div className="space-y-2">
-            <Label className="text-[#B3B3B3] text-sm">Manager *</Label>
-            <Select value={formData.manager_id} onValueChange={(v) => setFormData({ ...formData, manager_id: v })}>
-              <SelectTrigger className="bg-[#191919] border-white/10 text-white">
-                <SelectValue placeholder="Select manager" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#2F2F2F] border-white/10 max-h-[300px]">
-                {managers.map(mgr => (
-                  <SelectItem
-                    key={mgr.employee_id}
-                    value={mgr.employee_id}
-                    className="text-white hover:bg-white/10 focus:bg-white/10 cursor-pointer"
-                  >
-                    {mgr.first_name} {mgr.last_name} ({mgr.employee_id})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <div className="space-y-4 mt-2">
+          {/* Single Column for Manager and Month */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-[#B3B3B3] text-sm">Manager *</Label>
+              <Select value={formData.manager_id} onValueChange={(v) => setFormData({ ...formData, manager_id: v })}>
+                <SelectTrigger className="bg-[#191919] border-white/10 text-white">
+                  <SelectValue placeholder="Select manager" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#2F2F2F] border-white/10 max-h-[250px]">
+                  {managers.map(mgr => (
+                    <SelectItem
+                      key={mgr.employee_id}
+                      value={mgr.employee_id}
+                      className="text-white hover:bg-white/10 focus:bg-white/10 cursor-pointer"
+                    >
+                      {mgr.first_name} {mgr.last_name} ({mgr.employee_id})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-[#B3B3B3] text-sm">Month *</Label>
+              <Select value={formData.month} onValueChange={(v) => setFormData({ ...formData, month: v })}>
+                <SelectTrigger className="bg-[#191919] border-white/10 text-white">
+                  <SelectValue placeholder="Select month" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#2F2F2F] border-white/10 max-h-[250px]">
+                  {monthOptions.map(opt => (
+                    <SelectItem
+                      key={opt.value}
+                      value={opt.value}
+                      className="text-white hover:bg-white/10 focus:bg-white/10 cursor-pointer"
+                    >
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label className="text-[#B3B3B3] text-sm">Month *</Label>
-            <Select value={formData.month} onValueChange={(v) => setFormData({ ...formData, month: v })}>
-              <SelectTrigger className="bg-[#191919] border-white/10 text-white">
-                <SelectValue placeholder="Select month" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#2F2F2F] border-white/10 max-h-[300px]">
-                {monthOptions.map(opt => (
-                  <SelectItem
-                    key={opt.value}
-                    value={opt.value}
-                    className="text-white hover:bg-white/10 focus:bg-white/10 cursor-pointer"
-                  >
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Two Column Layout for Scores and Notes */}
+          <div className="grid grid-cols-2 gap-4">
+            {/* Left Column */}
+            <div className="space-y-3">
+              {/* Client Performance */}
+              <div className="space-y-1.5">
+                <Label className="text-[#B3B3B3] text-sm">Client Performance Score (0-100) *</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={formData.client_performance_score}
+                  onChange={(e) => setFormData({ ...formData, client_performance_score: e.target.value })}
+                  placeholder="Enter score"
+                  className="bg-[#191919] border-white/10 text-white"
+                />
+                <Label className="text-[#B3B3B3] text-xs">Notes (optional)</Label>
+                <Textarea
+                  value={formData.client_performance_notes}
+                  onChange={(e) => setFormData({ ...formData, client_performance_notes: e.target.value })}
+                  placeholder="Add notes..."
+                  maxLength={500}
+                  className="bg-[#191919] border-white/10 text-white text-xs resize-none h-16"
+                />
+                <div className="text-xs text-[#B3B3B3] text-right">{formData.client_performance_notes.length}/500</div>
+              </div>
 
-          <div className="space-y-2">
-            <Label className="text-[#B3B3B3] text-sm">Client Performance Score (0-100) *</Label>
-            <Input
-              type="number"
-              min="0"
-              max="100"
-              step="0.01"
-              value={formData.client_performance_score}
-              onChange={(e) => setFormData({ ...formData, client_performance_score: e.target.value })}
-              placeholder="Enter score (0-100)"
-              className="bg-[#191919] border-white/10 text-white"
-            />
-            <Label className="text-[#B3B3B3] text-xs mt-1">Client Performance Notes (optional)</Label>
-            <Textarea
-              value={formData.client_performance_notes}
-              onChange={(e) => setFormData({ ...formData, client_performance_notes: e.target.value })}
-              placeholder="Add notes about client performance (optional)"
-              maxLength={500}
-              className="bg-[#191919] border-white/10 text-white text-sm resize-none h-20"
-            />
-            <div className="text-xs text-[#B3B3B3] text-right">{formData.client_performance_notes.length}/500</div>
-          </div>
+              {/* Client Feedback */}
+              <div className="space-y-1.5">
+                <Label className="text-[#B3B3B3] text-sm">Client Feedback (0-100) *</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={formData.client_feedback_score}
+                  onChange={(e) => setFormData({ ...formData, client_feedback_score: e.target.value })}
+                  placeholder="Enter score"
+                  className="bg-[#191919] border-white/10 text-white"
+                />
+                <Label className="text-[#B3B3B3] text-xs">Notes (optional)</Label>
+                <Textarea
+                  value={formData.client_feedback_notes}
+                  onChange={(e) => setFormData({ ...formData, client_feedback_notes: e.target.value })}
+                  placeholder="Add notes..."
+                  maxLength={500}
+                  className="bg-[#191919] border-white/10 text-white text-xs resize-none h-16"
+                />
+                <div className="text-xs text-[#B3B3B3] text-right">{formData.client_feedback_notes.length}/500</div>
+              </div>
+            </div>
 
-          <div className="space-y-2">
-            <Label className="text-[#B3B3B3] text-sm">Client Feedback (0-100) *</Label>
-            <Input
-              type="number"
-              min="0"
-              max="100"
-              step="0.01"
-              value={formData.client_feedback_score}
-              onChange={(e) => setFormData({ ...formData, client_feedback_score: e.target.value })}
-              placeholder="Enter score (0-100)"
-              className="bg-[#191919] border-white/10 text-white"
-            />
-            <Label className="text-[#B3B3B3] text-xs mt-1">Client Feedback Notes (optional)</Label>
-            <Textarea
-              value={formData.client_feedback_notes}
-              onChange={(e) => setFormData({ ...formData, client_feedback_notes: e.target.value })}
-              placeholder="Add notes about client feedback (optional)"
-              maxLength={500}
-              className="bg-[#191919] border-white/10 text-white text-sm resize-none h-20"
-            />
-            <div className="text-xs text-[#B3B3B3] text-right">{formData.client_feedback_notes.length}/500</div>
-          </div>
+            {/* Right Column */}
+            <div className="space-y-3">
+              {/* Creative Task */}
+              <div className="space-y-1.5">
+                <Label className="text-[#B3B3B3] text-sm">Creative Task (0-100) *</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={formData.creative_task_score}
+                  onChange={(e) => setFormData({ ...formData, creative_task_score: e.target.value })}
+                  placeholder="Enter score"
+                  className="bg-[#191919] border-white/10 text-white"
+                />
+                <Label className="text-[#B3B3B3] text-xs">Notes (optional)</Label>
+                <Textarea
+                  value={formData.creative_task_notes}
+                  onChange={(e) => setFormData({ ...formData, creative_task_notes: e.target.value })}
+                  placeholder="Add notes..."
+                  maxLength={500}
+                  className="bg-[#191919] border-white/10 text-white text-xs resize-none h-16"
+                />
+                <div className="text-xs text-[#B3B3B3] text-right">{formData.creative_task_notes.length}/500</div>
+              </div>
 
-          <div className="space-y-2">
-            <Label className="text-[#B3B3B3] text-sm">Creative Task (0-100) *</Label>
-            <Input
-              type="number"
-              min="0"
-              max="100"
-              step="0.01"
-              value={formData.creative_task_score}
-              onChange={(e) => setFormData({ ...formData, creative_task_score: e.target.value })}
-              placeholder="Enter score (0-100)"
-              className="bg-[#191919] border-white/10 text-white"
-            />
-            <Label className="text-[#B3B3B3] text-xs mt-1">Creative Task Notes (optional)</Label>
-            <Textarea
-              value={formData.creative_task_notes}
-              onChange={(e) => setFormData({ ...formData, creative_task_notes: e.target.value })}
-              placeholder="Add notes about creative task (optional)"
-              maxLength={500}
-              className="bg-[#191919] border-white/10 text-white text-sm resize-none h-20"
-            />
-            <div className="text-xs text-[#B3B3B3] text-right">{formData.creative_task_notes.length}/500</div>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-[#B3B3B3] text-sm">Total Points (This month)</Label>
-            <div className="bg-[#191919] border border-white/10 text-white text-sm rounded-lg px-3 py-2 opacity-60">
-              {totalPoints}
+              {/* Total Points Display */}
+              <div className="space-y-1.5">
+                <Label className="text-[#B3B3B3] text-sm">Total Points (This month)</Label>
+                <div className="bg-[#191919] border border-white/10 text-white text-sm rounded-lg px-3 py-2.5 opacity-60 font-medium">
+                  {totalPoints}
+                </div>
+              </div>
             </div>
           </div>
 
