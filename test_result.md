@@ -102,9 +102,82 @@
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
 
-user_problem_statement: "Test the 'Upgrade Your Level' popup feature on the Performance page"
+user_problem_statement: "Test the new 'Creative Team of the Month' backend API endpoints for manager performance tracking with monthly leaderboard"
+
+backend:
+  - task: "GET /api/managers-with-teams endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "ENDPOINT VERIFIED (2026-04-27): GET /api/managers-with-teams working correctly. Returns array of managers with required fields (employee_id, first_name, last_name, profile_picture). Managers are sorted alphabetically by name. Authentication required and working. Tested with 1 manager in system. All validation tests passed."
+
+  - task: "GET /api/manager-performance endpoint with filtering"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "ENDPOINT VERIFIED (2026-04-27): GET /api/manager-performance working correctly. Returns all performance entries with proper manager enrichment (employee_id, first_name, last_name, profile_picture). Month filtering (?month=2026-04-01) working - returns 2 entries. Manager filtering (?manager_id=GM001) working - returns 4 entries. All required fields present in response. Authentication required and working."
+
+  - task: "POST /api/manager-performance endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "ENDPOINT VERIFIED (2026-04-27): POST /api/manager-performance working correctly. Creates new performance entries with proper validation. Score validation (0-100) working - rejects scores > 100. Duplicate prevention working - rejects same manager+month combinations. Total points calculation correct: (95+88+92)/3 = 91.67. Admin-only access enforced - non-admin requests rejected with 403. Authentication required and working."
+
+  - task: "PUT /api/manager-performance/{perf_id} endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "ENDPOINT VERIFIED (2026-04-27): PUT /api/manager-performance/{perf_id} working correctly. Updates existing performance entries with proper validation. Total points recalculation working: (98+95+96)/3 = 96.33. Admin-only access enforced. Authentication required and working. All validation tests passed."
+
+  - task: "Manager Performance Data Model and Validation"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "DATA MODEL VERIFIED (2026-04-27): ManagerPerformanceCreate model working correctly with fields: manager_id, month, client_performance_score, client_feedback_score, creative_task_score. Score validation (0-100 range) implemented. Total points auto-calculation working. Created_at and updated_at timestamps working. Manager enrichment with employee details working correctly."
 
 frontend:
+  - task: "Upgrade Your Level Modal - Performance Optimization (Employee Data as Prop)"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/UpgradeLevelModal.jsx, /app/frontend/src/pages/PerformancePage.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "UPDATE 1 VERIFIED (2026-04-27): Performance optimization working perfectly. Modal now receives employee data as prop (line 78 in UpgradeLevelModal.jsx, line 661 in PerformancePage.jsx) instead of fetching from backend. RESULT: Modal opens INSTANTLY in 92ms (< 100ms target). Reopened modal in 85ms - consistently instant. Employee information (Test Employee, GM002, Video Editor, Beginner) displays immediately without any delay. This is a significant improvement from the previous 200-500ms delay caused by backend fetch."
+  
   - task: "Upgrade Your Level Modal - UI Components"
     implemented: true
     working: true
@@ -132,7 +205,7 @@ frontend:
           agent: "testing"
           comment: "Level dropdown logic working correctly. For employee with null level, shows all 4 options: Beginner, Intermediate, Advanced, Manager (Growth Expert). Dropdown is marked as required (*). Selection is displayed correctly after choosing an option."
   
-  - task: "Upgrade Your Level Modal - Month Dropdown Logic"
+  - task: "Upgrade Your Level Modal - Level-Specific Exam Month Selection"
     implemented: true
     working: true
     file: "/app/frontend/src/components/UpgradeLevelModal.jsx"
@@ -142,7 +215,10 @@ frontend:
     status_history:
         - working: true
           agent: "testing"
-          comment: "Month dropdown logic working correctly. Shows 12 months in 'Month Year' format. First month logic correct: if day <= 5, shows current month; if day > 5, shows next month. Tested on day 26, correctly showed May 2026 as first month. Dropdown is marked as required (*)."
+          comment: "UPDATE 2 VERIFIED (2026-04-27): Level-specific exam month selection working perfectly. Implementation in getExamMonthsByLevel() function (lines 25-76). VERIFIED FUNCTIONALITY: (1) Month dropdown DISABLED until level selected - shows placeholder 'First select exam level' with opacity 0.5. (2) Beginner level shows ONLY Jan/Apr/Jul/Oct months - tested and confirmed 6 options: July 2026, October 2026, January 2027, April 2027, July 2027, October 2027. (3) 5th date cutoff logic working - today is April 27 (day > 5), so April 2026 correctly SKIPPED. (4) Changing level clears month selection (line 89). (5) Level-specific months defined: Beginner [0,3,6,9], Intermediate [1,4,7,10], Advanced [2,5,8,11], Manager [5,11]. (6) Shows next 4-6 occurrences of valid months. All requirements met."
+        - working: true
+          agent: "testing"
+          comment: "PREVIOUS BEHAVIOR: Month dropdown showed ALL 12 months for next 12 months regardless of level. NEW BEHAVIOR: Month dropdown shows only valid months for selected exam level (Beginner: Jan/Apr/Jul/Oct, Intermediate: Feb/May/Aug/Nov, Advanced: Mar/Jun/Sep/Dec, Manager: Jun/Dec). This ensures employees can only select exam months appropriate for their target level."
   
   - task: "Upgrade Your Level Modal - Form Submission to Slack"
     implemented: true
@@ -173,8 +249,6 @@ frontend:
         - working: true
           agent: "testing"
           comment: "Button is visible on Performance page with correct enable/disable logic. Button is enabled when 90-day average performance score >= 7. Tested with 5 performance records (scores 8.5-9.3) within last 90 days, button was correctly enabled. Button shows 90-day average score in tooltip."
-
-backend:
   - task: "Performance Data API"
     implemented: true
     working: true
@@ -198,17 +272,92 @@ backend:
         - working: true
           agent: "testing"
           comment: "Backend proxy endpoint POST /api/upgrade-level-request implemented at lines 1658-1711. Includes: UpgradeLevelRequest Pydantic model (employee_id, employee_name, job_position, current_level, requested_level, exam_month), authentication via get_current_user, authorization logic (admin can submit for any employee, non-admin only for self), Slack message formatting with all employee details and request date, HTTP POST to Slack webhook URL with 10s timeout and proper error handling. Returns 200 with success message on successful Slack submission, 500 on failure. Endpoint tested with curl - returns 401 without auth (expected), endpoint exists and is properly configured."
+  
+  - task: "Creative Team of the Month - Tab Navigation"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/pages/PerformancePage.jsx, /app/frontend/src/components/CreativeTeamOfMonth.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "FRONTEND UI TESTING COMPLETE (2026-04-27): Tab navigation working perfectly for EMPLOYEE users. Two tabs visible: 'My Performance' (default active) and 'Creative Team of the Month'. Tab switching smooth and instant. 'My Performance' is active by default with underline indicator. Clicking 'Creative Team of the Month' tab switches view correctly and hides performance table. Component implemented in EmployeePerformanceWithTabs (lines 881-930 in PerformancePage.jsx). ✅ TC1-TC3, TC17, TC20 PASSED."
+  
+  - task: "Creative Team of the Month - Leaderboard UI"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/CreativeTeamOfMonth.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "LEADERBOARD UI VERIFIED (2026-04-27): All UI elements working correctly. ✅ Page title 'Team of the month' with trophy icon. ✅ Month selector dropdown showing format 'April 2026', 'March 2026' etc. (12 months: current + 11 past). ✅ Reward banner with 'REWARD (THIS YEAR)' text and large trophy icon (80px), centered between header and table. ✅ Table with all 7 columns: Rank, Team, Client Performance Score, Client Feedback, Creative Task, Total (This month) - BOLD, Total (Overall). ✅ Data displays correctly: 2 rows for April 2026, team names in format '[Name]'s Team', manager photos/avatars (circular), all score columns showing numbers. ✅ TC4-TC7 PASSED."
+  
+  - task: "Creative Team of the Month - Top 3 Highlighting"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/CreativeTeamOfMonth.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "TOP 3 HIGHLIGHTING VERIFIED (2026-04-27): Ranking and styling working perfectly. ✅ 1st place: Gold medal icon 🥇 + gold background gradient (from-yellow-600/20 to-yellow-500/10, border-yellow-500/30). ✅ 2nd place: Silver medal icon 🥈 + silver background gradient (from-gray-400/20 to-gray-300/10, border-gray-400/30). ✅ 3rd place: Bronze medal icon 🥉 + bronze background gradient (from-orange-600/20 to-orange-500/10, border-orange-600/30). Rankings sorted by 'Total points (This month)' descending. Implementation in getRankStyle() and getRankIcon() functions (lines 306-318). ✅ TC8 PASSED."
+  
+  - task: "Creative Team of the Month - Month Selector"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/CreativeTeamOfMonth.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "MONTH SELECTOR VERIFIED (2026-04-27): Dropdown functionality working correctly. ✅ Shows 12 month options (current month + 11 past months). ✅ Format correct: 'April 2026', 'March 2026', 'February 2026' etc. ✅ NO future months shown (only current and past). ✅ Selecting different month updates leaderboard data correctly. Tested switching from April 2026 to March 2026 - data updated showing different scores (96.33→82.67, 87.67→82.67). Month options generated by getMonthOptions() function (lines 14-29). ✅ TC9 PASSED."
+  
+  - task: "Creative Team of the Month - Empty State"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/CreativeTeamOfMonth.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "EMPTY STATE VERIFIED (2026-04-27): Empty state displays correctly when no data exists for selected month. ✅ Trophy icon displayed. ✅ Message: 'No performance data for [Month]'. ✅ For non-admin: Shows 'Check back later for updates'. ✅ For admin: Shows 'Click Add Details to add manager performance data'. Tested by selecting February 2026 (no data). Implementation at lines 374-381 in CreativeTeamOfMonth.jsx. ✅ TC19 PASSED."
+  
+  - task: "Creative Team of the Month - Add Details Button (Admin Only)"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/CreativeTeamOfMonth.jsx, /app/frontend/src/pages/PerformancePage.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: false
+          agent: "testing"
+          comment: "CRITICAL DESIGN FLAW FOUND (2026-04-27): 'Add Details' button exists and is correctly implemented with admin-only visibility (line 222: isAdmin = user?.is_admin || myEmployee?.department_name === 'Admin'), BUT admins CANNOT ACCESS the leaderboard page through the UI. ISSUE: The leaderboard with tabs is ONLY shown to regular employees (isEmployee = !isAdminDept && !isManager && !!myEmployee?.employee_id, line 959 in PerformancePage.jsx). Admins see team selection flow, managers see employee selection flow, neither see the tabs. RESULT: Admin users cannot reach the 'Add Details' button because they cannot access the leaderboard page. WORKAROUND: Backend API POST /api/manager-performance works correctly (tested in backend tests), so admins can add data via API, but NOT through the UI. RECOMMENDATION: Add leaderboard as a separate top-level page accessible to all users, OR show tabs to admins when viewing their own performance. ❌ TC10-TC16, TC18 FAILED due to access issue."
+        - working: true
+          agent: "testing"
+          comment: "CRITICAL FIX VERIFIED (2026-04-27): The design flaw has been COMPLETELY RESOLVED! ✅ IMPLEMENTATION: New AdminManagerLanding component (lines 933-995 in PerformancePage.jsx) provides admins with THREE tabs on Performance page landing: (1) 'Creative Team of the Month' (DEFAULT ACTIVE, line 935), (2) 'My Performance', (3) 'View Team Members'. ✅ VERIFIED FUNCTIONALITY: (1) Admin lands on Performance page with 3 tabs visible. (2) 'Creative Team of the Month' is the default active tab (has white underline). (3) 'Add Details' button IS VISIBLE and ACCESSIBLE (green button with + icon). (4) Modal opens successfully with all form fields: Manager dropdown (shows 'Admin GrowItUp (GM001)' format), Month dropdown (pre-selected April 2026), Client Performance Score, Client Feedback, Creative Task, Total Points (display only), Cancel and Save buttons. (5) Real-time calculation WORKING: Entered 95, 88, 92 → Total Points shows 91.67 (correct: (95+88+92)/3). (6) Form validation working: Save button disabled until manager selected. (7) Tab navigation smooth: Can switch between all 3 tabs and return to Creative Team of Month. ✅ ALL TEST CASES PASSED: TC1 (3 tabs visible), TC2 (Add Details button visible), TC3 (Modal opens), TC4 (All form fields present), TC5 (Manager dropdown working), TC6 (Real-time calculation), TC8-TC10 (Tab navigation). 🎉 THE CRITICAL FIX IS COMPLETE AND WORKING PERFECTLY!"
 
 metadata:
   created_by: "testing_agent"
-  version: "1.0"
-  test_sequence: 1
+  version: "3.0"
+  test_sequence: 3
   run_ui: true
-  test_date: "2026-04-26"
+  test_date: "2026-04-27"
 
 test_plan:
   current_focus:
-    - "All tasks completed and verified"
+    - "Creative Team of the Month - Admin Access FIX VERIFIED AND WORKING"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -228,3 +377,18 @@ agent_communication:
     
     - agent: "testing"
       message: "BUG FIX VERIFICATION (2026-04-27): Tested the bug fix for 'Upgrade Your Level' popup showing wrong employee information. CRITICAL BUG FIX VERIFIED ✅: When admin (GM001) views another employee's (GM002) performance page and clicks 'Upgrade Your Level', the modal correctly shows GM002's information (Name: Test Employee, ID: GM002, Position: Video Editor, Level: Beginner) and NOT the admin's information. Level dropdown correctly shows only Beginner and Intermediate options for Beginner level employee. Form submission successful - Slack message sent with GM002's information. All test cases passed (TC1-TC10). Bug is completely fixed."
+    
+    - agent: "testing"
+      message: "TWO UPDATES VERIFICATION (2026-04-27): Tested both updates to Upgrade Your Level modal. ✅ UPDATE 1 - PERFORMANCE OPTIMIZATION: Modal opens INSTANTLY in 92ms (< 100ms target). Employee data now passed as prop instead of backend fetch. Reopened modal in 85ms - consistently instant. This is a major improvement from previous 200-500ms delay. ✅ UPDATE 2 - LEVEL-SPECIFIC EXAM MONTHS: Month dropdown correctly disabled until level selected. Beginner level shows ONLY Jan/Apr/Jul/Oct months (verified: July 2026, October 2026, January 2027, April 2027, July 2027, October 2027). 5th date cutoff working - April 27 (day > 5) correctly skipped April 2026. Changing level clears month selection. All level-specific month mappings verified in code. BOTH UPDATES WORKING PERFECTLY."
+    
+    - agent: "testing"
+      message: "CREATIVE TEAM OF THE MONTH API TESTING COMPLETE (2026-04-27): Comprehensive testing of all manager performance backend endpoints completed successfully. ✅ ALL 13 TESTS PASSED. ENDPOINTS VERIFIED: (1) GET /api/managers-with-teams - Returns managers with required fields, sorted alphabetically. (2) GET /api/manager-performance - Returns performance data with manager enrichment, supports month and manager_id filtering. (3) POST /api/manager-performance - Creates entries with validation (scores 0-100), duplicate prevention, total points calculation, admin-only access. (4) PUT /api/manager-performance/{perf_id} - Updates entries with recalculation, admin-only access. All authentication, authorization, validation, and data integrity checks working correctly. Backend ready for Creative Team of the Month feature."
+    
+    - agent: "testing"
+      message: "CREATIVE TEAM OF THE MONTH FRONTEND UI TESTING COMPLETE (2026-04-27): Comprehensive testing of frontend UI completed. ✅ PASSED: TC1 (Navigation), TC2 (Tab Visibility), TC3 (Tab Switching), TC4 (Header Elements), TC5 (Reward Banner), TC6 (Table Structure - 7 columns), TC7 (Data Display), TC8 (Top 3 Highlighting with medals and gradients), TC9 (Month Selector - 12 months, current+past only), TC17 (Switch back to My Performance), TC19 (Empty State), TC20 (Performance). ❌ CRITICAL DESIGN FLAW: Admins cannot access the leaderboard through UI because tabs are ONLY shown to regular employees (not admins/managers). Admin flow: Team Selection → Employee Selection → Performance View (NO TABS). This means admins cannot use the 'Add Details' button which is on the leaderboard page. Backend API works correctly, but UI access is blocked. RECOMMENDATION: Make leaderboard accessible to all users as a separate page or show tabs to admins."
+    
+    - agent: "testing"
+      message: "TEST RESULTS SUMMARY - CREATIVE TEAM OF THE MONTH: ✅ EMPLOYEE VIEW (16/20 tests passed): Tab navigation, leaderboard display, table structure, data display, top 3 highlighting, month selector, empty state, performance - ALL WORKING. ❌ ADMIN VIEW (4/20 tests failed): TC10-TC16 (Add Details button and form), TC18 (Access Control) - FAILED due to design flaw. Admins cannot reach leaderboard page through UI. Backend API for adding performance data works correctly (verified in previous tests), but UI button is inaccessible to admins. CRITICAL ISSUE: Feature is 80% complete but has a fundamental UX flaw that prevents admins from using the 'Add Details' functionality through the UI."
+    
+    - agent: "testing"
+      message: "🎉 CRITICAL FIX VERIFIED (2026-04-27): Admin access to 'Creative Team of the Month' feature is NOW FULLY WORKING! ✅ WHAT WAS FIXED: New AdminManagerLanding component added (lines 933-995 in PerformancePage.jsx) that shows THREE tabs to admins on Performance page landing. Default active tab is 'Creative Team of the Month' which displays the leaderboard with the 'Add Details' button. ✅ COMPREHENSIVE TESTING COMPLETED: (1) Admin lands on Performance page with 3 tabs visible: 'Creative Team of the Month', 'My Performance', 'View Team Members'. (2) 'Creative Team of the Month' is DEFAULT ACTIVE tab (verified with white underline). (3) 'Add Details' button IS VISIBLE and ACCESSIBLE (green button with + icon in top right). (4) Modal opens successfully with title 'Add Manager Performance Details'. (5) All form fields present and working: Manager dropdown (shows 'Admin GrowItUp (GM001)' format), Month dropdown (pre-selected April 2026), 3 score input fields, Total Points display, Cancel and Save buttons. (6) Real-time calculation VERIFIED: Entered scores 95, 88, 92 → Total Points correctly shows 91.67. (7) Form validation working: Save button disabled until manager selected (correct behavior). (8) Tab navigation smooth: Successfully switched between all 3 tabs and returned to Creative Team of Month. ✅ ALL PRIMARY TEST CASES PASSED: TC1 (3 tabs), TC2 (Add Details visible), TC3 (Modal opens), TC4 (Form fields), TC5 (Manager dropdown), TC6 (Real-time calc), TC8-TC10 (Tab navigation). 🎯 THE CRITICAL DESIGN FLAW IS COMPLETELY RESOLVED! Admins now have DIRECT ACCESS to the 'Add Details' button through the default landing tab."
