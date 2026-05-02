@@ -258,34 +258,35 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white max-w-4xl max-h-[90vh] overflow-y-auto p-0">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b border-white/10">
-          <DialogTitle className="text-white text-xl" style={{ fontFamily: "Manrope, sans-serif" }}>
+      <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white w-full sm:max-w-4xl h-[100dvh] sm:h-auto sm:max-h-[90vh] max-w-none sm:rounded-lg rounded-none p-0 overflow-hidden flex flex-col">
+        <DialogHeader className="px-4 sm:px-6 pt-5 sm:pt-6 pb-4 border-b border-white/10 shrink-0">
+          <DialogTitle className="text-white text-lg sm:text-xl" style={{ fontFamily: "Manrope, sans-serif" }}>
             {employee ? `Edit Employee — ${employee.employee_id}` : "Add New Employee"}
           </DialogTitle>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={setTab} className="flex flex-col">
-          <div className="px-6 pt-4">
+        <Tabs value={tab} onValueChange={setTab} className="flex flex-col flex-1 overflow-hidden">
+          <div className="px-4 sm:px-6 pt-4 shrink-0">
             <TabsList className="bg-[#191919] border border-white/10 w-full p-1 grid grid-cols-3 h-auto rounded-lg">
               {[["personal", "Personal Info"], ["work", "Work Info"], ["bank", "Bank Info"]].map(([val, lbl]) => (
                 <TabsTrigger
                   key={val}
                   value={val}
                   data-testid={`tab-${val}`}
-                  className="data-[state=active]:bg-[#2F2F2F] data-[state=active]:text-white text-[#B3B3B3] rounded-md py-2 text-sm flex items-center justify-center gap-2 transition-all"
+                  className="data-[state=active]:bg-[#2F2F2F] data-[state=active]:text-white text-[#B3B3B3] rounded-md py-2 text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all whitespace-nowrap"
                 >
                   {tabStatus(val) && <Check size={13} className="text-green-400" />}
-                  {lbl}
+                  <span className="truncate">{lbl}</span>
                 </TabsTrigger>
               ))}
             </TabsList>
           </div>
 
+          <div className="flex-1 overflow-y-auto">
           {/* ===== TAB 1: PERSONAL INFO ===== */}
-          <TabsContent value="personal" className="px-6 pb-6 pt-4">
+          <TabsContent value="personal" className="px-4 sm:px-6 pb-6 pt-4 mt-0">
             {/* Profile Picture */}
-            <div className="flex items-center gap-5 mb-6 pb-5 border-b border-white/10">
+            <div className="flex items-center gap-4 sm:gap-5 mb-5 sm:mb-6 pb-5 border-b border-white/10 flex-wrap">
               <div className="relative">
                 {form.profile_picture ? (
                   <img src={form.profile_picture} alt="Profile" className="w-20 h-20 rounded-full object-cover border-2 border-white/10" />
@@ -299,7 +300,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
                   <input type="file" accept="image/*" className="sr-only" onChange={handlePicture} data-testid="profile-picture-input" />
                 </label>
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-white text-sm font-medium">Profile Picture</p>
                 <p className="text-[#B3B3B3] text-xs mt-0.5">PNG, JPG up to 2MB</p>
                 {form.profile_picture && (
@@ -307,14 +308,14 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
                 )}
               </div>
               {employee && (
-                <div className="ml-auto">
+                <div className="sm:ml-auto">
                   <p className="text-[#B3B3B3] text-xs">Employee ID</p>
                   <p className="text-white font-bold text-lg">{employee.employee_id}</p>
                 </div>
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField label="First Name" required error={errors.first_name}>
                 <Input data-testid="first-name-input" value={form.first_name} onChange={e => set("first_name", e.target.value)} className={inputCls} placeholder="John" />
               </FormField>
@@ -345,7 +346,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
                 <Input data-testid="zipcode-input" value={form.zipcode} onChange={e => set("zipcode", e.target.value)} className={inputCls} placeholder="380001" />
               </FormField>
 
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <FormField label="Address" required error={errors.address}>
                   <Textarea data-testid="address-input" value={form.address} onChange={e => set("address", e.target.value)} className={`${inputCls} min-h-[70px] resize-none`} placeholder="Street address, area..." />
                 </FormField>
@@ -371,13 +372,13 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
                   </SelectContent>
                 </Select>
               </FormField>
-              <div /> {/* spacer */}
+              <div className="hidden sm:block" /> {/* spacer */}
             </div>
 
             {/* Emergency Contact */}
             <div className="mt-5 pt-5 border-t border-white/10">
               <p className="text-white font-medium text-sm mb-3">Emergency Contact</p>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <FormField label="Contact Name" required error={errors.emergency_contact_name}>
                   <Input data-testid="emergency-name-input" value={form.emergency_contact_name} onChange={e => set("emergency_contact_name", e.target.value)} className={inputCls} placeholder="Name" />
                 </FormField>
@@ -391,20 +392,20 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
             </div>
 
             <div className="flex justify-end mt-6">
-              <Button data-testid="tab1-next" onClick={goToTab2} className="bg-white text-black hover:bg-gray-100 gap-1.5">
+              <Button data-testid="tab1-next" onClick={goToTab2} className="bg-white text-black hover:bg-gray-100 gap-1.5 min-h-[44px]">
                 Next: Work Info <ChevronRight size={16} />
               </Button>
             </div>
           </TabsContent>
 
           {/* ===== TAB 2: WORK INFO ===== */}
-          <TabsContent value="work" className="px-6 pb-6 pt-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
+          <TabsContent value="work" className="px-4 sm:px-6 pb-6 pt-4 mt-0">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
                 <FormField label="Work Email (Login Email)" required error={errors.work_email}>
                   <div className="relative">
-                    <Input data-testid="work-email-input" type="email" value={form.work_email} onChange={e => set("work_email", e.target.value)} className={`${inputCls} pr-32`} placeholder="john@growitup.com" />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded">Login Email</span>
+                    <Input data-testid="work-email-input" type="email" value={form.work_email} onChange={e => set("work_email", e.target.value)} className={`${inputCls} pr-28`} placeholder="john@growitup.com" />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] sm:text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded whitespace-nowrap">Login Email</span>
                   </div>
                 </FormField>
               </div>
@@ -505,7 +506,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
                               : [...current, team.team_id];
                             set("teams", updated);
                           }}
-                          className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                          className={`px-3 py-2 rounded-lg text-sm border transition-colors min-h-[40px] ${
                             isSelected
                               ? "bg-white/10 text-white border-white/30"
                               : "bg-transparent text-[#B3B3B3] border-white/10 hover:border-white/20 hover:text-white"
@@ -526,19 +527,19 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
               </div>
             )}
 
-            <div className="flex justify-between mt-6">
-              <Button variant="outline" onClick={() => setTab("personal")} className="bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white gap-1.5">
+            <div className="flex justify-between mt-6 gap-3">
+              <Button variant="outline" onClick={() => setTab("personal")} className="bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white gap-1.5 min-h-[44px]">
                 <ChevronLeft size={16} /> Back
               </Button>
-              <Button data-testid="tab2-next" onClick={goToTab3} className="bg-white text-black hover:bg-gray-100 gap-1.5">
+              <Button data-testid="tab2-next" onClick={goToTab3} className="bg-white text-black hover:bg-gray-100 gap-1.5 min-h-[44px]">
                 Next: Bank Info <ChevronRight size={16} />
               </Button>
             </div>
           </TabsContent>
 
           {/* ===== TAB 3: BANK INFO ===== */}
-          <TabsContent value="bank" className="px-6 pb-6 pt-4">
-            <div className="grid grid-cols-2 gap-4">
+          <TabsContent value="bank" className="px-4 sm:px-6 pb-6 pt-4 mt-0">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField label="Bank Name" required error={errors.bank_name}>
                 <Input data-testid="bank-name-input" value={form.bank_name} onChange={e => set("bank_name", e.target.value)} className={inputCls} placeholder="e.g. HDFC Bank" />
               </FormField>
@@ -553,20 +554,21 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
               </FormField>
             </div>
 
-            <div className="flex justify-between mt-6">
-              <Button variant="outline" onClick={() => setTab("work")} className="bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white gap-1.5">
+            <div className="flex justify-between mt-6 gap-3">
+              <Button variant="outline" onClick={() => setTab("work")} className="bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white gap-1.5 min-h-[44px]">
                 <ChevronLeft size={16} /> Back
               </Button>
               <Button
                 data-testid="save-employee-button"
                 onClick={handleSave}
                 disabled={saving}
-                className="bg-[#E53935] hover:bg-[#F44336] text-white border-0 min-w-[120px]"
+                className="bg-[#E53935] hover:bg-[#F44336] text-white border-0 min-w-[120px] min-h-[44px]"
               >
-                {saving ? "Saving..." : employee ? "Update Employee" : "Add Employee"}
+                {saving ? "Saving..." : employee ? "Update" : "Add Employee"}
               </Button>
             </div>
           </TabsContent>
+          </div>
         </Tabs>
       </DialogContent>
     </Dialog>

@@ -121,11 +121,11 @@ function SelfProfileModal({ employee: initialEmp, onClose, onSaved }) {
   const displayPicture = isEditing ? (form.profile_picture || null) : (emp.profile_picture || null);
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-[#2F2F2F] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center sm:p-4">
+      <div className="bg-[#2F2F2F] sm:border border-white/10 sm:rounded-2xl w-full sm:max-w-lg shadow-2xl h-[100dvh] sm:h-auto sm:max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between px-4 sm:px-5 py-4 border-b border-white/10 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="relative shrink-0">
               {displayPicture ? (
                 <img src={displayPicture} alt={emp.first_name} className="w-11 h-11 rounded-full object-cover border border-white/10" />
@@ -141,40 +141,40 @@ function SelfProfileModal({ employee: initialEmp, onClose, onSaved }) {
                 </label>
               )}
             </div>
-            <div>
-              <h3 className="text-white font-semibold text-sm">{emp.first_name} {emp.last_name}</h3>
-              <p className="text-[#B3B3B3] text-xs">{emp.employee_id} · {emp.department_name}</p>
+            <div className="min-w-0">
+              <h3 className="text-white font-semibold text-sm truncate">{emp.first_name} {emp.last_name}</h3>
+              <p className="text-[#B3B3B3] text-xs truncate">{emp.employee_id} · {emp.department_name}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {!isEditing && (
               <button
                 data-testid="self-edit-toggle-btn"
                 onClick={() => setIsEditing(true)}
                 className="px-3 py-1.5 text-xs font-medium bg-white/10 hover:bg-white/15 text-white rounded-lg transition-colors border border-white/10"
               >
-                Edit Profile
+                Edit
               </button>
             )}
-            <button onClick={onClose} className="text-[#B3B3B3] hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors text-lg leading-none">×</button>
+            <button onClick={onClose} className="text-[#B3B3B3] hover:text-white p-2 rounded-lg hover:bg-white/10 transition-colors text-lg leading-none">×</button>
           </div>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-white/10 shrink-0">
+        <div className="flex border-b border-white/10 shrink-0 overflow-x-auto no-scrollbar">
           {[["personal", "Personal Info"], ["work", "Work Info"], ["bank", "Bank Info"]].map(([v, l]) => (
             <button key={v} onClick={() => setTab(v)}
-              className={`px-5 py-3 text-sm font-medium transition-colors ${tab === v ? "text-white border-b-2 border-white" : "text-[#B3B3B3] hover:text-white"}`}>
+              className={`px-4 sm:px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap ${tab === v ? "text-white border-b-2 border-white" : "text-[#B3B3B3] hover:text-white"}`}>
               {l}
             </button>
           ))}
         </div>
 
         {/* Content */}
-        <div className="px-5 py-4 overflow-y-auto flex-1">
+        <div className="px-4 sm:px-5 py-4 overflow-y-auto flex-1">
           {tab === "personal" && !isEditing && (
             <div className="space-y-0.5">
-              <div className="grid grid-cols-2 gap-x-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
                 <ReadField label="First Name" value={emp.first_name} />
                 <ReadField label="Last Name" value={emp.last_name} />
                 <ReadField label="Personal Email" value={emp.personal_email} />
@@ -184,7 +184,7 @@ function SelfProfileModal({ employee: initialEmp, onClose, onSaved }) {
               </div>
               <ReadField label="Qualification" value={emp.qualification} />
               <ReadField label="Address" value={emp.address} />
-              <div className="grid grid-cols-3 gap-x-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6">
                 <ReadField label="City" value={emp.city_name} />
                 <ReadField label="State" value={emp.state_name} />
                 <ReadField label="Country" value={emp.country} />
@@ -192,7 +192,7 @@ function SelfProfileModal({ employee: initialEmp, onClose, onSaved }) {
               <ReadField label="Zipcode" value={emp.zipcode} />
               <div className="mt-3 pt-2 border-t border-white/10">
                 <p className="text-[#B3B3B3] text-xs uppercase tracking-wider mb-2">Emergency Contact</p>
-                <div className="grid grid-cols-3 gap-x-6">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6">
                   <ReadField label="Name" value={emp.emergency_contact_name} />
                   <ReadField label="Number" value={emp.emergency_contact_number} />
                   <ReadField label="Relation" value={emp.emergency_contact_relation} />
@@ -202,7 +202,7 @@ function SelfProfileModal({ employee: initialEmp, onClose, onSaved }) {
           )}
           {tab === "personal" && isEditing && (
             <div className="space-y-1">
-              <div className="grid grid-cols-2 gap-x-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
                 <LockedField label="First Name" value={emp.first_name} />
                 <LockedField label="Last Name" value={emp.last_name} />
                 <LockedField label="Personal Email" value={emp.personal_email} />
@@ -212,7 +212,7 @@ function SelfProfileModal({ employee: initialEmp, onClose, onSaved }) {
               </div>
               <LockedField label="Qualification" value={emp.qualification} />
               <EditField label="Address" fkey="address" placeholder="Enter address" />
-              <div className="grid grid-cols-3 gap-x-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-3">
                 <EditField label="City" fkey="city_name" placeholder="City" />
                 <EditField label="State" fkey="state_name" placeholder="State" />
                 <LockedField label="Country" value={emp.country} />
@@ -220,7 +220,7 @@ function SelfProfileModal({ employee: initialEmp, onClose, onSaved }) {
               <EditField label="Zipcode" fkey="zipcode" placeholder="Zipcode" />
               <div className="mt-3 pt-2 border-t border-white/10">
                 <p className="text-[#B3B3B3] text-xs uppercase tracking-wider mb-2">Emergency Contact</p>
-                <div className="grid grid-cols-3 gap-x-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-3">
                   <EditField label="Name" fkey="emergency_contact_name" placeholder="Contact name" />
                   <EditField label="Number" fkey="emergency_contact_number" placeholder="Number" />
                   <EditField label="Relation" fkey="emergency_contact_relation" placeholder="Relation" />
@@ -232,7 +232,7 @@ function SelfProfileModal({ employee: initialEmp, onClose, onSaved }) {
             <div className="space-y-0.5">
               <ReadField label="Work Email" value={emp.work_email} />
               <ReadField label="Employee ID" value={emp.employee_id} />
-              <div className="grid grid-cols-2 gap-x-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
                 <ReadField label="Department" value={emp.department_name} />
                 <ReadField label="Job Position" value={emp.job_position_name} />
                 <ReadField label="Level" value={emp.level} />
@@ -271,16 +271,16 @@ function SelfProfileModal({ employee: initialEmp, onClose, onSaved }) {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-white/10 shrink-0 flex items-center justify-between">
+        <div className="px-4 sm:px-5 py-3 border-t border-white/10 shrink-0 flex items-center justify-between gap-3">
           {isEditing ? (
             <>
-              <p className="text-[#B3B3B3] text-xs">Editable fields are highlighted · Others are locked</p>
-              <div className="flex gap-2">
-                <button onClick={handleCancelEdit} className="px-4 py-1.5 text-sm text-[#B3B3B3] hover:text-white border border-white/10 rounded-lg transition-colors">Cancel</button>
+              <p className="text-[#B3B3B3] text-xs hidden sm:block">Editable fields are highlighted</p>
+              <div className="flex gap-2 w-full sm:w-auto justify-end">
+                <button onClick={handleCancelEdit} className="px-4 py-2 text-sm text-[#B3B3B3] hover:text-white border border-white/10 rounded-lg transition-colors min-h-[40px]">Cancel</button>
                 <button
                   data-testid="self-edit-save-btn"
                   onClick={handleSave} disabled={saving}
-                  className="px-4 py-1.5 text-sm bg-white text-[#191919] font-semibold rounded-lg hover:bg-white/90 disabled:opacity-50 transition-colors"
+                  className="px-4 py-2 text-sm bg-white text-[#191919] font-semibold rounded-lg hover:bg-white/90 disabled:opacity-50 transition-colors min-h-[40px]"
                 >
                   {saving ? "Saving..." : "Save Changes"}
                 </button>
@@ -368,11 +368,11 @@ export default function EmployeesPage() {
     `${(emp.first_name || "?")[0]}${(emp.last_name || "?")[0]}`.toUpperCase();
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-5 md:mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
+          <h1 className="text-xl md:text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
             Employees
           </h1>
           <p className="text-[#B3B3B3] text-sm mt-0.5">
@@ -382,16 +382,16 @@ export default function EmployeesPage() {
       </div>
 
       {/* Search */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-3 mb-5 md:mb-6">
         <div className="flex-1 relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#B3B3B3]" />
           <input
             data-testid="employee-search"
             type="text"
-            placeholder="Search by name, email, ID, department..."
+            placeholder="Search by name, email, ID..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-[#2F2F2F] border border-white/10 text-white placeholder-[#B3B3B3] rounded-lg pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-white/30 transition-colors"
+            className="w-full bg-[#2F2F2F] border border-white/10 text-white placeholder-[#B3B3B3] rounded-lg pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-white/30 transition-colors min-h-[44px] md:min-h-0"
           />
         </div>
       </div>
@@ -517,10 +517,10 @@ export default function EmployeesPage() {
         <button
           data-testid="add-employee-fab"
           onClick={() => { setEditEmployee(null); setShowModal(true); }}
-          className="fixed bottom-20 right-8 bg-[#E53935] hover:bg-[#F44336] text-white rounded-full px-5 py-3.5 shadow-xl flex items-center gap-2 z-50 transition-colors font-medium text-sm"
+          className="fixed bottom-5 right-5 md:bottom-20 md:right-8 bg-[#E53935] hover:bg-[#F44336] text-white rounded-full w-14 h-14 md:w-auto md:h-auto md:px-5 md:py-3.5 shadow-xl flex items-center gap-2 z-30 transition-colors font-medium text-sm justify-center"
         >
           <Plus size={20} />
-          Add Employee
+          <span className="hidden md:inline">Add Employee</span>
         </button>
       )}
 

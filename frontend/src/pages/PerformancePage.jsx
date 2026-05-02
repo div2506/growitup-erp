@@ -410,43 +410,45 @@ function PerformanceView({ employeeId, employeeName, employee, onBack, showBackL
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center gap-3 mb-5">
+      <div className="flex flex-wrap items-center gap-3 mb-5">
         {onBack && (
           <button onClick={onBack} className="flex items-center gap-1.5 text-[#B3B3B3] hover:text-white text-sm transition-colors">
             <ChevronLeft size={16} /> {showBackLabel || "Back"}
           </button>
         )}
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white text-xs font-bold">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white text-xs font-bold shrink-0">
             {employeeName?.[0]?.toUpperCase() || "?"}
           </div>
-          <div>
-            <h2 className="text-white font-semibold" style={{ fontFamily: "Manrope, sans-serif" }}>{employeeName}</h2>
+          <div className="min-w-0">
+            <h2 className="text-white font-semibold truncate" style={{ fontFamily: "Manrope, sans-serif" }}>{employeeName}</h2>
             <p className="text-[#B3B3B3] text-xs">{allRecords.length} total tasks</p>
           </div>
           {overallAvg !== null && (
-            <div className="ml-2 flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5">
+            <div className="ml-2 flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-lg px-2.5 sm:px-3 py-1.5 shrink-0">
               <BarChart2 size={13} className="text-[#B3B3B3]" />
-              <span className="text-[#B3B3B3] text-xs">All-time avg</span>
+              <span className="text-[#B3B3B3] text-xs hidden sm:inline">All-time avg</span>
+              <span className="text-[#B3B3B3] text-xs sm:hidden">Avg</span>
               <ScoreBadge score={overallAvg} />
             </div>
           )}
         </div>
-        <div className="ml-auto flex items-center gap-3 flex-wrap justify-end">
+        <div className="w-full sm:w-auto sm:ml-auto flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
           {/* Upgrade Your Level button — always visible, enabled based on 90-day avg */}
           <button
             data-testid="upgrade-level-btn"
             disabled={!upgradeEnabled}
             onClick={() => upgradeEnabled && setShowUpgradeModal(true)}
             title={avg90 !== null ? `90-day avg: ${avg90.toFixed(1)}/10 (need ≥ 7 to upgrade)` : "Not enough data in last 90 days"}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+            className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium border transition-colors min-h-[40px] ${
               upgradeEnabled
                 ? "bg-green-500/15 border-green-500/30 text-green-400 hover:bg-green-500/25 cursor-pointer"
                 : "bg-white/5 border-white/10 text-[#B3B3B3] cursor-not-allowed opacity-60"
             }`}
           >
             <TrendingUp size={15} />
-            Upgrade Your Level
+            <span className="hidden sm:inline">Upgrade Your Level</span>
+            <span className="sm:hidden">Upgrade</span>
             {avg90 !== null && (
               <span className={`text-xs font-bold ml-1 ${upgradeEnabled ? "text-green-300" : "text-[#B3B3B3]"}`}>
                 {avg90.toFixed(1)}/10
@@ -890,17 +892,19 @@ function EmployeePerformanceWithTabs({ myEmployee, isAdminDept }) {
   return (
     <div>
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="bg-[#191919] border border-white/10 p-1 rounded-lg mb-6 h-auto flex gap-1 w-fit">
+        <div className="overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0 mb-5 md:mb-6">
+          <TabsList className="bg-[#191919] border border-white/10 p-1 rounded-lg h-auto flex gap-1 w-fit">
           {tabs.map(({ val, label, icon: Icon }) => (
             <TabsTrigger
               key={val}
               value={val}
-              className="data-[state=active]:bg-[#2F2F2F] data-[state=active]:text-white text-[#B3B3B3] rounded-md px-4 py-2 text-sm flex items-center gap-2 transition-all"
+              className="data-[state=active]:bg-[#2F2F2F] data-[state=active]:text-white text-[#B3B3B3] rounded-md px-3 sm:px-4 py-2 text-xs sm:text-sm flex items-center gap-2 transition-all whitespace-nowrap"
             >
               <Icon size={15} />{label}
             </TabsTrigger>
           ))}
-        </TabsList>
+          </TabsList>
+        </div>
 
         <TabsContent value="performance">
           <PerformanceView
@@ -982,17 +986,19 @@ function AdminManagerLanding({
   return (
     <div>
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="bg-[#191919] border border-white/10 p-1 rounded-lg mb-6 h-auto flex gap-1 w-fit">
+        <div className="overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0 mb-5 md:mb-6">
+          <TabsList className="bg-[#191919] border border-white/10 p-1 rounded-lg h-auto flex gap-1 w-fit">
           {tabs.map(({ val, label, icon: Icon }) => (
             <TabsTrigger
               key={val}
               value={val}
-              className="data-[state=active]:bg-[#2F2F2F] data-[state=active]:text-white text-[#B3B3B3] rounded-md px-4 py-2 text-sm flex items-center gap-2 transition-all"
+              className="data-[state=active]:bg-[#2F2F2F] data-[state=active]:text-white text-[#B3B3B3] rounded-md px-3 sm:px-4 py-2 text-xs sm:text-sm flex items-center gap-2 transition-all whitespace-nowrap"
             >
               <Icon size={15} />{label}
             </TabsTrigger>
           ))}
-        </TabsList>
+          </TabsList>
+        </div>
 
         <TabsContent value="team-of-month">
           <CreativeTeamOfMonth />
@@ -1068,18 +1074,18 @@ export default function PerformancePage() {
 
   if (roleLoading) {
     return (
-      <div className="p-8">
+      <div className="p-4 md:p-8">
         <div className="h-8 w-48 bg-[#2F2F2F] rounded animate-pulse mb-4" />
-        <div className="grid grid-cols-3 gap-4">{[...Array(3)].map((_, i) => <div key={i} className="h-28 bg-[#2F2F2F] rounded-xl animate-pulse border border-white/10" />)}</div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{[...Array(3)].map((_, i) => <div key={i} className="h-28 bg-[#2F2F2F] rounded-xl animate-pulse border border-white/10" />)}</div>
       </div>
     );
   }
 
   return (
-    <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>Performance</h1>
-        <div className="flex items-center gap-2 mt-1">
+    <div className="p-4 md:p-8">
+      <div className="mb-5 md:mb-6">
+        <h1 className="text-xl md:text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>Performance</h1>
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
           {crumbs.map((c, i) => (
             <span key={i} className="flex items-center gap-2">
               {i > 0 && <ChevronRight size={14} className="text-[#B3B3B3]" />}

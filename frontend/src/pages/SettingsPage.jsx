@@ -93,8 +93,8 @@ function DepartmentsTab() {
       {loading ? (
         <div className="space-y-2">{[...Array(4)].map((_, i) => <div key={i} className="h-14 bg-[#2F2F2F] rounded-xl animate-pulse border border-white/10" />)}</div>
       ) : (
-        <div className="rounded-xl border border-white/10 overflow-hidden">
-          <table className="w-full" data-testid="departments-table">
+        <div className="rounded-xl border border-white/10 overflow-hidden overflow-x-auto">
+          <table className="w-full min-w-[480px]" data-testid="departments-table">
             <thead className="bg-[#191919] border-b border-white/10">
               <tr>
                 <th className="text-left py-3 px-5 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Name</th>
@@ -129,7 +129,7 @@ function DepartmentsTab() {
       )}
 
       <Dialog open={showModal} onOpenChange={(o) => { if (!o) setShowModal(false); }}>
-        <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white max-w-md">
+        <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white w-[calc(100%-2rem)] max-w-md rounded-xl">
           <DialogHeader>
             <DialogTitle className="text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
               {editDept ? "Edit Department" : "Add Department"}
@@ -269,8 +269,8 @@ function JobPositionsTab() {
       {loading ? (
         <div className="space-y-2">{[...Array(5)].map((_, i) => <div key={i} className="h-14 bg-[#2F2F2F] rounded-xl animate-pulse border border-white/10" />)}</div>
       ) : (
-        <div className="rounded-xl border border-white/10 overflow-hidden">
-          <table className="w-full">
+        <div className="rounded-xl border border-white/10 overflow-hidden overflow-x-auto">
+          <table className="w-full min-w-[600px]">
             <thead className="bg-[#191919] border-b border-white/10">
               <tr>
                 <th className="text-left py-3 px-5 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Position</th>
@@ -315,7 +315,7 @@ function JobPositionsTab() {
       )}
 
       <Dialog open={showModal} onOpenChange={(o) => { if (!o) setShowModal(false); }}>
-        <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white max-w-lg">
+        <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white w-[calc(100%-2rem)] max-w-lg rounded-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
               {editPos ? "Edit Position" : "Add Job Position"}
@@ -451,8 +451,8 @@ function TeamsTab() {
           <p className="text-[#B3B3B3] text-sm">Create a team and assign a manager</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-white/10 overflow-hidden">
-          <table className="w-full" data-testid="teams-table">
+        <div className="rounded-xl border border-white/10 overflow-hidden overflow-x-auto">
+          <table className="w-full min-w-[480px]" data-testid="teams-table">
             <thead className="bg-[#191919] border-b border-white/10">
               <tr>
                 <th className="text-left py-3 px-5 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Team Name</th>
@@ -479,7 +479,7 @@ function TeamsTab() {
       )}
 
       <Dialog open={showModal} onOpenChange={(o) => { if (!o) setShowModal(false); }}>
-        <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white max-w-md">
+        <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white w-[calc(100%-2rem)] max-w-md rounded-xl">
           <DialogHeader>
             <DialogTitle className="text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
               {editTeam ? "Edit Team" : "Create Team"}
@@ -654,7 +654,7 @@ function NotionIntegrationTab() {
       )}
 
       <Dialog open={showModal} onOpenChange={(o) => { if (!o) setShowModal(false); }}>
-        <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white max-w-lg">
+        <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white w-[calc(100%-2rem)] max-w-lg rounded-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
               {editDb ? "Edit Integration" : "Add Notion Integration"}
@@ -884,21 +884,23 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>Settings</h1>
+    <div className="p-4 md:p-8">
+      <div className="mb-5 md:mb-6">
+        <h1 className="text-xl md:text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>Settings</h1>
         <p className="text-[#B3B3B3] text-sm mt-0.5">Manage departments, positions, teams, and integrations</p>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="bg-[#191919] border border-white/10 p-1 rounded-lg mb-6 h-auto flex gap-1 w-fit">
+        <div className="overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0 mb-5 md:mb-6">
+          <TabsList className="bg-[#191919] border border-white/10 p-1 rounded-lg h-auto flex gap-1 w-fit">
           {tabs.map(({ val, label, icon: Icon }) => (
             <TabsTrigger key={val} value={val} data-testid={`settings-tab-${val}`}
-              className="data-[state=active]:bg-[#2F2F2F] data-[state=active]:text-white text-[#B3B3B3] rounded-md px-4 py-2 text-sm flex items-center gap-2 transition-all">
+              className="data-[state=active]:bg-[#2F2F2F] data-[state=active]:text-white text-[#B3B3B3] rounded-md px-3 sm:px-4 py-2 text-xs sm:text-sm flex items-center gap-2 transition-all whitespace-nowrap">
               <Icon size={15} />{label}
             </TabsTrigger>
           ))}
-        </TabsList>
+          </TabsList>
+        </div>
 
         <TabsContent value="departments"><DepartmentsTab /></TabsContent>
         <TabsContent value="job-positions"><JobPositionsTab /></TabsContent>

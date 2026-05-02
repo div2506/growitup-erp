@@ -100,18 +100,18 @@ function AddDetailsModal({ onClose, onSuccess, selectedMonth, managers }) {
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="bg-[#2F2F2F] border-white/10 text-white max-w-[750px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="bg-[#2F2F2F] border-white/10 text-white w-full sm:max-w-[750px] max-w-none h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:rounded-lg rounded-none overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle className="text-white">Add Manager Performance Details</DialogTitle>
+          <DialogTitle className="text-white text-lg">Add Manager Performance Details</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 mt-2">
           {/* Single Column for Manager and Month */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="text-[#B3B3B3] text-sm">Manager *</Label>
               <Select value={formData.manager_id} onValueChange={(v) => setFormData({ ...formData, manager_id: v })}>
-                <SelectTrigger className="bg-[#191919] border-white/10 text-white">
+                <SelectTrigger className="bg-[#191919] border-white/10 text-white min-h-[44px]">
                   <SelectValue placeholder="Select manager" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#2F2F2F] border-white/10 max-h-[250px]">
@@ -131,7 +131,7 @@ function AddDetailsModal({ onClose, onSuccess, selectedMonth, managers }) {
             <div className="space-y-2">
               <Label className="text-[#B3B3B3] text-sm">Month *</Label>
               <Select value={formData.month} onValueChange={(v) => setFormData({ ...formData, month: v })}>
-                <SelectTrigger className="bg-[#191919] border-white/10 text-white">
+                <SelectTrigger className="bg-[#191919] border-white/10 text-white min-h-[44px]">
                   <SelectValue placeholder="Select month" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#2F2F2F] border-white/10 max-h-[250px]">
@@ -150,7 +150,7 @@ function AddDetailsModal({ onClose, onSuccess, selectedMonth, managers }) {
           </div>
 
           {/* Two Column Layout for Scores and Notes */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Left Column */}
             <div className="space-y-3">
               {/* Client Performance */}
@@ -231,20 +231,21 @@ function AddDetailsModal({ onClose, onSuccess, selectedMonth, managers }) {
               {/* Total Points Display */}
               <div className="space-y-1.5">
                 <Label className="text-[#B3B3B3] text-sm">Total Points (This month)</Label>
-                <div className="bg-[#191919] border border-white/10 text-white text-sm rounded-lg px-3 py-2.5 opacity-60 font-medium">
+                <div className="bg-[#191919] border border-white/10 text-white text-sm rounded-lg px-3 py-2.5 opacity-80 font-medium">
                   {totalPoints}
                 </div>
+                <p className="text-[#B3B3B3] text-[10px]">Weighted: 45% Performance + 35% Feedback + 20% Creative</p>
               </div>
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 pt-2">
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
             <Button
               type="button"
               variant="outline"
               onClick={onClose}
               disabled={submitting}
-              className="bg-transparent border-white/20 text-white hover:bg-white/10"
+              className="bg-transparent border-white/20 text-white hover:bg-white/10 min-h-[44px]"
             >
               Cancel
             </Button>
@@ -255,7 +256,7 @@ function AddDetailsModal({ onClose, onSuccess, selectedMonth, managers }) {
               className={`${canSubmit
                   ? "bg-green-500 hover:bg-green-600 text-white"
                   : "bg-white/5 text-[#B3B3B3] cursor-not-allowed"
-                }`}
+                } min-h-[44px]`}
             >
               {submitting ? "Saving..." : "Save"}
             </Button>
@@ -428,22 +429,22 @@ export default function CreativeTeamOfMonth() {
   return (
     <div>
       {/* Header Section */}
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5 sm:mb-6">
+        <h2 className="text-xl sm:text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
           Team of the Month
         </h2>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           {isAdmin && (
             <button
               onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500/15 border border-green-500/30 text-green-400 hover:bg-green-500/25 transition-colors text-sm font-medium"
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg bg-green-500/15 border border-green-500/30 text-green-400 hover:bg-green-500/25 transition-colors text-sm font-medium min-h-[40px]"
             >
               <Plus size={16} />
               Add Details
             </button>
           )}
           <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-            <SelectTrigger className="bg-[#2F2F2F] border-white/10 text-white w-[180px]">
+            <SelectTrigger className="bg-[#2F2F2F] border-white/10 text-white w-[160px] sm:w-[180px] min-h-[40px]">
               <SelectValue placeholder="Select month" />
             </SelectTrigger>
             <SelectContent className="bg-[#2F2F2F] border-white/10 max-h-[300px]">
@@ -462,32 +463,33 @@ export default function CreativeTeamOfMonth() {
       </div>
 
       {/* Reward Banner */}
-      <div className="mb-6 p-8 bg-gradient-to-br from-[#2F2F2F] via-[#2F2F2F] to-[#252525] border border-white/10 rounded-xl text-center relative overflow-hidden">
+      <div className="mb-5 sm:mb-6 p-5 sm:p-8 bg-gradient-to-br from-[#2F2F2F] via-[#2F2F2F] to-[#252525] border border-white/10 rounded-xl text-center relative overflow-hidden">
         {/* Background decoration */}
         <div className="absolute top-0 left-0 w-full h-full opacity-5">
-          <div className="absolute top-4 left-4 w-16 h-16 border-2 border-yellow-500 rounded-full"></div>
-          <div className="absolute bottom-4 right-4 w-20 h-20 border-2 border-yellow-500 rounded-full"></div>
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 border-2 border-yellow-500 rounded-full"></div>
+          <div className="absolute top-4 left-4 w-12 sm:w-16 h-12 sm:h-16 border-2 border-yellow-500 rounded-full"></div>
+          <div className="absolute bottom-4 right-4 w-16 sm:w-20 h-16 sm:h-20 border-2 border-yellow-500 rounded-full"></div>
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-24 sm:w-32 h-24 sm:h-32 border-2 border-yellow-500 rounded-full"></div>
         </div>
         
-        <p className="text-[#B3B3B3] text-sm uppercase tracking-wider mb-4 relative z-10">Reward (This year)</p>
+        <p className="text-[#B3B3B3] text-xs sm:text-sm uppercase tracking-wider mb-3 sm:mb-4 relative z-10">Reward (This year)</p>
         <div className="flex items-center justify-center relative z-10">
           {/* Improved trophy icon with glow effect */}
           <div className="relative">
             <div className="absolute inset-0 bg-yellow-500/20 blur-2xl rounded-full"></div>
-            <Trophy size={96} className="text-yellow-500 drop-shadow-[0_0_15px_rgba(234,179,8,0.5)] relative" strokeWidth={1.5} />
+            <Trophy size={72} className="sm:hidden text-yellow-500 drop-shadow-[0_0_15px_rgba(234,179,8,0.5)] relative" strokeWidth={1.5} />
+            <Trophy size={96} className="hidden sm:block text-yellow-500 drop-shadow-[0_0_15px_rgba(234,179,8,0.5)] relative" strokeWidth={1.5} />
           </div>
         </div>
-        <p className="text-white/60 text-xs mt-4 relative z-10">Top performing team of the year</p>
+        <p className="text-white/60 text-xs mt-3 sm:mt-4 relative z-10">Top performing team of the year</p>
       </div>
 
-      {/* Leaderboard Table */}
+      {/* Leaderboard */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
         </div>
       ) : leaderboard.length === 0 ? (
-        <div className="text-center py-20">
+        <div className="text-center py-16 sm:py-20">
           <Trophy size={48} className="mx-auto text-[#B3B3B3] mb-4" />
           <p className="text-white font-medium">No performance data for {currentMonthLabel}</p>
           <p className="text-[#B3B3B3] text-sm mt-1">
@@ -495,104 +497,195 @@ export default function CreativeTeamOfMonth() {
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto bg-[#191919] rounded-lg border border-white/10">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-[#3F3F3F]">
-                <th className="text-left text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Rank</th>
-                <th className="text-center text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Team</th>
-                <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Client Performance</th>
-                <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Client Feedback</th>
-                <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Creative Task</th>
-                <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Total (This month)</th>
-                <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Total (Overall)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {leaderboard.map((entry, index) => (
-                <tr
-                  key={entry.perf_id}
-                  className={`${getRankStyle(entry.rank)} transition-colors ${index !== leaderboard.length - 1 ? 'border-b border-[#3F3F3F]' : ''}`}
-                >
-                  <td className="py-4 px-4">
-                    <div className="text-xl font-bold text-white">{getRankIcon(entry.rank)}</div>
-                  </td>
-                  <td className="py-4 px-4">
-                    <div className="flex flex-col items-center gap-2">
-                      {entry.manager.profile_picture ? (
-                        <img
-                          src={entry.manager.profile_picture}
-                          alt={entry.team_name}
-                          className="w-10 h-10 rounded-full object-cover border border-white/10"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-[#191919] border border-white/10 flex items-center justify-center text-white text-xs font-bold">
-                          {entry.manager.first_name[0]}{entry.manager.last_name[0]}
+        <>
+          {/* Desktop table view — hidden on mobile */}
+          <div className="hidden md:block overflow-x-auto bg-[#191919] rounded-lg border border-white/10">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-[#3F3F3F]">
+                  <th className="text-left text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Rank</th>
+                  <th className="text-center text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Team</th>
+                  <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Client Performance</th>
+                  <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Client Feedback</th>
+                  <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Creative Task</th>
+                  <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Total (This month)</th>
+                  <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Total (Overall)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leaderboard.map((entry, index) => (
+                  <tr
+                    key={entry.perf_id}
+                    className={`${getRankStyle(entry.rank)} transition-colors ${index !== leaderboard.length - 1 ? 'border-b border-[#3F3F3F]' : ''}`}
+                  >
+                    <td className="py-4 px-4">
+                      <div className="text-xl font-bold text-white">{getRankIcon(entry.rank)}</div>
+                    </td>
+                    <td className="py-4 px-4">
+                      <div className="flex flex-col items-center gap-2">
+                        {entry.manager.profile_picture ? (
+                          <img
+                            src={entry.manager.profile_picture}
+                            alt={entry.team_name}
+                            className="w-10 h-10 rounded-full object-cover border border-white/10"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-[#191919] border border-white/10 flex items-center justify-center text-white text-xs font-bold">
+                            {entry.manager.first_name[0]}{entry.manager.last_name[0]}
+                          </div>
+                        )}
+                        <span className="text-white font-medium text-sm text-center">{entry.team_name}</span>
+                      </div>
+                    </td>
+                    <td className="py-4 px-4 text-right">
+                      <TooltipProvider>
+                        <div className="flex items-center justify-end gap-1">
+                          <span className="text-white font-medium">{entry.client_performance_score.toFixed(1)}</span>
+                          {entry.client_performance_notes && entry.client_performance_notes.trim() && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Info size={14} className="text-[#B3B3B3] hover:text-white cursor-help" />
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-[#1F1F1F] border-white/20 text-white max-w-[300px] text-sm p-3">
+                                {entry.client_performance_notes}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
                         </div>
-                      )}
-                      <span className="text-white font-medium text-sm text-center">{entry.team_name}</span>
+                      </TooltipProvider>
+                    </td>
+                    <td className="py-4 px-4 text-right">
+                      <TooltipProvider>
+                        <div className="flex items-center justify-end gap-1">
+                          <span className="text-white font-medium">{entry.client_feedback_score.toFixed(1)}</span>
+                          {entry.client_feedback_notes && entry.client_feedback_notes.trim() && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Info size={14} className="text-[#B3B3B3] hover:text-white cursor-help" />
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-[#1F1F1F] border-white/20 text-white max-w-[300px] text-sm p-3">
+                                {entry.client_feedback_notes}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
+                      </TooltipProvider>
+                    </td>
+                    <td className="py-4 px-4 text-right">
+                      <TooltipProvider>
+                        <div className="flex items-center justify-end gap-1">
+                          <span className="text-white font-medium">{entry.creative_task_score.toFixed(1)}</span>
+                          {entry.creative_task_notes && entry.creative_task_notes.trim() && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Info size={14} className="text-[#B3B3B3] hover:text-white cursor-help" />
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-[#1F1F1F] border-white/20 text-white max-w-[300px] text-sm p-3">
+                                {entry.creative_task_notes}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
+                      </TooltipProvider>
+                    </td>
+                    <td className="py-4 px-4 text-right">
+                      <span className="text-white font-bold text-lg">{entry.total_points_month.toFixed(2)}</span>
+                    </td>
+                    <td className="py-4 px-4 text-right text-[#B3B3B3] font-medium">{entry.total_points_overall.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile card view — visible only on mobile */}
+          <div className="md:hidden space-y-3">
+            {leaderboard.map((entry) => (
+              <div
+                key={entry.perf_id}
+                className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4"
+              >
+                {/* Card header: rank + team */}
+                <div className="flex items-center gap-3 mb-3 pb-3 border-b border-white/10">
+                  <div className="text-2xl font-bold text-white w-10 text-center shrink-0">{getRankIcon(entry.rank)}</div>
+                  {entry.manager.profile_picture ? (
+                    <img
+                      src={entry.manager.profile_picture}
+                      alt={entry.team_name}
+                      className="w-10 h-10 rounded-full object-cover border border-white/10"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-[#191919] border border-white/10 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                      {entry.manager.first_name[0]}{entry.manager.last_name[0]}
                     </div>
-                  </td>
-                  <td className="py-4 px-4 text-right">
-                    <TooltipProvider>
-                      <div className="flex items-center justify-end gap-1">
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-medium text-sm truncate">{entry.team_name}</p>
+                    <p className="text-[#B3B3B3] text-xs">Total: <span className="text-white font-bold">{entry.total_points_month.toFixed(2)}</span></p>
+                  </div>
+                </div>
+
+                {/* Score rows */}
+                <div className="space-y-2 text-sm">
+                  <TooltipProvider>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#B3B3B3]">Client Performance</span>
+                      <div className="flex items-center gap-1.5">
                         <span className="text-white font-medium">{entry.client_performance_score.toFixed(1)}</span>
                         {entry.client_performance_notes && entry.client_performance_notes.trim() && (
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Info size={14} className="text-[#B3B3B3] hover:text-white cursor-help" />
                             </TooltipTrigger>
-                            <TooltipContent className="bg-[#1F1F1F] border-white/20 text-white max-w-[300px] text-sm p-3">
+                            <TooltipContent className="bg-[#1F1F1F] border-white/20 text-white max-w-[260px] text-xs p-3">
                               {entry.client_performance_notes}
                             </TooltipContent>
                           </Tooltip>
                         )}
                       </div>
-                    </TooltipProvider>
-                  </td>
-                  <td className="py-4 px-4 text-right">
-                    <TooltipProvider>
-                      <div className="flex items-center justify-end gap-1">
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#B3B3B3]">Client Feedback</span>
+                      <div className="flex items-center gap-1.5">
                         <span className="text-white font-medium">{entry.client_feedback_score.toFixed(1)}</span>
                         {entry.client_feedback_notes && entry.client_feedback_notes.trim() && (
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Info size={14} className="text-[#B3B3B3] hover:text-white cursor-help" />
                             </TooltipTrigger>
-                            <TooltipContent className="bg-[#1F1F1F] border-white/20 text-white max-w-[300px] text-sm p-3">
+                            <TooltipContent className="bg-[#1F1F1F] border-white/20 text-white max-w-[260px] text-xs p-3">
                               {entry.client_feedback_notes}
                             </TooltipContent>
                           </Tooltip>
                         )}
                       </div>
-                    </TooltipProvider>
-                  </td>
-                  <td className="py-4 px-4 text-right">
-                    <TooltipProvider>
-                      <div className="flex items-center justify-end gap-1">
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#B3B3B3]">Creative Task</span>
+                      <div className="flex items-center gap-1.5">
                         <span className="text-white font-medium">{entry.creative_task_score.toFixed(1)}</span>
                         {entry.creative_task_notes && entry.creative_task_notes.trim() && (
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Info size={14} className="text-[#B3B3B3] hover:text-white cursor-help" />
                             </TooltipTrigger>
-                            <TooltipContent className="bg-[#1F1F1F] border-white/20 text-white max-w-[300px] text-sm p-3">
+                            <TooltipContent className="bg-[#1F1F1F] border-white/20 text-white max-w-[260px] text-xs p-3">
                               {entry.creative_task_notes}
                             </TooltipContent>
                           </Tooltip>
                         )}
                       </div>
-                    </TooltipProvider>
-                  </td>
-                  <td className="py-4 px-4 text-right">
-                    <span className="text-white font-bold text-lg">{entry.total_points_month.toFixed(2)}</span>
-                  </td>
-                  <td className="py-4 px-4 text-right text-[#B3B3B3] font-medium">{entry.total_points_overall.toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </div>
+                  </TooltipProvider>
+                  <div className="flex items-center justify-between pt-2 border-t border-white/5">
+                    <span className="text-[#B3B3B3] text-xs">Overall Avg</span>
+                    <span className="text-[#B3B3B3] text-sm font-medium">{entry.total_points_overall.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {/* Add Details Modal */}

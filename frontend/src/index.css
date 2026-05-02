@@ -75,3 +75,14 @@ body {
     border-bottom-color: inherit;
   }
 }
+
+/* Utility: hide scrollbar while keeping scroll behaviour (used for horizontal tab rows on mobile) */
+@layer utilities {
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}

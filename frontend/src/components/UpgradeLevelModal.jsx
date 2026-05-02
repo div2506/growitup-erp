@@ -131,20 +131,20 @@ export default function UpgradeLevelModal({ employee, onClose }) {
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="bg-[#2F2F2F] border-white/10 text-white max-w-[600px]">
+      <DialogContent className="bg-[#2F2F2F] border-white/10 text-white w-full sm:max-w-[600px] max-w-none h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:rounded-lg rounded-none overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-white">
+          <DialogTitle className="flex items-center gap-2 text-white text-lg">
             <TrendingUp size={20} className="text-green-400" />
             Upgrade Your Level
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6 mt-4">
+        <div className="space-y-5 mt-4">
           {/* Employee Info Section - Read Only */}
           <div className="bg-[#191919] rounded-lg p-4 space-y-3 border border-white/10">
             <p className="text-xs text-[#B3B3B3] uppercase tracking-wider font-medium mb-3">Employee Information</p>
             
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className={labelCls}>Name</Label>
                 <div className={infoCls}>
@@ -180,7 +180,7 @@ export default function UpgradeLevelModal({ employee, onClose }) {
             <div className="space-y-2">
               <Label className={labelCls}>Select Level Exam *</Label>
               <Select value={selectedLevel} onValueChange={handleLevelChange}>
-                <SelectTrigger className="bg-[#191919] border-white/10 text-white focus:ring-white/20 focus:border-white/30">
+                <SelectTrigger className="bg-[#191919] border-white/10 text-white focus:ring-white/20 focus:border-white/30 min-h-[44px]">
                   <SelectValue placeholder="Choose exam level" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#2F2F2F] border-white/10">
@@ -204,7 +204,7 @@ export default function UpgradeLevelModal({ employee, onClose }) {
                 onValueChange={setSelectedMonth}
                 disabled={!selectedLevel || monthOptions.length === 0}
               >
-                <SelectTrigger className="bg-[#191919] border-white/10 text-white focus:ring-white/20 focus:border-white/30 disabled:opacity-50 disabled:cursor-not-allowed">
+                <SelectTrigger className="bg-[#191919] border-white/10 text-white focus:ring-white/20 focus:border-white/30 disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]">
                   <SelectValue placeholder={selectedLevel ? "Choose exam month" : "First select exam level"} />
                 </SelectTrigger>
                 <SelectContent className="bg-[#2F2F2F] border-white/10 max-h-[300px]">
@@ -223,13 +223,13 @@ export default function UpgradeLevelModal({ employee, onClose }) {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex justify-end gap-3 pt-2">
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
             <Button
               type="button"
               variant="outline"
               onClick={onClose}
               disabled={submitting}
-              className="bg-transparent border-white/20 text-white hover:bg-white/10"
+              className="bg-transparent border-white/20 text-white hover:bg-white/10 min-h-[44px]"
             >
               Cancel
             </Button>
@@ -241,7 +241,7 @@ export default function UpgradeLevelModal({ employee, onClose }) {
                 canSubmit 
                   ? "bg-green-500 hover:bg-green-600 text-white" 
                   : "bg-white/5 text-[#B3B3B3] cursor-not-allowed"
-              }`}
+              } min-h-[44px]`}
             >
               {submitting ? "Submitting..." : "Submit"}
             </Button>
