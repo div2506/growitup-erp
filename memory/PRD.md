@@ -170,7 +170,20 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 - Exam Month dropdown locks invalid months based on selected exam level
 - Modal sources viewed-employee data (not logged-in user) for accuracy
 
-### Creative Team of the Month (COMPLETE - 2026-04-27)
+### Mobile Responsiveness & Theme Consistency Pass (COMPLETE - 2026-05-02)
+- **Layout.jsx**: Sidebar collapses to left-slide drawer (<lg), mobile topbar with hamburger, backdrop overlay, body-scroll lock when drawer open
+- **All pages**: `p-4 md:p-8` consistent padding, headings `text-xl md:text-2xl`
+- **EmployeesPage**: Already 1/2/3/4-col grid; FAB compact (icon-only) on mobile
+- **PerformancePage**: Tabs horizontally scrollable on mobile (`overflow-x-auto no-scrollbar`); header wraps; metric/period cards stack
+- **Team of the Month leaderboard**: Desktop table preserved; new mobile **card view** (rank, team, scores stacked) shown <md
+- **Reward banner**: Trophy icon scales (72/96px), padding scales
+- **Modals (full-screen on mobile)**: EmployeeModal, UpgradeLevelModal, AddDetails (CreativeTeamOfMonth), SelfProfileModal — `h-[100dvh] sm:h-auto`, `sm:rounded-lg rounded-none`, sticky header/footer, scrollable body, button stack on mobile
+- **DeleteConfirm**: `w-[calc(100%-2rem)]` mobile-safe, button stack, min-h 44px
+- **Settings page**: Tabs horizontally scrollable; modals mobile-safe; tables min-width with horizontal scroll wrapper; touch-target min-h 44px on action buttons
+- **CSS utility**: `.no-scrollbar` added in `index.css` for clean horizontal scroll
+- Pushed to GitHub repo `growitup-erp` (main, commit `04ea098`) on 2026-05-02
+
+### Team of the Month (COMPLETE - 2026-04-27)
 - New leaderboard component (CreativeTeamOfMonth.jsx) tracking monthly manager performance
 - ManagerPerformance model + API: GET/POST/PUT /api/manager-performance, GET /api/managers-with-teams
 - Scores: Client Performance, Client Feedback, Creative Task — each with optional tooltip notes; total auto-calculated
