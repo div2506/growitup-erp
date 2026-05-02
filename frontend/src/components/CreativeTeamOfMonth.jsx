@@ -149,94 +149,94 @@ function AddDetailsModal({ onClose, onSuccess, selectedMonth, managers }) {
             </div>
           </div>
 
-          {/* Two Column Layout for Scores and Notes */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Left Column */}
-            <div className="space-y-3">
-              {/* Client Performance */}
+          {/* Score rows — each row: score input on left, notes on right */}
+          <div className="space-y-3">
+            {/* Client Performance */}
+            <div className="bg-[#191919] border border-white/10 rounded-lg p-3 grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-3">
               <div className="space-y-1.5">
-                <Label className="text-[#B3B3B3] text-sm">Client Performance Score (0-100) *</Label>
+                <Label className="text-[#B3B3B3] text-sm">Client Performance (0-100) *</Label>
                 <Input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
+                  type="number" min="0" max="100" step="0.01"
                   value={formData.client_performance_score}
                   onChange={(e) => setFormData({ ...formData, client_performance_score: e.target.value })}
                   placeholder="Enter score"
-                  className="bg-[#191919] border-white/10 text-white"
+                  className="bg-[#2F2F2F] border-white/10 text-white"
                 />
+                <p className="text-[#B3B3B3] text-[10px]">Weight: 45%</p>
+              </div>
+              <div className="space-y-1.5">
                 <Label className="text-[#B3B3B3] text-xs">Notes (optional)</Label>
                 <Textarea
                   value={formData.client_performance_notes}
                   onChange={(e) => setFormData({ ...formData, client_performance_notes: e.target.value })}
                   placeholder="Add notes..."
                   maxLength={500}
-                  className="bg-[#191919] border-white/10 text-white text-xs resize-none h-16"
+                  className="bg-[#2F2F2F] border-white/10 text-white text-xs resize-none h-16"
                 />
                 <div className="text-xs text-[#B3B3B3] text-right">{formData.client_performance_notes.length}/500</div>
               </div>
+            </div>
 
-              {/* Client Feedback */}
+            {/* Client Feedback */}
+            <div className="bg-[#191919] border border-white/10 rounded-lg p-3 grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-3">
               <div className="space-y-1.5">
                 <Label className="text-[#B3B3B3] text-sm">Client Feedback (0-100) *</Label>
                 <Input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
+                  type="number" min="0" max="100" step="0.01"
                   value={formData.client_feedback_score}
                   onChange={(e) => setFormData({ ...formData, client_feedback_score: e.target.value })}
                   placeholder="Enter score"
-                  className="bg-[#191919] border-white/10 text-white"
+                  className="bg-[#2F2F2F] border-white/10 text-white"
                 />
+                <p className="text-[#B3B3B3] text-[10px]">Weight: 35%</p>
+              </div>
+              <div className="space-y-1.5">
                 <Label className="text-[#B3B3B3] text-xs">Notes (optional)</Label>
                 <Textarea
                   value={formData.client_feedback_notes}
                   onChange={(e) => setFormData({ ...formData, client_feedback_notes: e.target.value })}
                   placeholder="Add notes..."
                   maxLength={500}
-                  className="bg-[#191919] border-white/10 text-white text-xs resize-none h-16"
+                  className="bg-[#2F2F2F] border-white/10 text-white text-xs resize-none h-16"
                 />
                 <div className="text-xs text-[#B3B3B3] text-right">{formData.client_feedback_notes.length}/500</div>
               </div>
             </div>
 
-            {/* Right Column */}
-            <div className="space-y-3">
-              {/* Creative Task */}
+            {/* Creative Task */}
+            <div className="bg-[#191919] border border-white/10 rounded-lg p-3 grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-3">
               <div className="space-y-1.5">
                 <Label className="text-[#B3B3B3] text-sm">Creative Task (0-100) *</Label>
                 <Input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
+                  type="number" min="0" max="100" step="0.01"
                   value={formData.creative_task_score}
                   onChange={(e) => setFormData({ ...formData, creative_task_score: e.target.value })}
                   placeholder="Enter score"
-                  className="bg-[#191919] border-white/10 text-white"
+                  className="bg-[#2F2F2F] border-white/10 text-white"
                 />
+                <p className="text-[#B3B3B3] text-[10px]">Weight: 20%</p>
+              </div>
+              <div className="space-y-1.5">
                 <Label className="text-[#B3B3B3] text-xs">Notes (optional)</Label>
                 <Textarea
                   value={formData.creative_task_notes}
                   onChange={(e) => setFormData({ ...formData, creative_task_notes: e.target.value })}
                   placeholder="Add notes..."
                   maxLength={500}
-                  className="bg-[#191919] border-white/10 text-white text-xs resize-none h-16"
+                  className="bg-[#2F2F2F] border-white/10 text-white text-xs resize-none h-16"
                 />
                 <div className="text-xs text-[#B3B3B3] text-right">{formData.creative_task_notes.length}/500</div>
               </div>
-
-              {/* Total Points Display */}
-              <div className="space-y-1.5">
-                <Label className="text-[#B3B3B3] text-sm">Total Points (This month)</Label>
-                <div className="bg-[#191919] border border-white/10 text-white text-sm rounded-lg px-3 py-2.5 opacity-80 font-medium">
-                  {totalPoints}
-                </div>
-                <p className="text-[#B3B3B3] text-[10px]">Weighted: 45% Performance + 35% Feedback + 20% Creative</p>
-              </div>
             </div>
+          </div>
+
+          {/* Total Points — full-width emphasis row */}
+          <div className="bg-gradient-to-r from-green-500/10 via-green-500/5 to-transparent border border-green-500/20 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[#B3B3B3] text-xs uppercase tracking-wider">Total Points (This month)</p>
+              <p className="text-[#B3B3B3] text-[10px] mt-0.5">Weighted: 45% Performance + 35% Feedback + 20% Creative</p>
+            </div>
+            <span className="text-2xl font-bold text-white tabular-nums">{totalPoints}</span>
           </div>
 
           <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
