@@ -140,16 +140,25 @@ async def get_current_user(request: Request):
 
 
 async def get_next_employee_id():
+    """Returns the next available GM### id, filling gaps in the sequence first.
+    e.g. existing [GM001, GM002, GM003, GM005, GM007] → returns GM004; then GM006; then GM008."""
     employees = await db.employees.find({}, {"employee_id": 1, "_id": 0}).to_list(10000)
-    max_num = 0
+    nums = set()
     for emp in employees:
         eid = emp.get("employee_id", "")
         if eid.startswith("GM"):
             try:
-                num = int(eid[2:])
-                max_num = max(max_num, num)
+                nums.add(int(eid[2:]))
             except Exception:
                 pass
+    if not nums:
+        return "GM001"
+    max_num = max(nums)
+    # Find first missing positive integer up to max_num
+    for i in range(1, max_num + 1):
+        if i not in nums:
+            return f"GM{str(i).zfill(3)}"
+    # No gaps — continue sequence
     return f"GM{str(max_num + 1).zfill(3)}"
 
 
@@ -415,6 +424,16 @@ async def get_employees(request: Request, search: Optional[str] = None, status: 
             sl in e.get("department_name", "").lower() or
             sl in e.get("job_position_name", "").lower()
         ]
+    # Sort by employee_id ascending (numeric portion of GM###) so GM001, GM002, GM003... order is stable
+    def _emp_sort_key(e):
+        eid = e.get("employee_id", "") or ""
+        if eid.startswith("GM"):
+            try:
+                return (0, int(eid[2:]))
+            except Exception:
+                pass
+        return (1, eid)
+    employees.sort(key=_emp_sort_key)
     return employees
 
 
