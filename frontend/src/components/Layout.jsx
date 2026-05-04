@@ -37,6 +37,7 @@ export default function Layout() {
   const isAdminDept = user?.is_admin || myEmployee?.department_name === "Admin";
 
   const navItems = [
+    { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { path: "/employees", label: "Employees", icon: Users },
     { path: "/performance", label: "Performance", icon: BarChart2 },
     { path: "/attendance", label: "Attendance", icon: CalendarDays },

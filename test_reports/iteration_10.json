@@ -1,0 +1,33 @@
+{
+  "summary": "Tested new GET /api/dashboard/today endpoint end-to-end. Created /app/backend/tests/test_dashboard.py with 11 pytest cases covering auth (401), response shape, admin/non-admin parity, on_leave + leave_request enrichment (leave_type/half_day_type), WFH listing, late arrivals (check_in/late_minutes + DESC ordering), birthdays MM-DD match + age computation, empty-array edge case, and _id exclusion. Seeded 5 TEST_-prefixed employees + 4 daily_attendance rows + 1 leave_request directly via pymongo with deterministic teardown. Verified login uses session_token bearer auth from /api/auth/google for both info.growitup@gmail.com (admin) and test.employee@growitup.com (GM001 non-admin). All 11 tests passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_dashboard.py",
+    "/app/test_reports/pytest/dashboard_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Endpoint uses datetime.now() (local time) for both today_str and the birthday MM-DD match. Server happens to run UTC so this works, but a non-UTC deployment would silently shift the dashboard's notion of 'today'. Recommend datetime.now(timezone.utc) (or an explicit configured TZ) consistently.",
+    "On-leave enrichment defaults leave_type to 'Full Day' when no Approved leave_request row covers today. This silently masks data integrity issues (e.g., daily_attendance.status=Leave with no matching approved leave_request). Consider returning leave_type=None and letting UI label fallback, or logging a warning.",
+    "Late list is built from the same att_rows query as Leave/WFH (status in ['Leave','WFH'] OR is_late=true). An employee with status='Leave' AND is_late=true would erroneously appear in `late`. Unlikely in practice but worth filtering late by status in {Present, WFH, Half Day, ...} explicitly.",
+    "server.py is 4741 lines — well past the 700-line guideline; should be modularised by domain (attendance, leave, dashboard, etc.).",
+    "to_list(500) and to_list(200) caps are silent truncations; for very large orgs, late/leave lists could be cut off without indication. Consider pagination or removing the cap with a sane upper bound documented in the response."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_dashboard.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "n/a"},
+  "test_credentials": "Admin: info.growitup@gmail.com (matches ADMIN_EMAIL constant, auto-promoted to is_admin=true). Non-admin: test.employee@growitup.com (work_email of seeded employee GM001 in Operations dept).",
+  "seed_data_creation": "Inserted 5 TEST_<role>_<suffix> employees (Leave, WFH, 2x Late, Birthday-today), 4 daily_attendance rows for today (status=Leave/WFH/Present+is_late=true x2 with late_minutes 15 & 45), and 1 Approved leave_request covering today with leave_type='Sick Leave' & half_day_type='First Half'. All deleted in module-scoped teardown by suffix-matching regex; no existing data touched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_dashboard.py is self-contained: it seeds + cleans its own data via pymongo using MONGO_URL/DB_NAME from env. Server runs in UTC; 'today' is computed via datetime.now() server-side and datetime.now() in the test — they must match. If the dashboard endpoint changes to TZ-aware logic, update TODAY/MM_DD constants accordingly. The non-admin user GM001 has DOB 1995-05-15; if the run date is exactly May 15, the test_non_matching_dob_is_excluded check still passes because GM001 is not seeded by the test, but the bday list will include it — that's fine, our assertion is scoped to seeded TEST_ ids."
+}

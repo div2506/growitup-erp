@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-route
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import { Toaster } from "@/components/ui/sonner";
 import LoginPage from "@/pages/LoginPage";
+import DashboardPage from "@/pages/DashboardPage";
 import EmployeesPage from "@/pages/EmployeesPage";
 import DepartmentsPage from "@/pages/DepartmentsPage";
 import JobPositionsPage from "@/pages/JobPositionsPage";
@@ -44,7 +45,8 @@ function AppRouter() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/employees" replace />} />
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="dashboard" element={<DashboardPage />} />
         <Route path="employees" element={<EmployeesPage />} />
         <Route path="departments" element={<DepartmentsPage />} />
         <Route path="job-positions" element={<JobPositionsPage />} />
@@ -58,7 +60,7 @@ function AppRouter() {
         <Route path="overtime" element={<OvertimeIndexPage />} />
         <Route path="payroll" element={<PayrollIndexPage />} />
       </Route>
-      <Route path="*" element={<Navigate to="/employees" replace />} />
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
 }

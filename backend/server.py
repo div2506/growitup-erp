@@ -3543,6 +3543,119 @@ async def auto_reset_yearly_leave() -> int:
 
 # ===================== ATTENDANCE SYSTEM =====================
 
+@api_router.get("/dashboard/today")
+async def get_dashboard_today(request: Request):
+    """Aggregated dashboard payload for today: on-leave, WFH, late arrivals, birthdays."""
+    await get_current_user(request)
+    now = datetime.now()
+    today_str = now.strftime("%Y-%m-%d")
+    mm_dd = now.strftime("%m-%d")  # for birthday match on any year
+
+    # Fetch today's attendance rows with relevant statuses + late flag
+    att_rows = await db.daily_attendance.find(
+        {
+            "date": today_str,
+            "$or": [
+                {"status": {"$in": ["Leave", "WFH"]}},
+                {"is_late": True},
+            ],
+        },
+        {"_id": 0},
+    ).to_list(500)
+
+    # Collect employee_ids to batch-fetch
+    emp_ids = sorted({r["employee_id"] for r in att_rows})
+    emp_map: dict = {}
+    if emp_ids:
+        emp_docs = await db.employees.find(
+            {"employee_id": {"$in": emp_ids}},
+            {"_id": 0, "employee_id": 1, "first_name": 1, "last_name": 1,
+             "profile_picture": 1, "job_position_name": 1, "department_name": 1},
+        ).to_list(len(emp_ids))
+        emp_map = {e["employee_id"]: e for e in emp_docs}
+
+    def enrich(row):
+        emp = emp_map.get(row["employee_id"]) or {}
+        return {
+            "employee_id": row["employee_id"],
+            "first_name": emp.get("first_name"),
+            "last_name": emp.get("last_name"),
+            "profile_picture": emp.get("profile_picture"),
+            "job_position_name": emp.get("job_position_name"),
+            "department_name": emp.get("department_name"),
+        }
+
+    # On leave today — also pull half-day info from the leave_requests row covering today
+    leave_list = []
+    for r in att_rows:
+        if r.get("status") != "Leave":
+            continue
+        base = enrich(r)
+        lr = await db.leave_requests.find_one(
+            {
+                "employee_id": r["employee_id"],
+                "status": "Approved",
+                "from_date": {"$lte": today_str},
+                "to_date": {"$gte": today_str},
+            },
+            {"_id": 0, "leave_type": 1, "half_day_type": 1},
+        )
+        base["leave_type"] = (lr or {}).get("leave_type") or "Full Day"
+        base["half_day_type"] = (lr or {}).get("half_day_type")
+        leave_list.append(base)
+
+    # WFH today
+    wfh_list = [enrich(r) for r in att_rows if r.get("status") == "WFH"]
+
+    # Late arrivals — sorted by late_minutes desc
+    late_rows = [r for r in att_rows if r.get("is_late")]
+    late_rows.sort(key=lambda r: r.get("late_minutes") or 0, reverse=True)
+    late_list = []
+    for r in late_rows:
+        base = enrich(r)
+        base["check_in"] = r.get("check_in")
+        base["late_minutes"] = r.get("late_minutes") or 0
+        late_list.append(base)
+
+    # Birthdays today — match on month-day regardless of year
+    bday_regex = f"-{mm_dd}$"
+    bday_docs = await db.employees.find(
+        {"date_of_birth": {"$regex": bday_regex}},
+        {"_id": 0, "employee_id": 1, "first_name": 1, "last_name": 1,
+         "profile_picture": 1, "job_position_name": 1, "department_name": 1,
+         "date_of_birth": 1},
+    ).to_list(200)
+
+    bday_list = []
+    for e in bday_docs:
+        age = None
+        try:
+            dob = datetime.strptime(e["date_of_birth"], "%Y-%m-%d")
+            age = now.year - dob.year
+            # Should be exact today; account for pre-birthday-today corner case
+            if (now.month, now.day) < (dob.month, dob.day):
+                age -= 1
+        except Exception:
+            age = None
+        bday_list.append({
+            "employee_id": e["employee_id"],
+            "first_name": e.get("first_name"),
+            "last_name": e.get("last_name"),
+            "profile_picture": e.get("profile_picture"),
+            "job_position_name": e.get("job_position_name"),
+            "department_name": e.get("department_name"),
+            "age": age,
+        })
+
+    return {
+        "date": today_str,
+        "on_leave": leave_list,
+        "wfh": wfh_list,
+        "late": late_list,
+        "birthdays": bday_list,
+    }
+
+
 @api_router.post("/attendance/entry")
 async def create_attendance_entry(body: AttendanceEntryCreate, request: Request):
     """Public biometric endpoint — requires X-API-Key header or ?api_key= query param."""
