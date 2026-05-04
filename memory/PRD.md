@@ -267,7 +267,14 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
   - Desktop leaderboard table: removed all tooltip/Info-icon markup; clean numeric score columns. New columns: **Report** ("View Report" with external-link icon, opens in new tab; `-` if empty) and admin-only **Actions** (Pencil icon → opens Edit modal).
   - Mobile card view: same changes — tooltip removed, Report row added, admin Edit icon in card header.
 - testids: `mgr-perf-add-btn`, `mgr-perf-edit-btn`, `mgr-perf-edit-btn-mobile`, `mgr-perf-modal`, `mgr-perf-manager-select`, `mgr-perf-month-select`, `mgr-perf-cp-input`, `mgr-perf-cf-input`, `mgr-perf-ct-input`, `mgr-perf-report-link-input`, `mgr-perf-total`, `mgr-perf-save-btn`, `mgr-perf-report-link`, `mgr-perf-table`, `mgr-perf-row`
-- Tests: 15/15 backend pytest cases pass (`/app/backend/tests/test_manager_performance.py`) — POST/PUT happy paths, URL validation, score validation, auth (401/403), duplicate-month (400), 404 on unknown perf_id, total recalculation, empty/null report_link normalization, legacy notes fields never leak into responses
+- Tests: 15/15 backend pytest cases pass (`/app/backend/tests/test_manager_performance.py`)
+
+### Dashboard Landing Page (COMPLETE - 2026-02-04)
+- **Backend** (`server.py`): new `GET /api/dashboard/today` — aggregated payload for today: `{date, on_leave, wfh, late, birthdays}`. All authenticated users see the same data (no role gating). Single endpoint to avoid N+1 — batches employee lookups via `$in` on employee_id list. On-leave rows enriched with `leave_type`/`half_day_type` from the covering approved leave_request. Late rows include `check_in` + `late_minutes`, sorted DESC by lateness. Birthdays match on MM-DD regex across any year; computed `age` included.
+- **Frontend** (`DashboardPage.jsx` — new): header with today's date, 3 equal-width attendance cards (On Leave · WFH · Late) in a responsive 3-col grid with count badges, scrollable lists, and clickable rows → `/employees?focus={id}`. Full-width celebratory Birthdays section below with gradient background, decorative blurred orbs, horizontal scroll of birthday cards showing large avatar + name + position + "Turns X today" + PartyPopper icon. Loading skeleton + auto-refresh every 5 min. Mobile stacks all 4 sections vertically.
+- **Routing**: `/dashboard` is the new default landing route (`App.js` `<Route index>` redirects here, all unknown paths redirect here). Sidebar: "Dashboard" added at the top with `LayoutDashboard` icon; visible to all roles.
+- testids: `dashboard-page`, `dashboard-date`, `dashboard-leave-card`, `dashboard-wfh-card`, `dashboard-late-card`, `dashboard-birthdays-section`, `dashboard-birthday-card`
+- Tests: 11/11 backend pytest cases pass (`/app/backend/tests/test_dashboard.py`) — auth, shape, admin/non-admin parity, enrichment, empty-array edge cases, _id exclusion
 
 ### Attendance Page Tabs (COMPLETE - 2026-02-04)
 - New `AttendanceIndexPage.jsx` consolidates all attendance-related modules under one tabbed view
