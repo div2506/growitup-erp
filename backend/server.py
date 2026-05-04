@@ -2268,13 +2268,18 @@ async def get_shift_change_requests(
 @api_router.post("/shift-change-requests")
 async def create_shift_change_request(body: ShiftChangeRequestCreate, request: Request):
     user = await get_current_user(request)
+
+    # Check if user is super admin first (is_admin flag)
+    if user.get("is_admin"):
+        raise HTTPException(403, "Admin department users cannot submit shift change requests")
+
     my_emp = await db.employees.find_one(
         {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
     )
     if not my_emp:
         raise HTTPException(403, "Employee profile not found")
 
-    is_admin = user.get("is_admin") or my_emp.get("department_name") == "Admin"
+    is_admin = my_emp.get("department_name") == "Admin"
     if is_admin:
         raise HTTPException(403, "Admin department users cannot submit shift change requests")
 

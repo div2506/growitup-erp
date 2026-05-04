@@ -183,7 +183,17 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 - **CSS utility**: `.no-scrollbar` added in `index.css` for clean horizontal scroll
 - Pushed to GitHub repo `growitup-erp` (main, commit `04ea098`) on 2026-05-02
 
-### Team of the Month (COMPLETE - 2026-04-27)
+### Shift Management System (COMPLETE - 2026-07-2026)
+- **Shifts DB**: shifts, employee_shifts, shift_change_requests collections
+- **Default Shift**: "Regular 9-6" (09:00-18:00, 60min break, 9h) — system default, cannot delete/rename
+- **Admin Shifts CRUD** (Settings → Shifts tab): Create/Edit/Delete shifts with time pickers, break dropdown, calculated total_hours
+- **Employee Shift Assignment** in EmployeeModal Work Info tab — dropdown with all shifts, defaults to Regular 9-6
+- **Employee Shift Assignment API**: POST /api/employee-shifts (admin only), GET /api/employee-shifts/{id}
+- **My Shifts Page** (/shifts) for non-admin employees: current shift card, request shift change form, request history with cancel
+- **Shift Change Requests**: POST /api/shift-change-requests — validates past dates, overlapping requests, max 500 chars reason
+- **Admin Approval Workflow** (Settings → Shift Requests tab): filter by Pending/Approved/Rejected/All, Approve/Reject with optional rejection notes
+- **Access Control**: Admin dept → Settings Shifts+ShiftRequests tabs; Non-admin → My Shifts page in sidebar; Admin blocked from submitting shift requests
+- **Saturday Half-Day Logic**: Business logic function documented for getActiveShift + getShiftTimings (not yet in UI but APIs support it)
 - New leaderboard component (CreativeTeamOfMonth.jsx) tracking monthly manager performance
 - ManagerPerformance model + API: GET/POST/PUT /api/manager-performance, GET /api/managers-with-teams
 - Scores: Client Performance, Client Feedback, Creative Task — each with optional tooltip notes; total auto-calculated
