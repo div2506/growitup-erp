@@ -26,7 +26,8 @@ const EMPTY_FORM = {
   joining_date: "", basic_salary: "", bank_name: "", account_name: "",
   account_number: "", ifsc_code: "", profile_picture: null, status: "Active",
   teams: [],
-  shift_id: ""
+  shift_id: "",
+  paid_leave_eligible: false
 };
 
 const inputCls = "bg-[#191919] border-white/10 text-white placeholder-[#B3B3B3] focus-visible:ring-white/20 focus-visible:border-white/30";
@@ -102,6 +103,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
         profile_picture: employee.profile_picture || null,
         teams: employee.teams || [],
         shift_id: employee.shift_id || "",
+        paid_leave_eligible: false, // will be overridden by balance fetch below
       });
       // Load employee's current shift if editing
       if (employee.employee_id) {
@@ -110,6 +112,12 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
             if (res.data?.shift_id) {
               setForm(prev => ({ ...prev, shift_id: res.data.shift_id }));
             }
+          })
+          .catch(() => {});
+        // Load paid leave eligibility from leave_balance
+        axios.get(`${API}/leave/balance?employee_id=${employee.employee_id}`, { withCredentials: true })
+          .then(res => {
+            setForm(prev => ({ ...prev, paid_leave_eligible: !!res.data?.paid_leave_eligible }));
           })
           .catch(() => {});
       }
@@ -578,6 +586,26 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
                 </FormField>
               </div>
             )}
+
+            {/* Paid Leave Eligibility */}
+            <div className="mt-5 pt-5 border-t border-white/10">
+              <p className="text-white font-medium text-sm mb-3">Leave Eligibility</p>
+              <label className="flex items-start gap-3 cursor-pointer bg-[#191919] border border-white/10 rounded-lg px-4 py-3 hover:border-white/20 transition-colors">
+                <input
+                  type="checkbox"
+                  data-testid="paid-leave-eligible-checkbox"
+                  checked={!!form.paid_leave_eligible}
+                  onChange={e => set("paid_leave_eligible", e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-white/20 bg-[#191919] accent-green-500 cursor-pointer"
+                />
+                <div className="flex-1">
+                  <p className="text-white text-sm font-medium">Eligible for Paid Leave</p>
+                  <p className="text-[#B3B3B3] text-xs mt-0.5">
+                    When enabled, this employee accrues <span className="text-green-400">1 paid leave per month</span> automatically. Disabled employees can still apply for unpaid (regular) leave.
+                  </p>
+                </div>
+              </label>
+            </div>
 
             <div className="flex justify-between mt-6 gap-3">
               <Button variant="outline" onClick={() => setTab("personal")} className="bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white gap-1.5 min-h-[44px]">

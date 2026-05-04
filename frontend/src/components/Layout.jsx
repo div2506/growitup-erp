@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, API } from "@/contexts/AuthContext";
-import { Users, Settings, BarChart2, LogOut, Menu, X, Clock, CalendarDays } from "lucide-react";
+import { Users, Settings, BarChart2, LogOut, Menu, X, Clock, CalendarDays, CalendarCheck, Inbox } from "lucide-react";
 
 export default function Layout() {
   const { user, setUser, myEmployee, setMyEmployee } = useAuth();
@@ -40,7 +40,9 @@ export default function Layout() {
     { path: "/employees", label: "Employees", icon: Users },
     { path: "/performance", label: "Performance", icon: BarChart2 },
     { path: "/attendance", label: "Attendance", icon: CalendarDays },
+    { path: "/leave", label: "Leave", icon: CalendarCheck },
     ...(!isAdminDept ? [{ path: "/shifts", label: "My Shifts", icon: Clock }] : []),
+    ...(isAdminDept ? [{ path: "/leave-requests", label: "Leave Requests", icon: Inbox }] : []),
     ...(isAdminDept ? [{ path: "/settings", label: "Settings", icon: Settings }] : []),
   ];
 

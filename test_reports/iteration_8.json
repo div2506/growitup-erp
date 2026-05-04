@@ -1,0 +1,59 @@
+{
+  "summary": "Full backend testing of the Leave Management System (GrowItUp ERP). Wrote 32 pytest cases in /app/backend/tests/test_leave_mgmt.py covering working-days calc, balance access control, validations, admin review flow, employee cancel flow, credit-monthly idempotency, reset-yearly, and an end-to-end round-trip (eligible employee -> credit -> apply -> approve -> cancel -> balance restored). All 32/32 tests passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "PUT /api/employees/{id}",
+        "issue": "update_employee upserts leave_balance with upsert=False (line ~931-936). If an employee has no leave_balance document yet (legacy/seeded emp), toggling paid_leave_eligible=true via PUT silently has no effect until the balance row is later created by get_or_create_leave_balance (which hard-codes paid_leave_eligible=False). In this test environment a balance row already existed for the seeded employees so this passes, but on a fresh employee who never had GET /api/leave/balance called before the PUT, eligibility would be lost. Recommend changing to upsert=True and seeding balance_id/paid_leave_balance on insert."
+      },
+      {
+        "endpoint": "PUT /api/leave/requests/{id}/review",
+        "issue": "When approving a request, the balance is deducted using existing['paid_days'] computed at submission time. If the admin-eligible flag or balance changed between submit and approve, the split may be stale. Acceptable per spec but worth noting in docs."
+      },
+      {
+        "endpoint": "POST /api/leave/requests",
+        "issue": "Uses datetime.now() (server-local tz) to compare against body.from_date parsed as naive UTC string. Works here but can reject/accept a same-day request incorrectly across timezones. Minor."
+      },
+      {
+        "endpoint": "GET /api/leave/requests",
+        "issue": "For each request the endpoint does an N+1 lookup against employees and leave_balance. Fine for small datasets; consider $lookup or bulk fetch once volume grows."
+      },
+      {
+        "endpoint": "POST /api/leave/reset-yearly",
+        "issue": "Only resets employees whose paid_leave_balance > 0. Employees with 0 balance keep their last_credited_month, which is fine; however if the function is intended to be called at new year to clear last_credited_month universally so January credit can run for all eligible employees, this should reset last_credited_month for all balances (not just non-zero)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_leave_mgmt.py",
+    "/app/test_reports/pytest/leave_mgmt.xml"
+  ],
+  "action_items": [
+    "Consider changing leave_balance update in PUT /api/employees/{id} to upsert=True (and include balance_id/paid_leave_balance defaults) so that toggling paid_leave_eligible on a legacy/seeded employee without a pre-existing balance row is persisted.",
+    "Clarify reset-yearly semantics: should last_credited_month be reset for all employees (including zero-balance) so that January credit fires on first monthly run? Current implementation only touches non-zero balances."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 3440 lines — strongly recommend splitting into routers (auth, employees, leave, attendance, shifts, performance).",
+    "Leave endpoints duplicate the admin-check block 6+ times; extract a get_is_admin(request) dependency.",
+    "auto_credit_monthly_leave uses 'last_credited_month' = YYYY-MM-01 string; safer to store a proper date or (year, month) tuple for deterministic idempotency across timezones.",
+    "calc_leave_deduction returns float math on paid_days — rounding at 2 decimals is only applied in one branch; half-day (0.5) combined with partial paid balances could yield floats like 0.3 without rounding. Consider uniform round(..., 2).",
+    "PUT /leave/requests/{id}/review ignores body.admin_notes when None (stores empty string instead of None). Minor consistency."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_leave_mgmt.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "n/a"},
+  "test_credentials": "Admin: info.growitup@gmail.com via POST /api/auth/google. Employees: john.doe@growitup.com (GM001), jane.smith@growitup.com (GM002).",
+  "seed_data_creation": "Did not reseed — used existing 2 seeded employees. Test created & deleted one TEST_ employee. The E2E flow set paid_leave_eligible=true on GM001 (john.doe) and performed an approve+cancel round-trip; ending state: balance restored to pre-test amount (1 credited for May 2026), paid_leave_eligible=True remains, plus 2 audit txns (Debit + Credit) added to leave_transactions for GM001.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Test file /app/backend/tests/test_leave_mgmt.py is the canonical regression suite for Leave Management. Run with: REACT_APP_BACKEND_URL=<url> pytest /app/backend/tests/test_leave_mgmt.py -v. It auto-uses the first 2 seeded employees and cleans up its leave requests. E2E flow leaves GM001 with paid_leave_eligible=True and two audit transactions — harmless but noted.",
+  "rca of the issue": "No production issue found. All 32 tests pass. The only latent bug identified by code review is the upsert=False in PUT /api/employees/{id} for the leave_balance flag toggle — reproduction would require a legacy employee with no leave_balance document; seeded employees already have one (created lazily by earlier /leave/balance calls) so test did not hit this path."
+}
