@@ -3084,18 +3084,24 @@ async def reset_yearly_leave_endpoint(request: Request):
     is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
     if not is_admin:
         raise HTTPException(403, "Admin only")
+    count = await auto_reset_yearly_leave()
+    return {"message": f"Reset leave balances for {count} employees", "reset_count": count}
 
-    balances = await db.leave_balance.find({}, {"_id": 0}).to_list(1000)
+
+async def auto_reset_yearly_leave() -> int:
+    """Reset paid_leave_balance=0 and clear last_credited_month for ALL balances.
+    Emits an audit 'Reset' transaction only for employees whose balance was non-zero."""
+    balances = await db.leave_balance.find({}, {"_id": 0}).to_list(10000)
     today_str = datetime.now().strftime("%Y-%m-%d")
     count = 0
     for bal in balances:
         bal_before = float(bal.get("paid_leave_balance", 0))
+        now = datetime.now(timezone.utc).isoformat()
+        await db.leave_balance.update_one(
+            {"employee_id": bal["employee_id"]},
+            {"$set": {"paid_leave_balance": 0.0, "last_credited_month": None, "updated_at": now}}
+        )
         if bal_before > 0:
-            now = datetime.now(timezone.utc).isoformat()
-            await db.leave_balance.update_one(
-                {"employee_id": bal["employee_id"]},
-                {"$set": {"paid_leave_balance": 0.0, "last_credited_month": None, "updated_at": now}}
-            )
             await create_leave_txn(
                 employee_id=bal["employee_id"], txn_type="Reset", leave_type="Paid",
                 amount=-bal_before, balance_before=bal_before, balance_after=0.0,
@@ -3103,7 +3109,7 @@ async def reset_yearly_leave_endpoint(request: Request):
                 date_str=today_str, notes="Annual paid leave balance reset"
             )
             count += 1
-    return {"message": f"Reset leave balances for {count} employees", "reset_count": count}
+    return count
 
 
 # ===================== ATTENDANCE SYSTEM =====================
@@ -3442,6 +3448,57 @@ class ReflectOriginCORSMiddleware(BaseHTTPMiddleware):
         return response
 
 app.add_middleware(ReflectOriginCORSMiddleware)
+
+
+# ===================== SCHEDULED JOBS =====================
+# Automates monthly paid-leave credit (1st of every month) and annual reset (Jan 1).
+# Runs in-process via APScheduler — no external cron needed.
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+
+scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")  # GrowItUp is India-based
+
+async def _scheduled_monthly_credit():
+    try:
+        n = await auto_credit_monthly_leave()
+        logging.info(f"[Scheduler] Monthly paid-leave credit complete: {n} employees credited.")
+    except Exception as exc:  # noqa: BLE001
+        logging.error(f"[Scheduler] Monthly credit failed: {exc}")
+
+async def _scheduled_yearly_reset():
+    try:
+        n = await auto_reset_yearly_leave()
+        logging.info(f"[Scheduler] Yearly leave reset complete: {n} non-zero balances reset to 0.")
+    except Exception as exc:  # noqa: BLE001
+        logging.error(f"[Scheduler] Yearly reset failed: {exc}")
+
+
+@app.on_event("startup")
+async def _start_scheduler():
+    # Monthly: run at 00:05 on day 1 of every month
+    scheduler.add_job(
+        _scheduled_monthly_credit,
+        CronTrigger(day=1, hour=0, minute=5),
+        id="monthly_paid_leave_credit",
+        replace_existing=True,
+        misfire_grace_time=60 * 60,  # 1hr grace in case of container restart near the minute
+    )
+    # Yearly: run at 00:00 on January 1
+    scheduler.add_job(
+        _scheduled_yearly_reset,
+        CronTrigger(month=1, day=1, hour=0, minute=0),
+        id="yearly_leave_reset",
+        replace_existing=True,
+        misfire_grace_time=60 * 60,
+    )
+    scheduler.start()
+    logging.info("[Scheduler] Started with jobs: monthly_paid_leave_credit (day=1 00:05 IST), yearly_leave_reset (Jan 1 00:00 IST)")
+
+
+@app.on_event("shutdown")
+async def _stop_scheduler():
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
 
 
 @app.on_event("shutdown")

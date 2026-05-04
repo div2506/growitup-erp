@@ -231,3 +231,16 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
   - Sidebar nav: "Leave" for all users, "Leave Requests" for Admin dept only
 - **Access Control**: Admin dept reviews. Non-admin can only cancel own requests, view own balance/txns. Admin is blocked from submitting for self by design (has no employee record).
 - **Tests**: 32/32 pytest cases pass (`/app/backend/tests/test_leave_mgmt.py`) — covers validations, eligibility toggle, approve/cancel round-trip, idempotent monthly credit, access control, attendance integration.
+
+### Leave Automation — Scheduled Jobs (COMPLETE - 2026-05-04)
+- **APScheduler** (in-process `AsyncIOScheduler`, timezone `Asia/Kolkata`) wired into FastAPI startup/shutdown events
+- **Monthly paid-leave credit**: runs day=1 at 00:05 IST → calls `auto_credit_monthly_leave()`; idempotent via `last_credited_month`
+- **Yearly reset**: runs Jan 1 at 00:00 IST → calls `auto_reset_yearly_leave()`; now clears `last_credited_month` for **all** balances (not just non-zero) so Jan credit fires for every eligible employee
+- Existing manual admin triggers `POST /api/leave/credit-monthly` and `POST /api/leave/reset-yearly` still work as before
+- Scheduler logs visible in `/var/log/supervisor/backend.err.log` on startup
+- Added `APScheduler==3.11.2` to `requirements.txt`
+
+### Leave Attendance Integration — Visual Regression (VERIFIED - 2026-05-04)
+- Approved leave requests correctly render as "L" badges on employee Attendance calendar
+- Summary "Leave" counter increments per approved leave day
+- Legend "L Leave" displayed at bottom of calendar
