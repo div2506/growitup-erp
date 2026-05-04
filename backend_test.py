@@ -14,7 +14,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 
 # Configuration
-BACKEND_URL = "https://emp-perf-track.preview.emergentagent.com/api"
+BACKEND_URL = "https://workforce-portal-76.preview.emergentagent.com/api"
 ADMIN_EMAIL = "info.growitup@gmail.com"
 
 # Database connection

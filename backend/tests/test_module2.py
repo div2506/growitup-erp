@@ -3,7 +3,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://emp-perf-track.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://workforce-portal-76.preview.emergentagent.com').rstrip('/')
 SESSION_TOKEN = "test_session_mod2_1775313680171"
 
 HEADERS = {
