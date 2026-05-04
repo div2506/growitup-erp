@@ -387,11 +387,16 @@ export default function LeavePage() {
   const fetchRequests = useCallback(async () => {
     setLoadingRequests(true);
     try {
-      const { data } = await axios.get(`${API}/leave/requests`, { withCredentials: true });
+      // Always scope to the logged-in employee (so admins only see their own
+      // leaves on the personal "My Leaves" tab — not every employee's request).
+      const params = myEmployee?.employee_id
+        ? `?employee_id=${encodeURIComponent(myEmployee.employee_id)}`
+        : "";
+      const { data } = await axios.get(`${API}/leave/requests${params}`, { withCredentials: true });
       setRequests(data);
     } catch { setRequests([]); }
     finally { setLoadingRequests(false); }
-  }, []);
+  }, [myEmployee?.employee_id]);
 
   useEffect(() => { fetchBalance(); fetchRequests(); }, [fetchBalance, fetchRequests]);
 
