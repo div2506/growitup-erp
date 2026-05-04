@@ -210,3 +210,24 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 - Performance screen tabs: shadcn pill style; tab order standardized — **Team Performance / My Performance is FIRST tab; Creative Team of the Month is SECOND tab** for all roles (Admin, Manager, Employee)
 - Default landing tab: Manager → My Team Performance; Employee → My Performance; Admin (no teams) → Creative Team of the Month (since clicking Team Performance auto-navigates)
 - Pushed to GitHub repo `growitup-erp` (main) on 2026-04-27
+
+### Leave Management System (COMPLETE - 2026-05-04)
+- **Collections**: `leave_balance` (employee_id, paid_leave_balance, paid_leave_eligible, last_credited_month), `leave_requests` (request_id, employee_id, from_date, to_date, leave_type, half_day_type, total_days, paid_days, regular_days, reason, status, reviewed_by, reviewed_at, admin_notes, cancelled_at), `leave_transactions` (audit trail of Credit/Debit/Reset)
+- **Business Rules**: Working days = Mon–Sat (Sundays excluded). Full Day = calc working days between; Half Day = 0.5. Paid leave auto-credits 1/month for `paid_leave_eligible=true` employees (idempotent via `last_credited_month`). On submission, system pre-splits into `paid_days` + `regular_days` based on current balance. On approve, paid_days are debited + daily_attendance "Leave" rows created + Debit txn. On cancel (Pending OR future-dated Approved), paid balance restored + Credit txn + Leave attendance rows removed. Rejected = no balance impact.
+- **API Endpoints (all `/api/leave/*`)**:
+  - `GET /balance` — employee_id optional (defaults to self); auto-triggers monthly credit if eligible & not yet credited
+  - `GET /working-days?from_date&to_date`
+  - `GET /requests?status&employee_id&month` — admin sees all; employee sees own; each request includes embedded `employee`, `employee_balance`, `reviewer_name`
+  - `POST /requests` — validates past date, overlapping, Sunday start, half_day_type required when Half Day, reason <= 1000 chars
+  - `PUT /requests/{id}/review` — admin only; Approved/Rejected + optional `admin_notes`
+  - `PUT /requests/{id}/cancel` — owner or admin; blocks started-Approved cancellation
+  - `GET /transactions?employee_id` — audit trail
+  - `POST /credit-monthly` — admin manual trigger (idempotent)
+  - `POST /reset-yearly` — admin annual reset
+- **Frontend**:
+  - `/leave` — employee self-service (balance card, Apply Leave modal with live deduction preview, My Requests list with Pending/Approved/Rejected/Cancelled filter + cancel action)
+  - `/leave-requests` — **admin-only** review console (status tabs with counters, search by name/ID/dept, inline Approve/Reject with optional/required notes, rejection-reason enforced)
+  - **EmployeeModal** → Work Info tab → new "Eligible for Paid Leave" checkbox (persists to `leave_balance.paid_leave_eligible` via PUT /employees)
+  - Sidebar nav: "Leave" for all users, "Leave Requests" for Admin dept only
+- **Access Control**: Admin dept reviews. Non-admin can only cancel own requests, view own balance/txns. Admin is blocked from submitting for self by design (has no employee record).
+- **Tests**: 32/32 pytest cases pass (`/app/backend/tests/test_leave_mgmt.py`) — covers validations, eligibility toggle, approve/cancel round-trip, idempotent monthly credit, access control, attendance integration.

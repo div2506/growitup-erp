@@ -929,10 +929,20 @@ async def update_employee(emp_id: str, body: EmployeeCreate, request: Request):
 
     # Update leave balance eligibility if explicitly changed
     if paid_leave_eligible is not None:
+        now_iso = datetime.now(timezone.utc).isoformat()
         await db.leave_balance.update_one(
             {"employee_id": emp_id},
-            {"$set": {"paid_leave_eligible": paid_leave_eligible, "updated_at": datetime.now(timezone.utc).isoformat()}},
-            upsert=False
+            {
+                "$set": {"paid_leave_eligible": paid_leave_eligible, "updated_at": now_iso},
+                "$setOnInsert": {
+                    "balance_id": f"lb_{uuid.uuid4().hex[:10]}",
+                    "employee_id": emp_id,
+                    "paid_leave_balance": 0.0,
+                    "last_credited_month": None,
+                    "created_at": now_iso,
+                },
+            },
+            upsert=True
         )
 
     # If work_email changed: invalidate all sessions for the old email and update the user record
