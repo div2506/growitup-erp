@@ -264,3 +264,14 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 - `LeavePage.fetchRequests()` now scopes the GET to `?employee_id={my_id}` so admins on the "My Leaves" tab don't see every employee's request bleeding in (backend `GET /leave/requests` returns all rows for admins by default)
 - Admin (e.g. `info.growitup@gmail.com` / `GM001`) has an employee row, so `POST /leave/requests` already resolves their employee_id from `user["email"]` → no backend changes needed
 - testids added: `leave-admin-tabs`, `leave-tab-mine`, `leave-tab-team`
+
+### Attendance Page Tabs (COMPLETE - 2026-02-04)
+- New `AttendanceIndexPage.jsx` consolidates all attendance-related modules under one tabbed view
+- **Admin tabs**: Attendance · Shift Requests · WFH Requests · Overtime Requests
+- **Non-admin tabs**: Attendance · Request Shift Change · Request WFH · Log Overtime
+- Tab styling matches Settings/Performance pages (`bg-[#191919]` border, `data-[state=active]:bg-[#2F2F2F]`, lucide icons, horizontally scrollable on mobile)
+- Default landing tab: Attendance (calendar/table view)
+- `App.js`: route `/attendance` now points to `AttendanceIndexPage` (was `AttendancePage`)
+- `SettingsPage.ShiftRequestsTab` exported as a named export so it can be reused inside the admin "Shift Requests" tab without duplication
+- Sidebar links untouched per user request (Overtime, WFH, Shift items remain wherever they were)
+- testids: `attendance-tabs-nav`, `attendance-tab-{val}` (e.g. `attendance-tab-attendance`, `attendance-tab-wfh-requests`)

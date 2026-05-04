@@ -1097,7 +1097,7 @@ function ShiftsTab() {
 
 
 // ================== SHIFT REQUESTS TAB ==================
-function ShiftRequestsTab() {
+export function ShiftRequestsTab() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState("Pending");

@@ -9,7 +9,7 @@ import JobPositionsPage from "@/pages/JobPositionsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import PerformancePage from "@/pages/PerformancePage";
 import ShiftsPage from "@/pages/ShiftsPage";
-import AttendancePage from "@/pages/AttendancePage";
+import AttendanceIndexPage from "@/pages/AttendanceIndexPage";
 import LeaveIndexPage from "@/pages/LeaveIndexPage";
 import WFHIndexPage from "@/pages/WFHIndexPage";
 import OvertimeIndexPage from "@/pages/OvertimeIndexPage";
@@ -51,7 +51,7 @@ function AppRouter() {
         <Route path="settings" element={<SettingsPage />} />
         <Route path="performance" element={<PerformancePage />} />
         <Route path="shifts" element={<ShiftsPage />} />
-        <Route path="attendance" element={<AttendancePage />} />
+        <Route path="attendance" element={<AttendanceIndexPage />} />
         <Route path="leave" element={<LeaveIndexPage />} />
         <Route path="leave-requests" element={<LeaveIndexPage />} />
         <Route path="wfh" element={<WFHIndexPage />} />
