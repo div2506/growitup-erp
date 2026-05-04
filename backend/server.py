@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 import logging
 import json
 import calendar as cal_module
+from urllib.parse import urlparse
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -110,9 +111,7 @@ class ManagerPerformanceCreate(BaseModel):
     client_performance_score: float  # 0-100
     client_feedback_score: float  # 0-100
     creative_task_score: float  # 0-100
-    client_performance_notes: Optional[str] = None  # Optional, max 500 chars
-    client_feedback_notes: Optional[str] = None  # Optional, max 500 chars
-    creative_task_notes: Optional[str] = None  # Optional, max 500 chars
+    report_link: Optional[str] = None  # Optional URL to external report
 
 
 class ShiftCreate(BaseModel):
@@ -2647,6 +2646,21 @@ async def submit_upgrade_request(body: UpgradeLevelRequest, request: Request):
 
 # ===================== MANAGER PERFORMANCE ROUTES =====================
 
+def _validate_report_link(url: Optional[str]) -> Optional[str]:
+    """Return a cleaned URL string (http/https required) or None. Raises 400 on malformed input."""
+    if not url:
+        return None
+    url = url.strip()
+    if not url:
+        return None
+    if len(url) > 2048:
+        raise HTTPException(400, "Report link is too long (max 2048 chars)")
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise HTTPException(400, "Report link must be a valid http(s) URL")
+    return url
+
+
 @api_router.get("/manager-performance")
 async def get_manager_performance(request: Request, month: Optional[str] = None, manager_id: Optional[str] = None):
     """Get manager performance data. Filter by month and/or manager_id if provided."""
@@ -2734,13 +2748,8 @@ async def create_manager_performance(body: ManagerPerformanceCreate, request: Re
     if not (0 <= body.creative_task_score <= 100):
         raise HTTPException(400, "Creative task score must be between 0 and 100")
     
-    # Validate notes length (optional fields)
-    if body.client_performance_notes and len(body.client_performance_notes) > 500:
-        raise HTTPException(400, "Client performance notes must be 500 characters or less")
-    if body.client_feedback_notes and len(body.client_feedback_notes) > 500:
-        raise HTTPException(400, "Client feedback notes must be 500 characters or less")
-    if body.creative_task_notes and len(body.creative_task_notes) > 500:
-        raise HTTPException(400, "Creative task notes must be 500 characters or less")
+    # Validate report_link — must be a valid URL if provided
+    report_link_clean = _validate_report_link(body.report_link)
     
     # Check for duplicate (same manager + month)
     existing = await db.manager_performance.find_one({
@@ -2767,9 +2776,7 @@ async def create_manager_performance(body: ManagerPerformanceCreate, request: Re
         "client_performance_score": body.client_performance_score,
         "client_feedback_score": body.client_feedback_score,
         "creative_task_score": body.creative_task_score,
-        "client_performance_notes": body.client_performance_notes or "",
-        "client_feedback_notes": body.client_feedback_notes or "",
-        "creative_task_notes": body.creative_task_notes or "",
+        "report_link": report_link_clean,
         "total_points_month": total_points_month,
         "created_by": user.get("email"),
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -2807,13 +2814,8 @@ async def update_manager_performance(perf_id: str, body: ManagerPerformanceCreat
     if not (0 <= body.creative_task_score <= 100):
         raise HTTPException(400, "Creative task score must be between 0 and 100")
     
-    # Validate notes length (optional fields)
-    if body.client_performance_notes and len(body.client_performance_notes) > 500:
-        raise HTTPException(400, "Client performance notes must be 500 characters or less")
-    if body.client_feedback_notes and len(body.client_feedback_notes) > 500:
-        raise HTTPException(400, "Client feedback notes must be 500 characters or less")
-    if body.creative_task_notes and len(body.creative_task_notes) > 500:
-        raise HTTPException(400, "Creative task notes must be 500 characters or less")
+    # Validate report_link — must be a valid URL if provided
+    report_link_clean = _validate_report_link(body.report_link)
     
     # Calculate new total points (weighted: 45% Client Performance, 35% Client Feedback, 20% Creative Task)
     total_points_month = round(
@@ -2830,9 +2832,7 @@ async def update_manager_performance(perf_id: str, body: ManagerPerformanceCreat
             "client_performance_score": body.client_performance_score,
             "client_feedback_score": body.client_feedback_score,
             "creative_task_score": body.creative_task_score,
-            "client_performance_notes": body.client_performance_notes or "",
-            "client_feedback_notes": body.client_feedback_notes or "",
-            "creative_task_notes": body.creative_task_notes or "",
+            "report_link": report_link_clean,
             "total_points_month": total_points_month,
             "updated_at": datetime.now(timezone.utc).isoformat()
         }}

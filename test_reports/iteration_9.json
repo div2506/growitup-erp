@@ -1,0 +1,58 @@
+{
+  "summary": "Backend regression for the Team-of-the-Month / ManagerPerformance contract change (3 notes fields removed; single optional report_link URL added; PUT/edit added). Wrote 15 pytest cases in /app/backend/tests/test_manager_performance.py covering POST/PUT/GET happy paths, validations (invalid URL, invalid scores, duplicate), auth (401 unauth, 403 non-admin on POST and PUT), 404 on unknown perf_id, weighted total recomputation (0.45/0.35/0.20), empty/null report_link normalization to None, and confirmation that the removed legacy notes fields never leak into responses and are silently dropped on input. All 15/15 passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "DELETE /api/manager-performance/{perf_id}",
+        "issue": "No DELETE endpoint exists for manager-performance entries. With the new Edit feature (PUT) this is asymmetric — admins can create and edit but cannot delete a wrong entry. Tests had to use random far-future months to avoid duplicate-month collisions across reruns. Consider adding DELETE with admin guard."
+      },
+      {
+        "endpoint": "PUT /api/manager-performance/{perf_id}",
+        "issue": "PUT body is the same ManagerPerformanceCreate model that requires manager_id and month. The handler ignores manager_id/month from the body (uses existing perf record's identity) but Pydantic still requires the client to send them. Frontend must keep sending these even though they are disabled in the UI. Worth either documenting or splitting into a ManagerPerformanceUpdate model with only the editable fields."
+      },
+      {
+        "endpoint": "POST/PUT /api/manager-performance",
+        "issue": "_validate_report_link rejects only via scheme/netloc check via urlparse. 'https:///' or 'https://?q=1' will pass minimal validation. Sufficient for the spec ('valid http(s) URL') but not RFC-strict. Acceptable."
+      },
+      {
+        "endpoint": "POST /api/manager-performance",
+        "issue": "Legacy clients that still send client_performance_notes/client_feedback_notes/creative_task_notes are silently accepted (Pydantic drops unknown fields). This is the documented intended behaviour, but it hides client bugs — consider model_config = ConfigDict(extra='forbid') if strict contract enforcement is desired."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_manager_performance.py",
+    "/app/test_reports/pytest/manager_performance.xml"
+  ],
+  "action_items": [
+    "(Optional) Add DELETE /api/manager-performance/{perf_id} (admin-only) to complete CRUD; or document that records are immutable except via PUT.",
+    "(Optional) Split PUT body into ManagerPerformanceUpdate Pydantic model that omits manager_id/month so frontend doesn't have to round-trip locked fields.",
+    "(Optional) If strict contract is desired, set extra='forbid' on ManagerPerformanceCreate so legacy notes fields raise 422 instead of being silently dropped."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 4628 lines — split into routers (auth, employees, leave, attendance, shifts, performance, teams, manager-performance) is overdue.",
+    "POST and PUT for manager-performance duplicate the admin-check block (lines 2725-2731 and 2796-2802); extract a require_admin(request) dependency.",
+    "POST and PUT also duplicate the score validation and weighted total computation (45/35/20). Extract a helper _compute_total_points(scores) and a single score-bounds validator.",
+    "_validate_report_link is called inside POST/PUT but Pydantic field-level validators (@field_validator('report_link')) would be a cleaner location and would auto-produce a 422 response.",
+    "GET /api/manager-performance does an N+1 employee lookup per perf row (line 2679). For a leaderboard rendered every page load, this should be one $lookup or a bulk find by manager_id list.",
+    "POST returns the full perf entry but the dict comprehension `{k: v for k, v in perf_entry.items() if k != '_id'}` is unneeded since insert_one was given the dict before _id was injected — Mongo mutates it in place, so excluding _id is the correct guard but the comment 'Create entry' could note this.",
+    "No DELETE endpoint, no audit trail (created_by stored, updated_by NOT stored on PUT). Recommend adding updated_by = user.email in the $set."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_manager_performance.py (new)"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "n/a (backend-only request)"},
+  "test_credentials": "Admin: info.growitup@gmail.com via POST /api/auth/google. Non-admin used for 403 tests: test.employee@growitup.com (GM001, Operations dept).",
+  "seed_data_creation": "No new employee/team needed — used existing GM001 employee. Test fixture auto-created a TEST_TOM_<uuid> team with GM001 as team_manager_id (and tears it down on module teardown via DELETE /api/teams/{team_id}). Created 4 manager_performance entries in a randomized far-future year (range 2400-2999) to avoid duplicate-month collisions across reruns; these cannot be cleaned up because no DELETE endpoint exists for manager-performance.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run with: REACT_APP_BACKEND_URL=<url> pytest /app/backend/tests/test_manager_performance.py -v. Each run picks a new random far-future year for test months so reruns don't collide on the unique manager+month constraint. The test fixture creates and cleans up a team on GM001; perf entries cannot be cleaned up (no DELETE endpoint). If many reruns accumulate orphan perf rows in DB, drop them manually via mongo: db.manager_performance.deleteMany({month: {$regex: '^(2[4-9]|[3-9])....'}}). Frontend was NOT tested per request; CreativeTeamOfMonth.jsx still needs UI verification.",
+  "rca of the issue": "No bug. Feature behaves per spec: report_link validated as http(s) URL or normalized to None; weighted total recomputes on PUT; legacy notes fields silently dropped on input and never returned; admin-only POST/PUT; auth required for GET; 404 on unknown perf_id; 400 on duplicate manager+month."
+}
