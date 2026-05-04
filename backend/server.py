@@ -89,6 +89,7 @@ class EmployeeCreate(BaseModel):
     status: str = "Active"
     teams: List[str] = []
     shift_id: Optional[str] = None  # Shift assignment
+    paid_leave_eligible: Optional[bool] = False  # Whether employee receives monthly paid leave
 
 class TeamCreate(BaseModel):
     team_name: str
@@ -129,6 +130,19 @@ class ShiftChangeRequestCreate(BaseModel):
 
 
 class ShiftChangeRequestReview(BaseModel):
+    status: str  # "Approved" or "Rejected"
+    admin_notes: Optional[str] = None
+
+
+class LeaveRequestCreate(BaseModel):
+    from_date: str         # "YYYY-MM-DD"
+    to_date: str           # "YYYY-MM-DD"
+    leave_type: str        # "Full Day" or "Half Day"
+    half_day_type: Optional[str] = None  # "First Half" or "Second Half"
+    reason: str
+
+
+class LeaveRequestReview(BaseModel):
     status: str  # "Approved" or "Rejected"
     admin_notes: Optional[str] = None
 
@@ -329,6 +343,18 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
         ).sort("punch_time", 1).to_list(1000)
 
         if not punches:
+            # Check for approved leave request covering this date
+            leave_req = await db.leave_requests.find_one({
+                "employee_id": employee_id, "status": "Approved",
+                "from_date": {"$lte": date_str}, "to_date": {"$gte": date_str}
+            }, {"_id": 0})
+            if leave_req:
+                note = f"Leave ({leave_req.get('leave_type','Full Day')}{' - ' + leave_req['half_day_type'] if leave_req.get('half_day_type') else ''})"
+                return await upsert_daily_attendance(employee_id, date_str, {
+                    "shift_id": shift["shift_id"], "check_in": None, "check_out": None,
+                    "total_hours": None, "status": "Leave",
+                    "is_late": False, "late_minutes": 0, "notes": note
+                })
             return await upsert_daily_attendance(employee_id, date_str, {
                 "shift_id": shift["shift_id"], "check_in": None, "check_out": None,
                 "total_hours": 0, "status": "Absent", "is_late": False, "late_minutes": 0, "notes": None
@@ -426,6 +452,117 @@ async def update_late_tracking_fn(employee_id: str, date_str: str, late_minutes:
         )
     except Exception as e:
         logger.error(f"[Late Tracking] Error for {employee_id}: {e}")
+
+
+# ===================== LEAVE MANAGEMENT HELPERS =====================
+
+def calc_working_days_between(from_date_str: str, to_date_str: str) -> int:
+    """Count working days (Mon-Sat) between two dates inclusive, excluding Sundays."""
+    try:
+        start = datetime.strptime(from_date_str, "%Y-%m-%d")
+        end = datetime.strptime(to_date_str, "%Y-%m-%d")
+        days = 0
+        current = start
+        while current <= end:
+            if current.weekday() != 6:  # Not Sunday
+                days += 1
+            current += timedelta(days=1)
+        return days
+    except Exception:
+        return 0
+
+
+def calc_leave_deduction(balance: dict, total_days: float) -> dict:
+    """Split total_days into paid_days and regular_days based on balance."""
+    paid_bal = float(balance.get("paid_leave_balance", 0))
+    if paid_bal >= total_days:
+        return {"paid_days": total_days, "regular_days": 0.0}
+    elif paid_bal > 0:
+        return {"paid_days": paid_bal, "regular_days": round(total_days - paid_bal, 2)}
+    return {"paid_days": 0.0, "regular_days": total_days}
+
+
+async def get_or_create_leave_balance(employee_id: str) -> dict:
+    """Get or create LeaveBalance record for an employee."""
+    bal = await db.leave_balance.find_one({"employee_id": employee_id}, {"_id": 0})
+    if not bal:
+        now = datetime.now(timezone.utc).isoformat()
+        bal = {
+            "balance_id": f"lb_{uuid.uuid4().hex[:12]}",
+            "employee_id": employee_id, "paid_leave_balance": 0.0,
+            "paid_leave_eligible": False, "last_credited_month": None,
+            "created_at": now, "updated_at": now
+        }
+        await db.leave_balance.insert_one(bal)
+        return {k: v for k, v in bal.items() if k != "_id"}
+    return bal
+
+
+async def create_leave_txn(employee_id: str, txn_type: str, leave_type: str, amount: float,
+                            balance_before: float, balance_after: float, ref_type: str,
+                            ref_id: str, date_str: str, notes: str) -> dict:
+    """Append a leave transaction to the audit trail."""
+    now = datetime.now(timezone.utc).isoformat()
+    txn = {
+        "transaction_id": f"ltxn_{uuid.uuid4().hex[:10]}",
+        "employee_id": employee_id, "transaction_type": txn_type,
+        "leave_type": leave_type, "amount": amount,
+        "balance_before": balance_before, "balance_after": balance_after,
+        "reference_type": ref_type, "reference_id": ref_id,
+        "date": date_str, "notes": notes, "created_at": now
+    }
+    await db.leave_transactions.insert_one(txn)
+    return {k: v for k, v in txn.items() if k != "_id"}
+
+
+async def mark_leave_in_attendance(leave_request: dict):
+    """Create/update DailyAttendance records for each working day in a leave request."""
+    emp_id = leave_request["employee_id"]
+    leave_type = leave_request.get("leave_type", "Full Day")
+    half_day_type = leave_request.get("half_day_type") or ""
+    note = f"Leave ({leave_type}{' - ' + half_day_type if half_day_type else ''})"
+    try:
+        start = datetime.strptime(leave_request["from_date"], "%Y-%m-%d")
+        end = datetime.strptime(leave_request["to_date"], "%Y-%m-%d")
+        current = start
+        while current <= end:
+            if current.weekday() != 6:  # Skip Sundays
+                date_str = current.strftime("%Y-%m-%d")
+                shift = await get_active_shift_for_date_async(emp_id, current)
+                shift_id = shift["shift_id"] if shift else None
+                await upsert_daily_attendance(emp_id, date_str, {
+                    "shift_id": shift_id, "status": "Leave",
+                    "check_in": None, "check_out": None,
+                    "total_hours": None, "is_late": False, "late_minutes": 0, "notes": note
+                })
+            current += timedelta(days=1)
+    except Exception as e:
+        logger.error(f"[Leave] Error marking attendance: {e}")
+
+
+async def auto_credit_monthly_leave() -> int:
+    """Credit 1 paid leave to all eligible employees for the current month (idempotent)."""
+    current_month = datetime.now(timezone.utc).strftime("%Y-%m-01")
+    eligible = await db.leave_balance.find({"paid_leave_eligible": True}, {"_id": 0}).to_list(1000)
+    count = 0
+    for bal in eligible:
+        if bal.get("last_credited_month") == current_month:
+            continue
+        bal_before = float(bal.get("paid_leave_balance", 0))
+        bal_after = bal_before + 1.0
+        now = datetime.now(timezone.utc).isoformat()
+        await db.leave_balance.update_one(
+            {"employee_id": bal["employee_id"]},
+            {"$set": {"paid_leave_balance": bal_after, "last_credited_month": current_month, "updated_at": now}}
+        )
+        await create_leave_txn(
+            employee_id=bal["employee_id"], txn_type="Credit", leave_type="Paid",
+            amount=1.0, balance_before=bal_before, balance_after=bal_after,
+            ref_type="Monthly Credit", ref_id=current_month,
+            date_str=current_month, notes="Monthly paid leave credit"
+        )
+        count += 1
+    return count
 
 
 # ===================== AUTH ROUTES =====================
@@ -725,6 +862,7 @@ async def create_employee(body: EmployeeCreate, request: Request):
     now = datetime.now(timezone.utc).isoformat()
     emp_data = body.model_dump()
     shift_id = emp_data.pop("shift_id", None)
+    paid_leave_eligible = emp_data.pop("paid_leave_eligible", False) or False
     emp = {"employee_id": emp_id, **emp_data, "created_at": now, "updated_at": now}
     await db.employees.insert_one(emp)
 
@@ -738,6 +876,17 @@ async def create_employee(body: EmployeeCreate, request: Request):
             {"$set": {"employee_id": emp_id, "shift_id": shift_id, "assigned_at": now, "assigned_by": None}},
             upsert=True
         )
+
+    # Create LeaveBalance record
+    await db.leave_balance.update_one(
+        {"employee_id": emp_id},
+        {"$set": {
+            "balance_id": f"lb_{uuid.uuid4().hex[:10]}",
+            "employee_id": emp_id, "paid_leave_balance": 0.0,
+            "paid_leave_eligible": paid_leave_eligible,
+            "last_credited_month": None, "created_at": now, "updated_at": now
+        }}, upsert=True
+    )
 
     return {k: v for k, v in emp.items() if k != "_id"}
 
@@ -761,6 +910,7 @@ async def update_employee(emp_id: str, body: EmployeeCreate, request: Request):
 
     emp_data = body.model_dump()
     shift_id = emp_data.pop("shift_id", None)
+    paid_leave_eligible = emp_data.pop("paid_leave_eligible", None)
     update = {**emp_data, "updated_at": datetime.now(timezone.utc).isoformat()}
     await db.employees.update_one({"employee_id": emp_id}, {"$set": update})
 
@@ -775,6 +925,14 @@ async def update_employee(emp_id: str, body: EmployeeCreate, request: Request):
             {"$set": {"employee_id": emp_id, "shift_id": shift_id,
                       "assigned_at": datetime.now(timezone.utc).isoformat(), "assigned_by": assigned_by_id}},
             upsert=True
+        )
+
+    # Update leave balance eligibility if explicitly changed
+    if paid_leave_eligible is not None:
+        await db.leave_balance.update_one(
+            {"employee_id": emp_id},
+            {"$set": {"paid_leave_eligible": paid_leave_eligible, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=False
         )
 
     # If work_email changed: invalidate all sessions for the old email and update the user record
@@ -1528,6 +1686,19 @@ async def seed_v2():
     await db.job_positions.delete_one({"position_id": "pos_hr_manager_hr"})
     # Ensure default shift exists
     await ensure_default_shift()
+    # Ensure LeaveBalance exists for all existing employees
+    all_emps = await db.employees.find({}, {"employee_id": 1, "_id": 0}).to_list(10000)
+    for emp in all_emps:
+        eid = emp["employee_id"]
+        existing_bal = await db.leave_balance.find_one({"employee_id": eid}, {"_id": 0})
+        if not existing_bal:
+            now = datetime.now(timezone.utc).isoformat()
+            await db.leave_balance.insert_one({
+                "balance_id": f"lb_{uuid.uuid4().hex[:10]}",
+                "employee_id": eid, "paid_leave_balance": 0.0,
+                "paid_leave_eligible": False, "last_credited_month": None,
+                "created_at": now, "updated_at": now
+            })
     return {"message": "Seeded v2 successfully"}
 
 
@@ -2591,6 +2762,338 @@ async def cancel_shift_change_request(request_id: str, request: Request):
 
     await db.shift_change_requests.delete_one({"request_id": request_id})
     return {"message": "Request cancelled"}
+
+
+# ===================== LEAVE MANAGEMENT =====================
+
+@api_router.get("/leave/balance")
+async def get_leave_balance(request: Request, employee_id: Optional[str] = None):
+    """Get leave balance for an employee. Auto-credits monthly if eligible."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+
+    if not employee_id:
+        if not my_emp:
+            raise HTTPException(400, "employee_id required")
+        employee_id = my_emp["employee_id"]
+
+    if not is_admin and (not my_emp or my_emp["employee_id"] != employee_id):
+        raise HTTPException(403, "Access denied")
+
+    balance = await get_or_create_leave_balance(employee_id)
+    # Auto-credit current month if eligible and not yet credited
+    if balance.get("paid_leave_eligible"):
+        current_month = datetime.now(timezone.utc).strftime("%Y-%m-01")
+        if balance.get("last_credited_month") != current_month:
+            await auto_credit_monthly_leave()
+            balance = await get_or_create_leave_balance(employee_id)
+    return balance
+
+
+@api_router.get("/leave/working-days")
+async def get_working_days_endpoint(request: Request, from_date: str, to_date: str):
+    """Calculate working days (excluding Sundays) between two dates."""
+    await get_current_user(request)
+    days = calc_working_days_between(from_date, to_date)
+    return {"from_date": from_date, "to_date": to_date, "working_days": days}
+
+
+@api_router.get("/leave/requests")
+async def get_leave_requests(
+    request: Request,
+    status: Optional[str] = None,
+    employee_id: Optional[str] = None,
+    month: Optional[str] = None
+):
+    """List leave requests. Admin sees all, employees see own."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+
+    query: dict = {}
+    if status and status != "All":
+        query["status"] = status
+
+    if is_admin:
+        if employee_id:
+            query["employee_id"] = employee_id
+    else:
+        if not my_emp:
+            return []
+        query["employee_id"] = my_emp["employee_id"]
+
+    if month:
+        try:
+            mdt = datetime.strptime(month, "%Y-%m-%d")
+            last = cal_module.monthrange(mdt.year, mdt.month)[1]
+            ms = mdt.strftime("%Y-%m-01")
+            me = mdt.strftime(f"%Y-%m-{last:02d}")
+            query["$or"] = [
+                {"from_date": {"$gte": ms, "$lte": me}},
+                {"to_date": {"$gte": ms, "$lte": me}}
+            ]
+        except ValueError:
+            pass
+
+    requests_list = await db.leave_requests.find(query, {"_id": 0}).sort("requested_at", -1).to_list(1000)
+
+    for req in requests_list:
+        emp = await db.employees.find_one({"employee_id": req["employee_id"]}, {"_id": 0})
+        req["employee"] = {
+            "employee_id": emp["employee_id"], "first_name": emp["first_name"],
+            "last_name": emp["last_name"], "profile_picture": emp.get("profile_picture"),
+            "department_name": emp.get("department_name"),
+        } if emp else None
+
+        if req.get("reviewed_by"):
+            rv = await db.employees.find_one({"employee_id": req["reviewed_by"]}, {"_id": 0})
+            req["reviewer_name"] = f"{rv['first_name']} {rv['last_name']}" if rv else None
+
+        req["employee_balance"] = await db.leave_balance.find_one(
+            {"employee_id": req["employee_id"]}, {"_id": 0}
+        )
+    return requests_list
+
+
+@api_router.post("/leave/requests")
+async def create_leave_request(body: LeaveRequestCreate, request: Request):
+    """Submit a leave request."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    if not my_emp:
+        raise HTTPException(403, "Employee profile not found")
+
+    if body.leave_type not in ["Full Day", "Half Day"]:
+        raise HTTPException(400, "leave_type must be 'Full Day' or 'Half Day'")
+    if body.leave_type == "Half Day" and body.half_day_type not in ["First Half", "Second Half"]:
+        raise HTTPException(400, "half_day_type required: 'First Half' or 'Second Half'")
+    if not body.reason or not body.reason.strip():
+        raise HTTPException(400, "Reason is required")
+    if len(body.reason) > 1000:
+        raise HTTPException(400, "Reason must be 1000 characters or less")
+
+    try:
+        from_dt = datetime.strptime(body.from_date, "%Y-%m-%d")
+        to_dt = datetime.strptime(body.to_date, "%Y-%m-%d")
+        today_dt = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+
+    if from_dt < today_dt:
+        raise HTTPException(400, "Cannot apply for leave on past dates")
+    if to_dt < from_dt:
+        raise HTTPException(400, "To date must be >= From date")
+    if from_dt.weekday() == 6:
+        raise HTTPException(400, "Cannot apply for leave starting on Sunday")
+
+    # Check for overlapping pending/approved requests
+    overlapping = await db.leave_requests.find_one({
+        "employee_id": my_emp["employee_id"], "status": {"$in": ["Pending", "Approved"]},
+        "from_date": {"$lte": body.to_date}, "to_date": {"$gte": body.from_date}
+    }, {"_id": 0})
+    if overlapping:
+        raise HTTPException(400, "You already have a leave request for overlapping dates")
+
+    # Calculate working days
+    total_days = float(calc_working_days_between(body.from_date, body.to_date))
+    if body.leave_type == "Half Day":
+        total_days = 0.5
+    if total_days == 0:
+        raise HTTPException(400, "No working days in selected range (all Sundays/holidays)")
+
+    balance = await get_or_create_leave_balance(my_emp["employee_id"])
+    deduction = calc_leave_deduction(balance, total_days)
+
+    now = datetime.now(timezone.utc).isoformat()
+    new_req = {
+        "request_id": f"lr_{uuid.uuid4().hex[:12]}",
+        "employee_id": my_emp["employee_id"],
+        "from_date": body.from_date, "to_date": body.to_date,
+        "leave_type": body.leave_type,
+        "half_day_type": body.half_day_type if body.leave_type == "Half Day" else None,
+        "total_days": total_days,
+        "paid_days": deduction["paid_days"], "regular_days": deduction["regular_days"],
+        "reason": body.reason.strip(), "status": "Pending",
+        "requested_at": now, "reviewed_by": None, "reviewed_at": None,
+        "admin_notes": None, "cancelled_at": None, "created_at": now, "updated_at": now
+    }
+    await db.leave_requests.insert_one(new_req)
+    return {k: v for k, v in new_req.items() if k != "_id"}
+
+
+@api_router.put("/leave/requests/{request_id}/review")
+async def review_leave_request(request_id: str, body: LeaveRequestReview, request: Request):
+    """Admin approve or reject a leave request."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can review leave requests")
+
+    if body.status not in ["Approved", "Rejected"]:
+        raise HTTPException(400, "Status must be 'Approved' or 'Rejected'")
+
+    existing = await db.leave_requests.find_one({"request_id": request_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Leave request not found")
+    if existing["status"] != "Pending":
+        raise HTTPException(400, "Only pending requests can be reviewed")
+
+    reviewer_id = my_emp["employee_id"] if my_emp else None
+    now = datetime.now(timezone.utc).isoformat()
+
+    if body.status == "Approved":
+        # Deduct paid leave balance
+        if existing.get("paid_days", 0) > 0:
+            bal = await get_or_create_leave_balance(existing["employee_id"])
+            bal_before = float(bal.get("paid_leave_balance", 0))
+            bal_after = round(max(0.0, bal_before - existing["paid_days"]), 2)
+            await db.leave_balance.update_one(
+                {"employee_id": existing["employee_id"]},
+                {"$set": {"paid_leave_balance": bal_after, "updated_at": now}}
+            )
+            await create_leave_txn(
+                employee_id=existing["employee_id"], txn_type="Debit", leave_type="Paid",
+                amount=existing["paid_days"], balance_before=bal_before, balance_after=bal_after,
+                ref_type="Leave Request", ref_id=request_id, date_str=now[:10],
+                notes=f"Leave approved: {existing['from_date']} to {existing['to_date']}"
+            )
+        # Mark attendance as Leave
+        await mark_leave_in_attendance(existing)
+
+    update = {
+        "status": body.status, "reviewed_by": reviewer_id,
+        "reviewed_at": now, "admin_notes": body.admin_notes or "", "updated_at": now
+    }
+    await db.leave_requests.update_one({"request_id": request_id}, {"$set": update})
+    return {**existing, **update}
+
+
+@api_router.put("/leave/requests/{request_id}/cancel")
+async def cancel_leave_request(request_id: str, request: Request):
+    """Employee (or admin) cancels a pending/approved leave request."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+
+    existing = await db.leave_requests.find_one({"request_id": request_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Leave request not found")
+
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin and (not my_emp or existing["employee_id"] != my_emp["employee_id"]):
+        raise HTTPException(403, "You can only cancel your own leave requests")
+
+    if existing["status"] not in ["Pending", "Approved"]:
+        raise HTTPException(400, "Only Pending or Approved requests can be cancelled")
+
+    if existing["status"] == "Approved":
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        if existing["from_date"] < today_str:
+            raise HTTPException(400, "Cannot cancel a leave that has already started")
+        # Restore paid leave balance
+        if existing.get("paid_days", 0) > 0:
+            bal = await get_or_create_leave_balance(existing["employee_id"])
+            bal_before = float(bal.get("paid_leave_balance", 0))
+            bal_after = round(bal_before + existing["paid_days"], 2)
+            now_str = datetime.now(timezone.utc).isoformat()
+            await db.leave_balance.update_one(
+                {"employee_id": existing["employee_id"]},
+                {"$set": {"paid_leave_balance": bal_after, "updated_at": now_str}}
+            )
+            await create_leave_txn(
+                employee_id=existing["employee_id"], txn_type="Credit", leave_type="Paid",
+                amount=existing["paid_days"], balance_before=bal_before, balance_after=bal_after,
+                ref_type="Leave Cancelled", ref_id=request_id, date_str=now_str[:10],
+                notes=f"Leave cancelled: {existing['from_date']} to {existing['to_date']}"
+            )
+        # Remove Leave attendance records in the date range
+        await db.daily_attendance.delete_many({
+            "employee_id": existing["employee_id"], "status": "Leave",
+            "date": {"$gte": existing["from_date"], "$lte": existing["to_date"]}
+        })
+
+    now = datetime.now(timezone.utc).isoformat()
+    update = {"status": "Cancelled", "cancelled_at": now, "updated_at": now}
+    await db.leave_requests.update_one({"request_id": request_id}, {"$set": update})
+    return {**existing, **update}
+
+
+@api_router.get("/leave/transactions")
+async def get_leave_transactions(request: Request, employee_id: Optional[str] = None):
+    """Get leave audit trail for an employee."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+
+    if not employee_id:
+        if not my_emp:
+            raise HTTPException(400, "employee_id required")
+        employee_id = my_emp["employee_id"]
+
+    if not is_admin and (not my_emp or my_emp["employee_id"] != employee_id):
+        raise HTTPException(403, "Access denied")
+
+    txns = await db.leave_transactions.find({"employee_id": employee_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return txns
+
+
+@api_router.post("/leave/credit-monthly")
+async def credit_monthly_leave_endpoint(request: Request):
+    """Admin: manually trigger monthly paid leave credit for all eligible employees."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Admin only")
+    count = await auto_credit_monthly_leave()
+    return {"message": f"Credited paid leave to {count} employees", "credited_count": count}
+
+
+@api_router.post("/leave/reset-yearly")
+async def reset_yearly_leave_endpoint(request: Request):
+    """Admin: reset all paid leave balances to 0 for new year."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Admin only")
+
+    balances = await db.leave_balance.find({}, {"_id": 0}).to_list(1000)
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    count = 0
+    for bal in balances:
+        bal_before = float(bal.get("paid_leave_balance", 0))
+        if bal_before > 0:
+            now = datetime.now(timezone.utc).isoformat()
+            await db.leave_balance.update_one(
+                {"employee_id": bal["employee_id"]},
+                {"$set": {"paid_leave_balance": 0.0, "last_credited_month": None, "updated_at": now}}
+            )
+            await create_leave_txn(
+                employee_id=bal["employee_id"], txn_type="Reset", leave_type="Paid",
+                amount=-bal_before, balance_before=bal_before, balance_after=0.0,
+                ref_type="Year Reset", ref_id=today_str,
+                date_str=today_str, notes="Annual paid leave balance reset"
+            )
+            count += 1
+    return {"message": f"Reset leave balances for {count} employees", "reset_count": count}
 
 
 # ===================== ATTENDANCE SYSTEM =====================
