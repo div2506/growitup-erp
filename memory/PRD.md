@@ -280,3 +280,11 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 - Final sidebar nav: Employees · Performance · Attendance · Leave · Payroll · (Settings — admin only)
 - Underlying routes `/wfh`, `/overtime`, `/shifts` kept active for backward compatibility (direct URLs still work, and admin Settings still has Shifts tab)
 - Cleaned up unused lucide imports (`Clock`, `Laptop`, `Timer`) from `Layout.jsx`
+
+### Attendance Integration Tab (COMPLETE - 2026-02-04)
+- New admin-only "Attendance Integration" tab in Settings (between Holidays and Data Import)
+- Documents the public biometric ingestion endpoint `POST /api/attendance/entry`
+- Sections: Endpoint (with Copy URL), Authentication (X-API-Key with Show/Hide + Copy), Request Format (headers + JSON body with Copy JSON), Parameters (employee_id, timestamp), Response (200 / 400 / 401 examples), and ready-to-paste cURL snippet
+- New backend endpoint `GET /api/attendance/integration-info` (admin-only) returns the API key for the doc tab
+- testids: `attendance-integration-tab`, `att-int-endpoint`, `att-int-auth`, `att-int-request`, `att-int-params`, `att-int-response`, `att-int-curl`, `copy-att-endpoint-btn`, `copy-att-key-btn`, `toggle-att-key-btn`, `copy-att-body-btn`
+- Backend smoke test: 401 without auth, 401 without X-API-Key, 400 for unknown employee — all green

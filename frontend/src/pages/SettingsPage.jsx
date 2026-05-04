@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Pencil, Trash2, Building2, Briefcase, Users, Database, Lock, ExternalLink, Upload, FileJson, Clock, RefreshCw, CheckCircle, XCircle, Hourglass, AlertCircle, CalendarDays } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, Briefcase, Users, Database, Lock, ExternalLink, Upload, FileJson, Clock, RefreshCw, CheckCircle, XCircle, Hourglass, AlertCircle, CalendarDays, Copy, Key, Eye, EyeOff, Fingerprint } from "lucide-react";
 import { toast } from "sonner";
 import axios from "axios";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -723,6 +723,239 @@ function NotionIntegrationTab() {
     </div>
   );
 }
+
+// ================== ATTENDANCE INTEGRATION TAB ==================
+function AttendanceIntegrationTab() {
+  const [apiKey, setApiKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await axios.get(`${API}/attendance/integration-info`, { withCredentials: true });
+        if (!cancelled) setApiKey(data.api_key || "");
+      } catch {
+        if (!cancelled) setApiKey("");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const baseUrl = process.env.REACT_APP_BACKEND_URL || "";
+  const endpointUrl = `${baseUrl}/api/attendance/entry`;
+  const exampleBody = JSON.stringify(
+    { employee_id: "GM002", timestamp: "2026-05-04T09:15:30" },
+    null, 2
+  );
+  const successResponse = JSON.stringify(
+    { success: true, message: "Attendance entry recorded", entry_id: "ae_abc123def456" },
+    null, 2
+  );
+  const errorResponse = JSON.stringify(
+    { detail: "Employee GM999 not found" },
+    null, 2
+  );
+
+  const copy = (text, label) => {
+    navigator.clipboard.writeText(text);
+    toast.success(`${label} copied!`);
+  };
+
+  const maskedKey = apiKey ? `${apiKey.slice(0, 4)}${"•".repeat(Math.max(apiKey.length - 8, 4))}${apiKey.slice(-4)}` : "—";
+
+  return (
+    <div className="space-y-6 max-w-4xl" data-testid="attendance-integration-tab">
+      {/* Intro */}
+      <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-5">
+        <div className="flex items-start gap-3">
+          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-2 shrink-0">
+            <Fingerprint size={20} className="text-blue-400" />
+          </div>
+          <div>
+            <h3 className="text-white font-semibold text-base">Attendance Integration</h3>
+            <p className="text-[#B3B3B3] text-sm mt-0.5">
+              Use this REST endpoint to push biometric punches from your hardware/software into the system in real time.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Endpoint */}
+      <section data-testid="att-int-endpoint">
+        <h4 className="text-[#B3B3B3] text-xs uppercase tracking-wider font-semibold mb-2 flex items-center gap-2">
+          <ExternalLink size={13} /> API Endpoint
+        </h4>
+        <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4 flex items-center gap-3">
+          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-green-500/10 text-green-400 border border-green-500/30 shrink-0">POST</span>
+          <code className="flex-1 text-white text-sm font-mono break-all" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+            {endpointUrl}
+          </code>
+          <button
+            data-testid="copy-att-endpoint-btn"
+            onClick={() => copy(endpointUrl, "Endpoint URL")}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs text-white transition-colors"
+          >
+            <Copy size={13} /> Copy URL
+          </button>
+        </div>
+      </section>
+
+      <hr className="border-white/10" />
+
+      {/* Authentication */}
+      <section data-testid="att-int-auth">
+        <h4 className="text-[#B3B3B3] text-xs uppercase tracking-wider font-semibold mb-2 flex items-center gap-2">
+          <Key size={13} /> Authentication
+        </h4>
+        <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4 space-y-3">
+          <p className="text-[#B3B3B3] text-sm">
+            All requests must include the <code className="bg-white/5 px-1.5 py-0.5 rounded text-white text-xs font-mono">X-API-Key</code> header. Keep this key secret — anyone with it can post attendance.
+          </p>
+          <div className="flex items-center gap-3 bg-[#191919] border border-white/10 rounded-lg px-3 py-2">
+            <code className="flex-1 text-white text-sm font-mono break-all" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+              {loading ? "Loading…" : showKey ? (apiKey || "—") : maskedKey}
+            </code>
+            <button
+              data-testid="toggle-att-key-btn"
+              onClick={() => setShowKey(s => !s)}
+              disabled={!apiKey}
+              className="shrink-0 p-1.5 text-[#B3B3B3] hover:text-white hover:bg-white/10 rounded transition-colors disabled:opacity-40"
+              title={showKey ? "Hide key" : "Show key"}
+            >
+              {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+            <button
+              data-testid="copy-att-key-btn"
+              onClick={() => copy(apiKey, "API key")}
+              disabled={!apiKey}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs text-white transition-colors disabled:opacity-40"
+            >
+              <Copy size={13} /> Copy Key
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <hr className="border-white/10" />
+
+      {/* Request Format */}
+      <section data-testid="att-int-request">
+        <h4 className="text-[#B3B3B3] text-xs uppercase tracking-wider font-semibold mb-2 flex items-center gap-2">
+          <FileJson size={13} /> Request Format
+        </h4>
+        <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4 space-y-4">
+          <div>
+            <p className="text-[#B3B3B3] text-xs mb-1.5">Headers</p>
+            <pre className="bg-[#191919] border border-white/10 rounded-lg p-3 text-white text-sm font-mono whitespace-pre-wrap" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+{`Content-Type: application/json
+X-API-Key: <your-api-key>`}
+            </pre>
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[#B3B3B3] text-xs">Request Body (JSON)</p>
+              <button
+                data-testid="copy-att-body-btn"
+                onClick={() => copy(exampleBody, "Request body")}
+                className="flex items-center gap-1.5 px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-xs text-white transition-colors"
+              >
+                <Copy size={11} /> Copy JSON
+              </button>
+            </div>
+            <pre className="bg-[#191919] border border-white/10 rounded-lg p-3 text-white text-sm font-mono whitespace-pre overflow-x-auto" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+{exampleBody}
+            </pre>
+          </div>
+        </div>
+      </section>
+
+      <hr className="border-white/10" />
+
+      {/* Parameters */}
+      <section data-testid="att-int-params">
+        <h4 className="text-[#B3B3B3] text-xs uppercase tracking-wider font-semibold mb-2">Parameters</h4>
+        <div className="bg-[#2F2F2F] rounded-xl border border-white/10 divide-y divide-white/10">
+          <div className="p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <code className="text-white font-mono text-sm" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>employee_id</code>
+              <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/5 text-[#B3B3B3] border border-white/10">string</span>
+              <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/30">required</span>
+            </div>
+            <p className="text-[#B3B3B3] text-sm">The employee&apos;s ID (e.g., <code className="bg-white/5 px-1 rounded text-white text-xs font-mono">GM001</code>, <code className="bg-white/5 px-1 rounded text-white text-xs font-mono">GM002</code>).</p>
+          </div>
+          <div className="p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <code className="text-white font-mono text-sm" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>timestamp</code>
+              <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/5 text-[#B3B3B3] border border-white/10">string</span>
+              <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/30">required</span>
+            </div>
+            <p className="text-[#B3B3B3] text-sm">
+              ISO 8601 format: <code className="bg-white/5 px-1 rounded text-white text-xs font-mono">YYYY-MM-DDTHH:MM:SS</code>. Example: <code className="bg-white/5 px-1 rounded text-white text-xs font-mono">2026-05-04T09:15:30</code>.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <hr className="border-white/10" />
+
+      {/* Response */}
+      <section data-testid="att-int-response">
+        <h4 className="text-[#B3B3B3] text-xs uppercase tracking-wider font-semibold mb-2">Response</h4>
+        <div className="space-y-3">
+          <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-green-500/10 text-green-400 border border-green-500/30">200 OK</span>
+              <span className="text-[#B3B3B3] text-xs">Success</span>
+            </div>
+            <pre className="bg-[#191919] border border-white/10 rounded-lg p-3 text-white text-sm font-mono whitespace-pre overflow-x-auto" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+{successResponse}
+            </pre>
+          </div>
+          <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-red-500/10 text-red-400 border border-red-500/30">400 Bad Request</span>
+              <span className="text-[#B3B3B3] text-xs">Invalid employee or timestamp</span>
+            </div>
+            <pre className="bg-[#191919] border border-white/10 rounded-lg p-3 text-white text-sm font-mono whitespace-pre overflow-x-auto" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+{errorResponse}
+            </pre>
+          </div>
+          <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">401 Unauthorized</span>
+              <span className="text-[#B3B3B3] text-xs">Missing or invalid API key</span>
+            </div>
+            <pre className="bg-[#191919] border border-white/10 rounded-lg p-3 text-white text-sm font-mono whitespace-pre overflow-x-auto" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+{`{
+  "detail": "Invalid or missing API key"
+}`}
+            </pre>
+          </div>
+        </div>
+      </section>
+
+      <hr className="border-white/10" />
+
+      {/* cURL example */}
+      <section data-testid="att-int-curl">
+        <h4 className="text-[#B3B3B3] text-xs uppercase tracking-wider font-semibold mb-2">Quick test (cURL)</h4>
+        <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4">
+          <pre className="bg-[#191919] border border-white/10 rounded-lg p-3 text-white text-sm font-mono whitespace-pre-wrap break-all" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+{`curl -X POST '${endpointUrl}' \\
+  -H 'Content-Type: application/json' \\
+  -H 'X-API-Key: <your-api-key>' \\
+  -d '{"employee_id":"GM002","timestamp":"2026-05-04T09:15:30"}'`}
+          </pre>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 
 // ================== DATA IMPORT TAB ==================
 function DataImportTab() {
@@ -1530,6 +1763,7 @@ export default function SettingsPage() {
       { val: "shifts", label: "Shifts", icon: Clock },
       { val: "shift-requests", label: "Shift Requests", icon: RefreshCw },
       { val: "holidays", label: "Holidays", icon: CalendarDays },
+      { val: "attendance-integration", label: "Attendance Integration", icon: Fingerprint },
       { val: "data-import", label: "Data Import", icon: Upload },
     ] : []),
   ];
@@ -1562,6 +1796,7 @@ export default function SettingsPage() {
             <TabsContent value="shifts"><ShiftsTab /></TabsContent>
             <TabsContent value="shift-requests"><ShiftRequestsTab /></TabsContent>
             <TabsContent value="holidays"><HolidaysTab /></TabsContent>
+            <TabsContent value="attendance-integration"><AttendanceIntegrationTab /></TabsContent>
             <TabsContent value="data-import"><DataImportTab /></TabsContent>
           </>
         )}

@@ -3596,6 +3596,19 @@ async def process_attendance_endpoint(request: Request):
     return result or {"message": "No punches found for this date"}
 
 
+@api_router.get("/attendance/integration-info")
+async def get_attendance_integration_info(request: Request):
+    """Admin-only: returns the public ingestion endpoint and API key for biometric integrations."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Access denied")
+    return {"api_key": ATTENDANCE_API_KEY}
+
+
 @api_router.get("/attendance/daily")
 async def get_daily_attendance(
     request: Request,
