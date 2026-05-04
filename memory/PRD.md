@@ -273,5 +273,10 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 - Default landing tab: Attendance (calendar/table view)
 - `App.js`: route `/attendance` now points to `AttendanceIndexPage` (was `AttendancePage`)
 - `SettingsPage.ShiftRequestsTab` exported as a named export so it can be reused inside the admin "Shift Requests" tab without duplication
-- Sidebar links untouched per user request (Overtime, WFH, Shift items remain wherever they were)
 - testids: `attendance-tabs-nav`, `attendance-tab-{val}` (e.g. `attendance-tab-attendance`, `attendance-tab-wfh-requests`)
+
+### Sidebar Declutter (COMPLETE - 2026-02-04)
+- Removed top-level sidebar items: **WFH**, **Overtime**, **My Shifts** (now reachable via Attendance page tabs)
+- Final sidebar nav: Employees · Performance · Attendance · Leave · Payroll · (Settings — admin only)
+- Underlying routes `/wfh`, `/overtime`, `/shifts` kept active for backward compatibility (direct URLs still work, and admin Settings still has Shifts tab)
+- Cleaned up unused lucide imports (`Clock`, `Laptop`, `Timer`) from `Layout.jsx`
