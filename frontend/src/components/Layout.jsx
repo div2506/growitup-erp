@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, API } from "@/contexts/AuthContext";
-import { Users, Settings, BarChart2, LogOut, Menu, X, CalendarDays, CalendarCheck, Inbox, Wallet } from "lucide-react";
+import { Users, Settings, BarChart2, LogOut, Menu, X, CalendarDays, CalendarCheck, Inbox, Wallet, LayoutDashboard } from "lucide-react";
 
 export default function Layout() {
   const { user, setUser, myEmployee, setMyEmployee } = useAuth();
