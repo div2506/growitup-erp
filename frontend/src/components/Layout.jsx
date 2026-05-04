@@ -42,7 +42,6 @@ export default function Layout() {
     { path: "/attendance", label: "Attendance", icon: CalendarDays },
     { path: "/leave", label: "Leave", icon: CalendarCheck },
     ...(!isAdminDept ? [{ path: "/shifts", label: "My Shifts", icon: Clock }] : []),
-    ...(isAdminDept ? [{ path: "/leave-requests", label: "Leave Requests", icon: Inbox }] : []),
     ...(isAdminDept ? [{ path: "/settings", label: "Settings", icon: Settings }] : []),
   ];
 

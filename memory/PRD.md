@@ -245,7 +245,12 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 - Summary "Leave" counter increments per approved leave day
 - Legend "L Leave" displayed at bottom of calendar
 
-### Leave Slack Notification (COMPLETE - 2026-05-04)
+### Leave Sidebar Merge (COMPLETE - 2026-05-04)
+- Removed separate "Leave Requests" sidebar item for admin
+- Single `Leave` nav item now routes to the correct view based on role via `LeaveIndexPage`:
+  - **Admin dept** → Leave Requests approval console
+  - **Everyone else** → Personal Leave (balance + my requests)
+- Legacy `/leave-requests` URL preserved as alias for backward compatibility
 - `notify_leave_submitted()` helper posts to existing `SLACK_WEBHOOK_URL` when a new leave request is created
 - Payload includes: employee name + ID + dept, dates, total days, paid/regular split, leave type, reason (truncated to 200 chars)
 - Fire-and-forget: wrapped in try/except, 5s timeout; silently no-ops if webhook unset or unreachable — never blocks or fails the leave submission
