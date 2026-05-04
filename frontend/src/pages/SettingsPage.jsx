@@ -1761,7 +1761,6 @@ export default function SettingsPage() {
     { val: "notion", label: "Notion Integration", icon: Database },
     ...(isAdmin ? [
       { val: "shifts", label: "Shifts", icon: Clock },
-      { val: "shift-requests", label: "Shift Requests", icon: RefreshCw },
       { val: "holidays", label: "Holidays", icon: CalendarDays },
       { val: "attendance-integration", label: "Attendance Integration", icon: Fingerprint },
       { val: "data-import", label: "Data Import", icon: Upload },
@@ -1794,7 +1793,6 @@ export default function SettingsPage() {
         {isAdmin && (
           <>
             <TabsContent value="shifts"><ShiftsTab /></TabsContent>
-            <TabsContent value="shift-requests"><ShiftRequestsTab /></TabsContent>
             <TabsContent value="holidays"><HolidaysTab /></TabsContent>
             <TabsContent value="attendance-integration"><AttendanceIntegrationTab /></TabsContent>
             <TabsContent value="data-import"><DataImportTab /></TabsContent>

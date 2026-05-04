@@ -256,14 +256,9 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 - Fire-and-forget: wrapped in try/except, 5s timeout; silently no-ops if webhook unset or unreachable — never blocks or fails the leave submission
 - No notification on approve/reject (per user preference)
 
-### Admin Self-Service Leave Tabs (COMPLETE - 2026-02-04)
-- `LeaveIndexPage.jsx` refactored: admins now see a Tabs UI with **My Leaves** + **Team Requests** instead of being forced into the approval console only
-  - "My Leaves" tab → renders `<LeavePage />` (balance card + apply leave + own requests)
-  - "Team Requests" tab → renders `<LeaveRequestsPage />` (full approval console)
-- Non-admin employees still see only `<LeavePage />` (no behavior change)
-- `LeavePage.fetchRequests()` now scopes the GET to `?employee_id={my_id}` so admins on the "My Leaves" tab don't see every employee's request bleeding in (backend `GET /leave/requests` returns all rows for admins by default)
-- Admin (e.g. `info.growitup@gmail.com` / `GM001`) has an employee row, so `POST /leave/requests` already resolves their employee_id from `user["email"]` → no backend changes needed
-- testids added: `leave-admin-tabs`, `leave-tab-mine`, `leave-tab-team`
+### Admin Leave UI Polish + Settings Dedupe (COMPLETE - 2026-02-04)
+- `LeaveIndexPage.jsx` admin tabs restyled to match Settings/Attendance/Performance (same pill: `bg-[#191919]` border, `data-[state=active]:bg-[#2F2F2F]`, lucide icons `CalendarCheck` + `Inbox`, proper `px-4 md:px-8 pt-4 md:pt-8` padding). No more unaligned centered tabs at the page top.
+- Removed **Shift Requests** tab from Settings page (already available inside Attendance → Shift Requests). `ShiftRequestsTab` still exported and reused by `AttendanceIndexPage`.
 
 ### Attendance Page Tabs (COMPLETE - 2026-02-04)
 - New `AttendanceIndexPage.jsx` consolidates all attendance-related modules under one tabbed view
