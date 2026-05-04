@@ -260,6 +260,15 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 - `LeaveIndexPage.jsx` admin tabs restyled to match Settings/Attendance/Performance (same pill: `bg-[#191919]` border, `data-[state=active]:bg-[#2F2F2F]`, lucide icons `CalendarCheck` + `Inbox`, proper `px-4 md:px-8 pt-4 md:pt-8` padding). No more unaligned centered tabs at the page top.
 - Removed **Shift Requests** tab from Settings page (already available inside Attendance → Shift Requests). `ShiftRequestsTab` still exported and reused by `AttendanceIndexPage`.
 
+### Team of the Month — Report Link + Edit (COMPLETE - 2026-02-04)
+- **Backend** (`server.py`): `ManagerPerformanceCreate` model — removed `client_performance_notes`, `client_feedback_notes`, `creative_task_notes`; added optional `report_link: Optional[str]`. New `_validate_report_link()` helper rejects any non-http(s) URL with 400. Unknown legacy notes fields are silently dropped (Pydantic default). POST and PUT persist `report_link` and recalculate `total_points_month` on every update.
+- **Frontend** (`CreativeTeamOfMonth.jsx`) — fully rewritten:
+  - Add/Edit modal (`ManagerPerfModal`) replaces the old AddDetailsModal. Three compact score inputs + one optional URL field for Report Link (with inline validation). Manager + Month are disabled in edit mode (`opacity-60 cursor-not-allowed`).
+  - Desktop leaderboard table: removed all tooltip/Info-icon markup; clean numeric score columns. New columns: **Report** ("View Report" with external-link icon, opens in new tab; `-` if empty) and admin-only **Actions** (Pencil icon → opens Edit modal).
+  - Mobile card view: same changes — tooltip removed, Report row added, admin Edit icon in card header.
+- testids: `mgr-perf-add-btn`, `mgr-perf-edit-btn`, `mgr-perf-edit-btn-mobile`, `mgr-perf-modal`, `mgr-perf-manager-select`, `mgr-perf-month-select`, `mgr-perf-cp-input`, `mgr-perf-cf-input`, `mgr-perf-ct-input`, `mgr-perf-report-link-input`, `mgr-perf-total`, `mgr-perf-save-btn`, `mgr-perf-report-link`, `mgr-perf-table`, `mgr-perf-row`
+- Tests: 15/15 backend pytest cases pass (`/app/backend/tests/test_manager_performance.py`) — POST/PUT happy paths, URL validation, score validation, auth (401/403), duplicate-month (400), 404 on unknown perf_id, total recalculation, empty/null report_link normalization, legacy notes fields never leak into responses
+
 ### Attendance Page Tabs (COMPLETE - 2026-02-04)
 - New `AttendanceIndexPage.jsx` consolidates all attendance-related modules under one tabbed view
 - **Admin tabs**: Attendance · Shift Requests · WFH Requests · Overtime Requests
