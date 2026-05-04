@@ -172,6 +172,11 @@ class OvertimeRequestReview(BaseModel):
     admin_notes: Optional[str] = None
 
 
+class HolidayCreate(BaseModel):
+    holiday_name: str
+    date: str  # "YYYY-MM-DD"
+
+
 class AttendanceEntryCreate(BaseModel):
     employee_id: str
     timestamp: str  # ISO format: "2026-04-27T09:15:30"
@@ -481,15 +486,16 @@ async def update_late_tracking_fn(employee_id: str, date_str: str, late_minutes:
 
 # ===================== LEAVE MANAGEMENT HELPERS =====================
 
-def calc_working_days_between(from_date_str: str, to_date_str: str) -> int:
-    """Count working days (Mon-Sat) between two dates inclusive, excluding Sundays."""
+def calc_working_days_between(from_date_str: str, to_date_str: str, exclude_dates: Optional[set] = None) -> int:
+    """Count working days (Mon-Sat) between two dates inclusive, excluding Sundays and optionally extra dates."""
     try:
         start = datetime.strptime(from_date_str, "%Y-%m-%d")
         end = datetime.strptime(to_date_str, "%Y-%m-%d")
         days = 0
         current = start
         while current <= end:
-            if current.weekday() != 6:  # Not Sunday
+            d = current.strftime("%Y-%m-%d")
+            if current.weekday() != 6 and (exclude_dates is None or d not in exclude_dates):
                 days += 1
             current += timedelta(days=1)
         return days
@@ -657,16 +663,32 @@ def calc_overtime_pay(total_hours: float, hourly_rate: float) -> float:
 WFH_MONTHLY_LIMIT = 3
 
 
-def get_dates_in_range(from_date_str: str, to_date_str: str) -> List[str]:
-    """Return all non-Sunday dates between from_date and to_date inclusive."""
+async def get_holidays_in_range_db(from_date_str: str, to_date_str: str) -> set:
+    """Fetch holiday dates from DB that fall within the given range. Returns a set of date strings."""
+    holidays = await db.holidays.find(
+        {"date": {"$gte": from_date_str, "$lte": to_date_str}},
+        {"_id": 0, "date": 1}
+    ).to_list(200)
+    return {h["date"] for h in holidays}
+
+
+async def is_holiday_db(date_str: str) -> Optional[str]:
+    """Return holiday name if the date is a company holiday, else None."""
+    h = await db.holidays.find_one({"date": date_str}, {"_id": 0, "holiday_name": 1})
+    return h["holiday_name"] if h else None
+
+
+def get_dates_in_range(from_date_str: str, to_date_str: str, exclude_dates: Optional[set] = None) -> List[str]:
+    """Return all non-Sunday dates between from_date and to_date inclusive, optionally excluding extra dates."""
     dates = []
     try:
         start = datetime.strptime(from_date_str, "%Y-%m-%d")
         end = datetime.strptime(to_date_str, "%Y-%m-%d")
         current = start
         while current <= end:
-            if current.weekday() != 6:  # Skip Sundays
-                dates.append(current.strftime("%Y-%m-%d"))
+            d = current.strftime("%Y-%m-%d")
+            if current.weekday() != 6 and (exclude_dates is None or d not in exclude_dates):
+                dates.append(d)
             current += timedelta(days=1)
     except Exception:
         pass
@@ -1937,6 +1959,31 @@ async def seed_v2():
                 "paid_leave_eligible": False, "last_credited_month": None,
                 "created_at": now, "updated_at": now
             })
+
+    # Seed 2026 Indian public holidays (idempotent by date)
+    holidays_2026 = [
+        {"holiday_name": "Republic Day",      "date": "2026-01-26"},
+        {"holiday_name": "Holi",              "date": "2026-03-25"},
+        {"holiday_name": "Good Friday",       "date": "2026-04-03"},
+        {"holiday_name": "Eid al-Fitr",       "date": "2026-04-11"},
+        {"holiday_name": "Independence Day",  "date": "2026-08-15"},
+        {"holiday_name": "Gandhi Jayanti",    "date": "2026-10-02"},
+        {"holiday_name": "Dussehra",          "date": "2026-10-22"},
+        {"holiday_name": "Diwali",            "date": "2026-11-11"},
+        {"holiday_name": "Christmas",         "date": "2026-12-25"},
+    ]
+    for h in holidays_2026:
+        if not await db.holidays.find_one({"date": h["date"]}):
+            now_ts = datetime.now(timezone.utc).isoformat()
+            await db.holidays.insert_one({
+                "holiday_id": f"hol_{uuid.uuid4().hex[:10]}",
+                "holiday_name": h["holiday_name"],
+                "date": h["date"],
+                "created_by": None,
+                "created_at": now_ts,
+                "updated_at": now_ts
+            })
+
     return {"message": "Seeded v2 successfully"}
 
 
@@ -3139,8 +3186,14 @@ async def create_leave_request(body: LeaveRequestCreate, request: Request):
     if overlapping:
         raise HTTPException(400, "You already have a leave request for overlapping dates")
 
-    # Calculate working days
-    total_days = float(calc_working_days_between(body.from_date, body.to_date))
+    # Holiday validation — reject leave on a holiday
+    hn = await is_holiday_db(body.from_date)
+    if hn:
+        raise HTTPException(400, f"Cannot apply for leave on a public holiday: {hn}")
+
+    # Calculate working days (excluding Sundays AND holidays)
+    holiday_dates = await get_holidays_in_range_db(body.from_date, body.to_date)
+    total_days = float(calc_working_days_between(body.from_date, body.to_date, exclude_dates=holiday_dates))
     if body.leave_type == "Half Day":
         total_days = 0.5
     if total_days == 0:
@@ -3857,6 +3910,105 @@ async def review_overtime_request(request_id: str, body: OvertimeRequestReview, 
     return {**existing, **update}
 
 
+# ===================== HOLIDAY ROUTES =====================
+
+@api_router.get("/holidays")
+async def get_holidays(request: Request, year: Optional[int] = None):
+    """Get all holidays (any authenticated user can view)."""
+    await get_current_user(request)
+    query: dict = {}
+    if year:
+        query["date"] = {"$gte": f"{year}-01-01", "$lte": f"{year}-12-31"}
+    holidays = await db.holidays.find(query, {"_id": 0}).sort("date", 1).to_list(500)
+    return holidays
+
+
+@api_router.post("/holidays")
+async def create_holiday(body: HolidayCreate, request: Request):
+    """Create a holiday. Admin department only."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can manage holidays")
+
+    if not body.holiday_name.strip():
+        raise HTTPException(400, "Holiday name is required")
+    try:
+        datetime.strptime(body.date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+
+    existing = await db.holidays.find_one({"date": body.date})
+    if existing:
+        raise HTTPException(400, "A holiday already exists on this date")
+
+    now = datetime.now(timezone.utc).isoformat()
+    new_holiday = {
+        "holiday_id": f"hol_{uuid.uuid4().hex[:10]}",
+        "holiday_name": body.holiday_name.strip(),
+        "date": body.date,
+        "created_by": my_emp["employee_id"] if my_emp else None,
+        "created_at": now, "updated_at": now
+    }
+    await db.holidays.insert_one(new_holiday)
+    return {k: v for k, v in new_holiday.items() if k != "_id"}
+
+
+@api_router.put("/holidays/{holiday_id}")
+async def update_holiday(holiday_id: str, body: HolidayCreate, request: Request):
+    """Update a holiday. Admin department only."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can manage holidays")
+
+    existing = await db.holidays.find_one({"holiday_id": holiday_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Holiday not found")
+
+    if not body.holiday_name.strip():
+        raise HTTPException(400, "Holiday name is required")
+    try:
+        datetime.strptime(body.date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+
+    # Unique date check (exclude current holiday)
+    conflict = await db.holidays.find_one({"date": body.date, "holiday_id": {"$ne": holiday_id}})
+    if conflict:
+        raise HTTPException(400, "A holiday already exists on this date")
+
+    now = datetime.now(timezone.utc).isoformat()
+    update = {"holiday_name": body.holiday_name.strip(), "date": body.date, "updated_at": now}
+    await db.holidays.update_one({"holiday_id": holiday_id}, {"$set": update})
+    return {**existing, **update}
+
+
+@api_router.delete("/holidays/{holiday_id}")
+async def delete_holiday(holiday_id: str, request: Request):
+    """Delete a holiday. Admin department only."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can manage holidays")
+
+    existing = await db.holidays.find_one({"holiday_id": holiday_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Holiday not found")
+
+    await db.holidays.delete_one({"holiday_id": holiday_id})
+    return {"message": "Holiday deleted successfully"}
+
+
 app.include_router(api_router)
 
 @api_router.get("/wfh/usage")
@@ -4000,10 +4152,19 @@ async def create_wfh_request(body: WFHRequestCreate, request: Request):
     if overlapping:
         raise HTTPException(400, "You already have a WFH request for overlapping dates")
 
-    # Calculate total working days
-    total_days = calc_working_days_between(body.from_date, body.to_date)
+    # Check holiday validation (from_date must not be a holiday)
+    if from_dt.weekday() != 6:  # already checked Sunday above
+        hn = await is_holiday_db(body.from_date)
+        if hn:
+            raise HTTPException(400, f"Cannot request WFH on a public holiday: {hn}")
+
+    # Fetch holidays in range to exclude from working day count
+    holiday_dates = await get_holidays_in_range_db(body.from_date, body.to_date)
+
+    # Calculate total working days (excluding Sundays AND holidays)
+    total_days = calc_working_days_between(body.from_date, body.to_date, exclude_dates=holiday_dates)
     if total_days == 0:
-        raise HTTPException(400, "No working days in selected range (all Sundays)")
+        raise HTTPException(400, "No working days in selected range (all Sundays/holidays)")
 
     # Monthly limit check
     month_str = from_dt.strftime("%Y-%m-01")

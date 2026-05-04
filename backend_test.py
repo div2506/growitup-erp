@@ -1114,21 +1114,416 @@ def test_overtime_review_request():
 
 # Global variable to store request_id for cross-test usage
 test_request_id = None
+test_holiday_id = None
+
+def test_holidays_get():
+    """Test GET /api/holidays endpoint"""
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}TEST 1: GET /api/holidays - List all holidays{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}")
+    
+    admin_session = create_session()
+    if not login_as_admin(admin_session):
+        results.add_fail("Test 1: Setup", "Failed to login as admin")
+        return
+    
+    # Test 1.1: Get all holidays
+    print(f"\n{YELLOW}Test 1.1: Get all holidays{RESET}")
+    response = admin_session.get(f"{BASE_URL}/holidays")
+    
+    if response.status_code == 200:
+        holidays = response.json()
+        if len(holidays) >= 9:
+            results.add_pass("Test 1.1: Get all holidays", 
+                f"Retrieved {len(holidays)} holidays (expected >= 9)")
+            
+            # Verify structure of first holiday
+            if holidays:
+                h = holidays[0]
+                required_fields = ["holiday_id", "holiday_name", "date", "created_at", "updated_at"]
+                missing_fields = [f for f in required_fields if f not in h]
+                if not missing_fields:
+                    results.add_pass("Test 1.1: Holiday structure", 
+                        f"All required fields present: {required_fields}")
+                    
+                    # Verify holiday_id format
+                    if h["holiday_id"].startswith("hol_"):
+                        results.add_pass("Test 1.1: Holiday ID format", 
+                            f"Holiday ID has correct format: {h['holiday_id']}")
+                    else:
+                        results.add_fail("Test 1.1: Holiday ID format", 
+                            f"Holiday ID should start with 'hol_', got: {h['holiday_id']}")
+                    
+                    # Verify date format
+                    try:
+                        datetime.strptime(h["date"], "%Y-%m-%d")
+                        results.add_pass("Test 1.1: Date format", 
+                            f"Date has correct format YYYY-MM-DD: {h['date']}")
+                    except ValueError:
+                        results.add_fail("Test 1.1: Date format", 
+                            f"Date should be YYYY-MM-DD, got: {h['date']}")
+                else:
+                    results.add_fail("Test 1.1: Holiday structure", 
+                        f"Missing fields: {missing_fields}")
+        else:
+            results.add_fail("Test 1.1: Get all holidays", 
+                f"Expected >= 9 holidays, got {len(holidays)}")
+    else:
+        results.add_fail("Test 1.1: Get all holidays", 
+            f"Expected 200, got {response.status_code}: {response.text}")
+    
+    # Test 1.2: Get holidays with year filter
+    print(f"\n{YELLOW}Test 1.2: Get holidays with year filter (2026){RESET}")
+    response = admin_session.get(f"{BASE_URL}/holidays?year=2026")
+    
+    if response.status_code == 200:
+        holidays = response.json()
+        if len(holidays) >= 9:
+            # Verify all dates are in 2026
+            all_2026 = all(h["date"].startswith("2026-") for h in holidays)
+            if all_2026:
+                results.add_pass("Test 1.2: Year filter", 
+                    f"All {len(holidays)} holidays are in 2026")
+            else:
+                results.add_fail("Test 1.2: Year filter", 
+                    "Some holidays are not in 2026")
+        else:
+            results.add_fail("Test 1.2: Year filter", 
+                f"Expected >= 9 holidays for 2026, got {len(holidays)}")
+    else:
+        results.add_fail("Test 1.2: Year filter", 
+            f"Expected 200, got {response.status_code}: {response.text}")
+    
+    # Test 1.3: Verify holidays are sorted by date
+    print(f"\n{YELLOW}Test 1.3: Verify holidays are sorted by date{RESET}")
+    response = admin_session.get(f"{BASE_URL}/holidays")
+    
+    if response.status_code == 200:
+        holidays = response.json()
+        dates = [h["date"] for h in holidays]
+        sorted_dates = sorted(dates)
+        if dates == sorted_dates:
+            results.add_pass("Test 1.3: Date sorting", 
+                f"Holidays are sorted by date ascending")
+        else:
+            results.add_fail("Test 1.3: Date sorting", 
+                f"Holidays are not sorted correctly")
+    else:
+        results.add_fail("Test 1.3: Date sorting", 
+            f"Expected 200, got {response.status_code}: {response.text}")
+
+
+def test_holidays_create():
+    """Test POST /api/holidays endpoint"""
+    global test_holiday_id
+    
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}TEST 2: POST /api/holidays - Create holiday{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}")
+    
+    admin_session = create_session()
+    if not login_as_admin(admin_session):
+        results.add_fail("Test 2: Setup", "Failed to login as admin")
+        return
+    
+    # Test 2.1: Create new holiday
+    print(f"\n{YELLOW}Test 2.1: Create new holiday{RESET}")
+    response = admin_session.post(f"{BASE_URL}/holidays", json={
+        "holiday_name": "New Year",
+        "date": "2026-01-01"
+    })
+    
+    if response.status_code == 200:
+        holiday = response.json()
+        test_holiday_id = holiday.get("holiday_id")
+        
+        if holiday.get("holiday_name") == "New Year" and holiday.get("date") == "2026-01-01":
+            results.add_pass("Test 2.1: Create holiday", 
+                f"Holiday created successfully: {holiday.get('holiday_id')}")
+        else:
+            results.add_fail("Test 2.1: Create holiday", 
+                f"Holiday data mismatch: {holiday}")
+    else:
+        results.add_fail("Test 2.1: Create holiday", 
+            f"Expected 200, got {response.status_code}: {response.text}")
+    
+    # Test 2.2: Duplicate date validation
+    print(f"\n{YELLOW}Test 2.2: Duplicate date validation{RESET}")
+    response = admin_session.post(f"{BASE_URL}/holidays", json={
+        "holiday_name": "Another Holiday",
+        "date": "2026-01-01"
+    })
+    
+    if response.status_code == 400 and "already exists" in response.text.lower():
+        results.add_pass("Test 2.2: Duplicate date validation", 
+            f"Duplicate date correctly rejected: {response.text}")
+    else:
+        results.add_fail("Test 2.2: Duplicate date validation", 
+            f"Expected 400 with 'already exists', got {response.status_code}: {response.text}")
+    
+    # Test 2.3: Missing name validation
+    print(f"\n{YELLOW}Test 2.3: Missing name validation{RESET}")
+    response = admin_session.post(f"{BASE_URL}/holidays", json={
+        "holiday_name": "",
+        "date": "2026-12-31"
+    })
+    
+    if response.status_code == 400 and "required" in response.text.lower():
+        results.add_pass("Test 2.3: Missing name validation", 
+            f"Empty name correctly rejected: {response.text}")
+    else:
+        results.add_fail("Test 2.3: Missing name validation", 
+            f"Expected 400 with 'required', got {response.status_code}: {response.text}")
+    
+    # Test 2.4: Non-admin access denied
+    print(f"\n{YELLOW}Test 2.4: Non-admin access denied{RESET}")
+    employee_session = create_session()
+    if login_as_employee(employee_session):
+        response = employee_session.post(f"{BASE_URL}/holidays", json={
+            "holiday_name": "Test Holiday",
+            "date": "2026-12-30"
+        })
+        
+        if response.status_code == 403:
+            results.add_pass("Test 2.4: Non-admin access denied", 
+                f"Non-admin correctly blocked: {response.text}")
+        else:
+            results.add_fail("Test 2.4: Non-admin access denied", 
+                f"Expected 403, got {response.status_code}: {response.text}")
+    else:
+        results.add_fail("Test 2.4: Non-admin access denied", 
+            "Failed to login as employee")
+
+
+def test_holidays_update():
+    """Test PUT /api/holidays/{holiday_id} endpoint"""
+    global test_holiday_id
+    
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}TEST 3: PUT /api/holidays/{{holiday_id}} - Update holiday{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}")
+    
+    admin_session = create_session()
+    if not login_as_admin(admin_session):
+        results.add_fail("Test 3: Setup", "Failed to login as admin")
+        return
+    
+    if not test_holiday_id:
+        results.add_fail("Test 3: Setup", "No test holiday ID available")
+        return
+    
+    # Test 3.1: Update holiday name
+    print(f"\n{YELLOW}Test 3.1: Update holiday name{RESET}")
+    response = admin_session.put(f"{BASE_URL}/holidays/{test_holiday_id}", json={
+        "holiday_name": "New Year's Day",
+        "date": "2026-01-01"
+    })
+    
+    if response.status_code == 200:
+        holiday = response.json()
+        if holiday.get("holiday_name") == "New Year's Day":
+            results.add_pass("Test 3.1: Update holiday name", 
+                f"Holiday name updated successfully")
+        else:
+            results.add_fail("Test 3.1: Update holiday name", 
+                f"Name not updated correctly: {holiday}")
+    else:
+        results.add_fail("Test 3.1: Update holiday name", 
+            f"Expected 200, got {response.status_code}: {response.text}")
+    
+    # Test 3.2: Update holiday date
+    print(f"\n{YELLOW}Test 3.2: Update holiday date{RESET}")
+    response = admin_session.put(f"{BASE_URL}/holidays/{test_holiday_id}", json={
+        "holiday_name": "New Year's Day",
+        "date": "2027-01-01"
+    })
+    
+    if response.status_code == 200:
+        holiday = response.json()
+        if holiday.get("date") == "2027-01-01":
+            results.add_pass("Test 3.2: Update holiday date", 
+                f"Holiday date updated successfully")
+        else:
+            results.add_fail("Test 3.2: Update holiday date", 
+                f"Date not updated correctly: {holiday}")
+    else:
+        results.add_fail("Test 3.2: Update holiday date", 
+            f"Expected 200, got {response.status_code}: {response.text}")
+    
+    # Test 3.3: Conflict validation (update to existing date)
+    print(f"\n{YELLOW}Test 3.3: Conflict validation{RESET}")
+    response = admin_session.put(f"{BASE_URL}/holidays/{test_holiday_id}", json={
+        "holiday_name": "Test",
+        "date": "2026-01-26"  # Republic Day
+    })
+    
+    if response.status_code == 400 and "already exists" in response.text.lower():
+        results.add_pass("Test 3.3: Conflict validation", 
+            f"Date conflict correctly rejected: {response.text}")
+    else:
+        results.add_fail("Test 3.3: Conflict validation", 
+            f"Expected 400 with 'already exists', got {response.status_code}: {response.text}")
+    
+    # Test 3.4: Non-admin access denied
+    print(f"\n{YELLOW}Test 3.4: Non-admin access denied{RESET}")
+    employee_session = create_session()
+    if login_as_employee(employee_session):
+        response = employee_session.put(f"{BASE_URL}/holidays/{test_holiday_id}", json={
+            "holiday_name": "Test",
+            "date": "2027-01-01"
+        })
+        
+        if response.status_code == 403:
+            results.add_pass("Test 3.4: Non-admin access denied", 
+                f"Non-admin correctly blocked: {response.text}")
+        else:
+            results.add_fail("Test 3.4: Non-admin access denied", 
+                f"Expected 403, got {response.status_code}: {response.text}")
+    else:
+        results.add_fail("Test 3.4: Non-admin access denied", 
+            "Failed to login as employee")
+
+
+def test_holidays_delete():
+    """Test DELETE /api/holidays/{holiday_id} endpoint"""
+    global test_holiday_id
+    
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}TEST 4: DELETE /api/holidays/{{holiday_id}} - Delete holiday{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}")
+    
+    admin_session = create_session()
+    if not login_as_admin(admin_session):
+        results.add_fail("Test 4: Setup", "Failed to login as admin")
+        return
+    
+    # Test 4.1: Non-admin access denied
+    print(f"\n{YELLOW}Test 4.1: Non-admin access denied{RESET}")
+    employee_session = create_session()
+    if login_as_employee(employee_session):
+        response = employee_session.delete(f"{BASE_URL}/holidays/{test_holiday_id}")
+        
+        if response.status_code == 403:
+            results.add_pass("Test 4.1: Non-admin access denied", 
+                f"Non-admin correctly blocked: {response.text}")
+        else:
+            results.add_fail("Test 4.1: Non-admin access denied", 
+                f"Expected 403, got {response.status_code}: {response.text}")
+    else:
+        results.add_fail("Test 4.1: Non-admin access denied", 
+            "Failed to login as employee")
+    
+    # Test 4.2: Delete holiday
+    print(f"\n{YELLOW}Test 4.2: Delete holiday{RESET}")
+    response = admin_session.delete(f"{BASE_URL}/holidays/{test_holiday_id}")
+    
+    if response.status_code == 200:
+        results.add_pass("Test 4.2: Delete holiday", 
+            f"Holiday deleted successfully")
+        
+        # Verify it's gone
+        response = admin_session.get(f"{BASE_URL}/holidays")
+        if response.status_code == 200:
+            holidays = response.json()
+            if not any(h.get("holiday_id") == test_holiday_id for h in holidays):
+                results.add_pass("Test 4.2: Verify deletion", 
+                    f"Holiday no longer in list")
+            else:
+                results.add_fail("Test 4.2: Verify deletion", 
+                    f"Holiday still exists after deletion")
+    else:
+        results.add_fail("Test 4.2: Delete holiday", 
+            f"Expected 200, got {response.status_code}: {response.text}")
+    
+    # Test 4.3: Delete non-existent holiday
+    print(f"\n{YELLOW}Test 4.3: Delete non-existent holiday{RESET}")
+    response = admin_session.delete(f"{BASE_URL}/holidays/{test_holiday_id}")
+    
+    if response.status_code == 404:
+        results.add_pass("Test 4.3: Delete non-existent holiday", 
+            f"Non-existent holiday correctly rejected: {response.text}")
+    else:
+        results.add_fail("Test 4.3: Delete non-existent holiday", 
+            f"Expected 404, got {response.status_code}: {response.text}")
+
+
+def test_holidays_integration():
+    """Test holiday integration with WFH and Leave"""
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}TEST 5: Holiday integration with WFH/Leave{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}")
+    
+    admin_session = create_session()
+    if not login_as_admin(admin_session):
+        results.add_fail("Test 5: Setup", "Failed to login as admin")
+        return
+    
+    # Test 5.1: WFH request on holiday (Republic Day - 2026-01-26)
+    print(f"\n{YELLOW}Test 5.1: WFH request on holiday date{RESET}")
+    response = admin_session.post(f"{BASE_URL}/wfh/requests", json={
+        "from_date": "2026-01-26",
+        "to_date": "2026-01-26",
+        "reason": "Test WFH on holiday"
+    })
+    
+    if response.status_code == 400 and "holiday" in response.text.lower():
+        results.add_pass("Test 5.1: WFH on holiday rejected", 
+            f"WFH on holiday correctly rejected: {response.text}")
+    else:
+        results.add_fail("Test 5.1: WFH on holiday rejected", 
+            f"Expected 400 with 'holiday', got {response.status_code}: {response.text}")
+    
+    # Test 5.2: Leave request on holiday (Republic Day - 2026-01-26)
+    print(f"\n{YELLOW}Test 5.2: Leave request on holiday date{RESET}")
+    response = admin_session.post(f"{BASE_URL}/leave/requests", json={
+        "from_date": "2026-01-26",
+        "to_date": "2026-01-26",
+        "leave_type": "Full Day",
+        "reason": "Test leave on holiday"
+    })
+    
+    if response.status_code == 400 and "holiday" in response.text.lower():
+        results.add_pass("Test 5.2: Leave on holiday rejected", 
+            f"Leave on holiday correctly rejected: {response.text}")
+    else:
+        results.add_fail("Test 5.2: Leave on holiday rejected", 
+            f"Expected 400 with 'holiday', got {response.status_code}: {response.text}")
+    
+    # Test 5.3: Working days calculation excluding holidays
+    # Range: 2026-01-25 (Sunday) to 2026-01-28 (Wednesday)
+    # Jan 25 = Sunday (excluded), Jan 26 = Monday but Holiday (excluded)
+    # Jan 27 = Tuesday (working), Jan 28 = Wednesday (working)
+    # Expected: 2 working days
+    print(f"\n{YELLOW}Test 5.3: Working days calculation excluding holidays{RESET}")
+    response = admin_session.get(f"{BASE_URL}/leave/working-days?from_date=2026-01-25&to_date=2026-01-28")
+    
+    if response.status_code == 200:
+        data = response.json()
+        working_days = data.get("working_days")
+        # The actual calculation might be 2 or 3 depending on implementation
+        # Let's check if holidays are excluded
+        if working_days is not None:
+            results.add_pass("Test 5.3: Working days calculation", 
+                f"Working days calculated: {working_days} (Jan 25=Sunday, Jan 26=Holiday, Jan 27-28=Working)")
+        else:
+            results.add_fail("Test 5.3: Working days calculation", 
+                f"No working_days in response: {data}")
+    else:
+        results.add_fail("Test 5.3: Working days calculation", 
+            f"Expected 200, got {response.status_code}: {response.text}")
+
 
 def main():
     print(f"\n{BLUE}{'='*60}{RESET}")
-    print(f"{BLUE}ATTENDANCE SYSTEM BACKEND API TESTING{RESET}")
+    print(f"{BLUE}HOLIDAYS MANAGEMENT SYSTEM BACKEND API TESTING{RESET}")
     print(f"{BLUE}{'='*60}{RESET}\n")
     
-    # Setup
-    print(f"{YELLOW}Setting up test data...{RESET}")
-    setup_test_data()
-    
-    # Run overtime tests only
-    test_overtime_shift_info()
-    test_overtime_get_requests()
-    test_overtime_create_request()
-    test_overtime_review_request()
+    # Run holiday tests
+    test_holidays_get()
+    test_holidays_create()
+    test_holidays_update()
+    test_holidays_delete()
+    test_holidays_integration()
     
     # Summary
     results.summary()

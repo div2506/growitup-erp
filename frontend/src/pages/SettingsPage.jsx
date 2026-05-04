@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Pencil, Trash2, Building2, Briefcase, Users, Database, Lock, ExternalLink, Upload, FileJson, Clock, RefreshCw, CheckCircle, XCircle, Hourglass, AlertCircle } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, Briefcase, Users, Database, Lock, ExternalLink, Upload, FileJson, Clock, RefreshCw, CheckCircle, XCircle, Hourglass, AlertCircle, CalendarDays } from "lucide-react";
 import { toast } from "sonner";
 import axios from "axios";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -1278,6 +1278,238 @@ function ShiftRequestsTab() {
 }
 
 
+// ================== HOLIDAYS TAB ==================
+function HolidaysTab() {
+  const [holidays, setHolidays] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editHoliday, setEditHoliday] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [form, setForm] = useState({ holiday_name: "", date: "" });
+  const [formErrors, setFormErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const fetchHolidays = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/holidays`, { withCredentials: true });
+      setHolidays(data);
+    } catch { toast.error("Failed to load holidays"); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchHolidays(); }, [fetchHolidays]);
+
+  const openAdd = () => {
+    setEditHoliday(null);
+    setForm({ holiday_name: "", date: "" });
+    setFormErrors({});
+    setShowModal(true);
+  };
+
+  const openEdit = (h) => {
+    setEditHoliday(h);
+    setForm({ holiday_name: h.holiday_name, date: h.date });
+    setFormErrors({});
+    setShowModal(true);
+  };
+
+  const handleSave = async () => {
+    const errors = {};
+    if (!form.holiday_name.trim()) errors.holiday_name = "Holiday name required";
+    if (!form.date) errors.date = "Date required";
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    setSaving(true);
+    try {
+      if (editHoliday) {
+        await axios.put(`${API}/holidays/${editHoliday.holiday_id}`, form, { withCredentials: true });
+        toast.success("Holiday updated");
+      } else {
+        await axios.post(`${API}/holidays`, form, { withCredentials: true });
+        toast.success("Holiday added");
+      }
+      setShowModal(false);
+      fetchHolidays();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to save holiday");
+    } finally { setSaving(false); }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteConfirm) return;
+    setDeleting(true);
+    try {
+      await axios.delete(`${API}/holidays/${deleteConfirm.holiday_id}`, { withCredentials: true });
+      toast.success("Holiday deleted");
+      setDeleteConfirm(null);
+      fetchHolidays();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to delete holiday");
+    } finally { setDeleting(false); }
+  };
+
+  // Group holidays by year
+  const grouped = holidays.reduce((acc, h) => {
+    const yr = h.date.slice(0, 4);
+    if (!acc[yr]) acc[yr] = [];
+    acc[yr].push(h);
+    return acc;
+  }, {});
+  const years = Object.keys(grouped).sort();
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+        <div>
+          <p className="text-white font-semibold">Company Holidays</p>
+          <p className="text-[#B3B3B3] text-sm mt-0.5">{holidays.length} holiday{holidays.length !== 1 ? "s" : ""} defined</p>
+        </div>
+        <Button onClick={openAdd} className="bg-white text-black hover:bg-white/90 gap-2 text-sm h-9">
+          <Plus size={15} /> Add Holiday
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+        </div>
+      ) : holidays.length === 0 ? (
+        <div className="bg-[#191919] rounded-xl border border-white/10 text-center py-12">
+          <CalendarDays size={32} className="text-white/20 mx-auto mb-3" />
+          <p className="text-[#B3B3B3] text-sm">No holidays defined yet</p>
+          <p className="text-[#666] text-xs mt-1">Click "Add Holiday" to add your first holiday. Run seed-v2 to pre-load 2026 holidays.</p>
+        </div>
+      ) : (
+        years.map(yr => (
+          <div key={yr} className="mb-6">
+            <p className="text-[#B3B3B3] text-xs font-semibold uppercase tracking-wider mb-2">{yr}</p>
+            <div className="bg-[#191919] rounded-xl border border-white/10 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[450px]">
+                  <thead>
+                    <tr className="border-b border-white/10">
+                      <th className="text-left px-4 py-3 text-[#666] text-xs font-medium w-8">#</th>
+                      <th className="text-left px-4 py-3 text-[#B3B3B3] text-xs font-medium">Holiday Name</th>
+                      <th className="text-left px-4 py-3 text-[#B3B3B3] text-xs font-medium">Date</th>
+                      <th className="text-left px-4 py-3 text-[#B3B3B3] text-xs font-medium">Day</th>
+                      <th className="text-right px-4 py-3 text-[#B3B3B3] text-xs font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {grouped[yr].map((h, i) => {
+                      const dt = new Date(h.date + "T00:00:00");
+                      const isPast = dt < new Date(new Date().toDateString());
+                      return (
+                        <tr key={h.holiday_id} className="border-b border-white/5 last:border-0 hover:bg-white/[0.03] transition-colors">
+                          <td className="px-4 py-3 text-[#666] text-xs">{i + 1}</td>
+                          <td className="px-4 py-3">
+                            <span className={`text-sm font-medium ${isPast ? "text-[#B3B3B3]" : "text-white"}`}>{h.holiday_name}</span>
+                            {isPast && <span className="ml-2 text-[#666] text-xs">(past)</span>}
+                          </td>
+                          <td className="px-4 py-3 text-[#B3B3B3] text-sm">
+                            {dt.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-[#666] text-xs">{dt.toLocaleDateString("en-IN", { weekday: "long" })}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => openEdit(h)}
+                                className="p-1.5 rounded-lg hover:bg-white/10 text-[#B3B3B3] hover:text-white transition-colors">
+                                <Pencil size={14} />
+                              </button>
+                              <button onClick={() => setDeleteConfirm(h)}
+                                className="p-1.5 rounded-lg hover:bg-red-500/20 text-[#B3B3B3] hover:text-red-400 transition-colors">
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+
+      {/* Add / Edit Modal */}
+      {showModal && (
+        <Dialog open onOpenChange={(o) => { if (!o) setShowModal(false); }}>
+          <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white sm:max-w-sm w-[calc(100%-2rem)] rounded-xl">
+            <DialogHeader>
+              <DialogTitle className="text-white">{editHoliday ? "Edit Holiday" : "Add Holiday"}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Label className={labelCls}>Holiday Name *</Label>
+                <Input
+                  value={form.holiday_name}
+                  onChange={e => setForm(f => ({ ...f, holiday_name: e.target.value }))}
+                  placeholder="e.g. Republic Day"
+                  className={inputCls}
+                />
+                {formErrors.holiday_name && <p className="text-red-400 text-xs">{formErrors.holiday_name}</p>}
+              </div>
+              <div className="space-y-1">
+                <Label className={labelCls}>Date *</Label>
+                <Input
+                  type="date"
+                  value={form.date}
+                  onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+                  className={inputCls}
+                />
+                {form.date && (() => {
+                  const d = new Date(form.date + "T00:00:00");
+                  return <p className="text-[#B3B3B3] text-xs">{d.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>;
+                })()}
+                {formErrors.date && <p className="text-red-400 text-xs">{formErrors.date}</p>}
+              </div>
+              <div className="flex gap-3 pt-1">
+                <Button variant="outline" onClick={() => setShowModal(false)}
+                  className="flex-1 bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white">Cancel</Button>
+                <Button onClick={handleSave} disabled={saving}
+                  className="flex-1 bg-white text-black hover:bg-white/90">
+                  {saving ? "Saving..." : editHoliday ? "Save Changes" : "Add Holiday"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Delete Confirmation */}
+      {deleteConfirm && (
+        <Dialog open onOpenChange={(o) => { if (!o) setDeleteConfirm(null); }}>
+          <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white sm:max-w-sm w-[calc(100%-2rem)] rounded-xl">
+            <DialogHeader>
+              <DialogTitle className="text-white">Delete Holiday</DialogTitle>
+            </DialogHeader>
+            <p className="text-[#B3B3B3] text-sm">
+              Are you sure you want to delete <strong className="text-white">{deleteConfirm.holiday_name}</strong>?
+              This cannot be undone.
+            </p>
+            <div className="flex gap-3 pt-2">
+              <Button variant="outline" onClick={() => setDeleteConfirm(null)}
+                className="flex-1 bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white">Cancel</Button>
+              <Button onClick={handleDelete} disabled={deleting}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white border-0">
+                {deleting ? "Deleting..." : "Delete"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+
 // ================== MAIN SETTINGS PAGE ==================
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("departments");
@@ -1297,6 +1529,7 @@ export default function SettingsPage() {
     ...(isAdmin ? [
       { val: "shifts", label: "Shifts", icon: Clock },
       { val: "shift-requests", label: "Shift Requests", icon: RefreshCw },
+      { val: "holidays", label: "Holidays", icon: CalendarDays },
       { val: "data-import", label: "Data Import", icon: Upload },
     ] : []),
   ];
@@ -1328,6 +1561,7 @@ export default function SettingsPage() {
           <>
             <TabsContent value="shifts"><ShiftsTab /></TabsContent>
             <TabsContent value="shift-requests"><ShiftRequestsTab /></TabsContent>
+            <TabsContent value="holidays"><HolidaysTab /></TabsContent>
             <TabsContent value="data-import"><DataImportTab /></TabsContent>
           </>
         )}
