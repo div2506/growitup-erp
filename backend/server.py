@@ -3080,10 +3080,11 @@ async def get_leave_balance(request: Request, employee_id: Optional[str] = None)
 
 @api_router.get("/leave/working-days")
 async def get_working_days_endpoint(request: Request, from_date: str, to_date: str):
-    """Calculate working days (excluding Sundays) between two dates."""
+    """Calculate working days (excluding Sundays and company holidays) between two dates."""
     await get_current_user(request)
-    days = calc_working_days_between(from_date, to_date)
-    return {"from_date": from_date, "to_date": to_date, "working_days": days}
+    holiday_dates = await get_holidays_in_range_db(from_date, to_date)
+    days = calc_working_days_between(from_date, to_date, exclude_dates=holiday_dates)
+    return {"from_date": from_date, "to_date": to_date, "working_days": days, "holidays_excluded": len(holiday_dates)}
 
 
 @api_router.get("/leave/requests")
