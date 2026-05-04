@@ -244,3 +244,9 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 - Approved leave requests correctly render as "L" badges on employee Attendance calendar
 - Summary "Leave" counter increments per approved leave day
 - Legend "L Leave" displayed at bottom of calendar
+
+### Leave Slack Notification (COMPLETE - 2026-05-04)
+- `notify_leave_submitted()` helper posts to existing `SLACK_WEBHOOK_URL` when a new leave request is created
+- Payload includes: employee name + ID + dept, dates, total days, paid/regular split, leave type, reason (truncated to 200 chars)
+- Fire-and-forget: wrapped in try/except, 5s timeout; silently no-ops if webhook unset or unreachable — never blocks or fails the leave submission
+- No notification on approve/reject (per user preference)
