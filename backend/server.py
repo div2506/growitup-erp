@@ -90,6 +90,7 @@ class EmployeeCreate(BaseModel):
     teams: List[str] = []
     shift_id: Optional[str] = None  # Shift assignment
     paid_leave_eligible: Optional[bool] = False  # Whether employee receives monthly paid leave
+    wfh_eligible: Optional[bool] = False  # Whether employee can request WFH
 
 class TeamCreate(BaseModel):
     team_name: str
@@ -145,6 +146,18 @@ class LeaveRequestCreate(BaseModel):
 class LeaveRequestReview(BaseModel):
     status: str  # "Approved" or "Rejected"
     admin_notes: Optional[str] = None
+
+
+class WFHRequestCreate(BaseModel):
+    from_date: str   # "YYYY-MM-DD"
+    to_date: str     # "YYYY-MM-DD"
+    reason: str
+
+
+class WFHRequestReview(BaseModel):
+    status: str  # "Approved" or "Rejected"
+    admin_notes: Optional[str] = None
+    approved_days: Optional[List[str]] = None  # For partial approval (list of date strings)
 
 
 class AttendanceEntryCreate(BaseModel):
@@ -587,6 +600,122 @@ async def notify_leave_submitted(leave_req: dict, employee: dict) -> None:
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[Leave] Slack notification failed (non-blocking): {exc}")
+
+
+# ===================== WFH HELPERS =====================
+
+WFH_MONTHLY_LIMIT = 3
+
+
+def get_dates_in_range(from_date_str: str, to_date_str: str) -> List[str]:
+    """Return all non-Sunday dates between from_date and to_date inclusive."""
+    dates = []
+    try:
+        start = datetime.strptime(from_date_str, "%Y-%m-%d")
+        end = datetime.strptime(to_date_str, "%Y-%m-%d")
+        current = start
+        while current <= end:
+            if current.weekday() != 6:  # Skip Sundays
+                dates.append(current.strftime("%Y-%m-%d"))
+            current += timedelta(days=1)
+    except Exception:
+        pass
+    return dates
+
+
+async def get_wfh_usage_for_month(employee_id: str, month_str: str) -> dict:
+    """Get WFH tracking record for employee for a given month (month_str: 'YYYY-MM-01' or 'YYYY-MM-DD')."""
+    month_first = month_str[:7] + "-01" if len(month_str) >= 7 else month_str
+    try:
+        year = int(month_first[:4])
+    except Exception:
+        year = datetime.now().year
+    tracking = await db.wfh_tracking.find_one(
+        {"employee_id": employee_id, "month": month_first, "year": year}, {"_id": 0}
+    )
+    return tracking or {
+        "employee_id": employee_id, "month": month_first, "year": year,
+        "wfh_days_used": 0, "wfh_dates": []
+    }
+
+
+async def update_wfh_tracking_fn(employee_id: str, dates: List[str]):
+    """Add WFH dates to monthly tracking (idempotent per date)."""
+    from collections import defaultdict as _dd
+    month_map: dict = _dd(list)
+    for d in dates:
+        try:
+            dt = datetime.strptime(d, "%Y-%m-%d")
+            if dt.weekday() == 6:
+                continue
+            month_map[dt.strftime("%Y-%m-01")].append(d)
+        except Exception:
+            pass
+    for month_str, md_list in month_map.items():
+        year = int(month_str[:4])
+        now_iso = datetime.now(timezone.utc).isoformat()
+        existing = await db.wfh_tracking.find_one(
+            {"employee_id": employee_id, "month": month_str, "year": year}, {"_id": 0}
+        )
+        current_set = set(existing.get("wfh_dates", []) if existing else [])
+        new_dates = sorted(current_set | set(md_list))
+        tid = (existing or {}).get("tracking_id") or f"wt_{uuid.uuid4().hex[:12]}"
+        await db.wfh_tracking.update_one(
+            {"employee_id": employee_id, "month": month_str, "year": year},
+            {"$set": {
+                "tracking_id": tid, "employee_id": employee_id,
+                "month": month_str, "year": year,
+                "wfh_days_used": len(new_dates), "wfh_dates": new_dates,
+                "updated_at": now_iso
+            }, "$setOnInsert": {"created_at": now_iso}},
+            upsert=True
+        )
+
+
+async def remove_wfh_tracking_fn(employee_id: str, dates: List[str]):
+    """Remove WFH dates from monthly tracking (called on cancellation)."""
+    from collections import defaultdict as _dd
+    month_map: dict = _dd(list)
+    for d in dates:
+        try:
+            dt = datetime.strptime(d, "%Y-%m-%d")
+            month_map[dt.strftime("%Y-%m-01")].append(d)
+        except Exception:
+            pass
+    for month_str, md_list in month_map.items():
+        year = int(month_str[:4])
+        existing = await db.wfh_tracking.find_one(
+            {"employee_id": employee_id, "month": month_str, "year": year}, {"_id": 0}
+        )
+        if existing:
+            current_set = set(existing.get("wfh_dates", []))
+            new_dates = sorted(current_set - set(md_list))
+            await db.wfh_tracking.update_one(
+                {"employee_id": employee_id, "month": month_str, "year": year},
+                {"$set": {
+                    "wfh_days_used": len(new_dates), "wfh_dates": new_dates,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }}
+            )
+
+
+async def mark_wfh_in_attendance_fn(employee_id: str, dates: List[str]):
+    """Upsert daily_attendance records with status='WFH' for given working dates."""
+    for date_str in dates:
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d")
+        except Exception:
+            continue
+        if dt.weekday() == 6:
+            continue
+        shift = await get_active_shift_for_date_async(employee_id, dt)
+        shift_id = shift["shift_id"] if shift else None
+        await upsert_daily_attendance(employee_id, date_str, {
+            "shift_id": shift_id, "status": "WFH",
+            "check_in": None, "check_out": None,
+            "total_hours": 8.0, "is_late": False, "late_minutes": 0,
+            "notes": "Work From Home"
+        })
 
 
 async def auto_credit_monthly_leave() -> int:
@@ -3461,6 +3590,267 @@ async def get_late_tracking(
 
     records = await db.monthly_late_tracking.find(query, {"_id": 0}).sort("month", -1).to_list(24)
     return records
+
+
+# ===================== WFH ROUTES =====================
+
+@api_router.get("/wfh/usage")
+async def get_wfh_usage(
+    request: Request,
+    employee_id: Optional[str] = None,
+    month: Optional[str] = None
+):
+    """Get WFH usage for employee for the specified month (default: current month)."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+
+    # Determine target employee
+    if not employee_id:
+        if not my_emp:
+            raise HTTPException(400, "employee_id required")
+        employee_id = my_emp["employee_id"]
+    elif employee_id != (my_emp["employee_id"] if my_emp else None) and not is_admin:
+        raise HTTPException(403, "Cannot view other employees' WFH usage")
+
+    month_str = month[:7] + "-01" if month and len(month) >= 7 else datetime.now().strftime("%Y-%m-01")
+    tracking = await get_wfh_usage_for_month(employee_id, month_str)
+    return {
+        "employee_id": employee_id,
+        "month": month_str,
+        "wfh_days_used": tracking.get("wfh_days_used", 0),
+        "wfh_dates": tracking.get("wfh_dates", []),
+        "monthly_limit": WFH_MONTHLY_LIMIT
+    }
+
+
+@api_router.get("/wfh/requests")
+async def get_wfh_requests(
+    request: Request,
+    employee_id: Optional[str] = None,
+    status: Optional[str] = None,
+    month: Optional[str] = None
+):
+    """Get WFH requests. Admin sees all, employee sees own."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+
+    query: dict = {}
+    if not is_admin:
+        if not my_emp:
+            return []
+        query["employee_id"] = my_emp["employee_id"]
+    elif employee_id:
+        query["employee_id"] = employee_id
+
+    if status and status != "All":
+        query["status"] = status
+
+    if month:
+        m = month[:7] if len(month) >= 7 else month
+        try:
+            yr, mo = m.split("-")
+            first_day = f"{yr}-{mo}-01"
+            last_day = f"{yr}-{mo}-{cal_module.monthrange(int(yr), int(mo))[1]:02d}"
+            query["$and"] = [
+                {"from_date": {"$lte": last_day}},
+                {"to_date": {"$gte": first_day}}
+            ]
+        except Exception:
+            pass
+
+    requests_list = await db.wfh_requests.find(query, {"_id": 0}).sort("requested_at", -1).to_list(500)
+
+    # Enrich with employee info
+    emp_cache: dict = {}
+    for r in requests_list:
+        eid = r["employee_id"]
+        if eid not in emp_cache:
+            e = await db.employees.find_one({"employee_id": eid}, {
+                "_id": 0, "employee_id": 1, "first_name": 1, "last_name": 1,
+                "profile_picture": 1, "department_name": 1, "job_position_name": 1
+            })
+            emp_cache[eid] = e
+        r["employee"] = emp_cache.get(eid)
+
+        if r.get("reviewed_by"):
+            rev = await db.employees.find_one({"employee_id": r["reviewed_by"]}, {"_id": 0, "first_name": 1, "last_name": 1})
+            r["reviewer_name"] = f"{rev['first_name']} {rev['last_name']}" if rev else None
+        else:
+            r["reviewer_name"] = None
+
+        # Add current month usage for admin view
+        from_month = r["from_date"][:7] + "-01"
+        usage = await get_wfh_usage_for_month(r["employee_id"], from_month)
+        r["employee_wfh_used"] = usage.get("wfh_days_used", 0)
+
+    return requests_list
+
+
+@api_router.post("/wfh/requests")
+async def create_wfh_request(body: WFHRequestCreate, request: Request):
+    """Submit a WFH request."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    if not my_emp:
+        raise HTTPException(403, "Employee profile not found")
+
+    # WFH eligibility check
+    if not my_emp.get("wfh_eligible"):
+        raise HTTPException(403, "You are not eligible to request WFH")
+
+    # Reason validation
+    if not body.reason or not body.reason.strip():
+        raise HTTPException(400, "Reason is required")
+    if len(body.reason) > 1000:
+        raise HTTPException(400, "Reason must be 1000 characters or less")
+
+    # Date validation
+    try:
+        from_dt = datetime.strptime(body.from_date, "%Y-%m-%d")
+        to_dt = datetime.strptime(body.to_date, "%Y-%m-%d")
+        today_dt = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+
+    if from_dt < today_dt:
+        raise HTTPException(400, "Cannot request WFH for past dates")
+    if to_dt < from_dt:
+        raise HTTPException(400, "To date must be >= From date")
+    if from_dt.weekday() == 6:
+        raise HTTPException(400, "Cannot request WFH starting on Sunday")
+
+    # Overlapping request check
+    overlapping = await db.wfh_requests.find_one({
+        "employee_id": my_emp["employee_id"], "status": {"$in": ["Pending", "Approved"]},
+        "from_date": {"$lte": body.to_date}, "to_date": {"$gte": body.from_date}
+    }, {"_id": 0})
+    if overlapping:
+        raise HTTPException(400, "You already have a WFH request for overlapping dates")
+
+    # Calculate total working days
+    total_days = calc_working_days_between(body.from_date, body.to_date)
+    if total_days == 0:
+        raise HTTPException(400, "No working days in selected range (all Sundays)")
+
+    # Monthly limit check
+    month_str = from_dt.strftime("%Y-%m-01")
+    usage = await get_wfh_usage_for_month(my_emp["employee_id"], month_str)
+    current_usage = usage.get("wfh_days_used", 0)
+    exceeds_limit = (current_usage + total_days) > WFH_MONTHLY_LIMIT
+
+    now = datetime.now(timezone.utc).isoformat()
+    new_req = {
+        "request_id": f"wfh_{uuid.uuid4().hex[:12]}",
+        "employee_id": my_emp["employee_id"],
+        "from_date": body.from_date, "to_date": body.to_date,
+        "total_days": total_days,
+        "reason": body.reason.strip(),
+        "status": "Pending",
+        "exceeds_limit": exceeds_limit,
+        "approved_days": None, "rejected_days": None,
+        "requested_at": now, "reviewed_by": None, "reviewed_at": None,
+        "admin_notes": None, "cancelled_at": None,
+        "created_at": now, "updated_at": now
+    }
+    await db.wfh_requests.insert_one(new_req)
+    return {k: v for k, v in new_req.items() if k != "_id"}
+
+
+@api_router.put("/wfh/requests/{request_id}/review")
+async def review_wfh_request(request_id: str, body: WFHRequestReview, request: Request):
+    """Admin approve (full or partial) or reject a WFH request."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can review WFH requests")
+
+    if body.status not in ["Approved", "Rejected"]:
+        raise HTTPException(400, "Status must be 'Approved' or 'Rejected'")
+
+    existing = await db.wfh_requests.find_one({"request_id": request_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "WFH request not found")
+    if existing["status"] != "Pending":
+        raise HTTPException(400, "Only pending requests can be reviewed")
+
+    reviewer_id = my_emp["employee_id"] if my_emp else None
+    now = datetime.now(timezone.utc).isoformat()
+
+    update: dict = {
+        "status": body.status, "reviewed_by": reviewer_id,
+        "reviewed_at": now, "admin_notes": body.admin_notes or "",
+        "updated_at": now
+    }
+
+    if body.status == "Approved":
+        all_dates = get_dates_in_range(existing["from_date"], existing["to_date"])
+        if body.approved_days:
+            # Partial approval — only approve selected dates
+            approved_dates = [d for d in body.approved_days if d in all_dates]
+            rejected_dates = [d for d in all_dates if d not in approved_dates]
+        else:
+            # Full approval
+            approved_dates = all_dates
+            rejected_dates = []
+
+        update["approved_days"] = approved_dates
+        update["rejected_days"] = rejected_dates
+
+        if approved_dates:
+            await update_wfh_tracking_fn(existing["employee_id"], approved_dates)
+            await mark_wfh_in_attendance_fn(existing["employee_id"], approved_dates)
+
+    await db.wfh_requests.update_one({"request_id": request_id}, {"$set": update})
+    return {**existing, **update}
+
+
+@api_router.put("/wfh/requests/{request_id}/cancel")
+async def cancel_wfh_request(request_id: str, request: Request):
+    """Cancel a WFH request (employee own pending/approved, or admin)."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+
+    existing = await db.wfh_requests.find_one({"request_id": request_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "WFH request not found")
+
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin and (not my_emp or existing["employee_id"] != my_emp["employee_id"]):
+        raise HTTPException(403, "You can only cancel your own WFH requests")
+
+    if existing["status"] not in ["Pending", "Approved"]:
+        raise HTTPException(400, "Only Pending or Approved requests can be cancelled")
+
+    if existing["status"] == "Approved":
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        if existing["from_date"] < today_str:
+            raise HTTPException(400, "Cannot cancel a WFH request that has already started")
+        # Remove from WFH tracking
+        approved_dates = existing.get("approved_days") or get_dates_in_range(existing["from_date"], existing["to_date"])
+        await remove_wfh_tracking_fn(existing["employee_id"], approved_dates)
+        # Remove WFH attendance records
+        await db.daily_attendance.delete_many({
+            "employee_id": existing["employee_id"], "status": "WFH",
+            "date": {"$in": approved_dates}
+        })
+
+    now = datetime.now(timezone.utc).isoformat()
+    update = {"status": "Cancelled", "cancelled_at": now, "updated_at": now}
+    await db.wfh_requests.update_one({"request_id": request_id}, {"$set": update})
+    return {**existing, **update}
 
 
 app.include_router(api_router)

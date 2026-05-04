@@ -11,6 +11,7 @@ import PerformancePage from "@/pages/PerformancePage";
 import ShiftsPage from "@/pages/ShiftsPage";
 import AttendancePage from "@/pages/AttendancePage";
 import LeaveIndexPage from "@/pages/LeaveIndexPage";
+import WFHIndexPage from "@/pages/WFHIndexPage";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Layout from "@/components/Layout";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -51,6 +52,7 @@ function AppRouter() {
         <Route path="attendance" element={<AttendancePage />} />
         <Route path="leave" element={<LeaveIndexPage />} />
         <Route path="leave-requests" element={<LeaveIndexPage />} />
+        <Route path="wfh" element={<WFHIndexPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/employees" replace />} />
     </Routes>

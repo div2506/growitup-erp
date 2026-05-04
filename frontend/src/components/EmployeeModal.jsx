@@ -27,7 +27,8 @@ const EMPTY_FORM = {
   account_number: "", ifsc_code: "", profile_picture: null, status: "Active",
   teams: [],
   shift_id: "",
-  paid_leave_eligible: false
+  paid_leave_eligible: false,
+  wfh_eligible: false
 };
 
 const inputCls = "bg-[#191919] border-white/10 text-white placeholder-[#B3B3B3] focus-visible:ring-white/20 focus-visible:border-white/30";
@@ -602,6 +603,26 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
                   <p className="text-white text-sm font-medium">Eligible for Paid Leave</p>
                   <p className="text-[#B3B3B3] text-xs mt-0.5">
                     When enabled, this employee accrues <span className="text-green-400">1 paid leave per month</span> automatically. Disabled employees can still apply for unpaid (regular) leave.
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {/* WFH Eligibility */}
+            <div className="mt-5 pt-5 border-t border-white/10">
+              <p className="text-white font-medium text-sm mb-3">WFH Eligibility</p>
+              <label className="flex items-start gap-3 cursor-pointer bg-[#191919] border border-white/10 rounded-lg px-4 py-3 hover:border-white/20 transition-colors">
+                <input
+                  type="checkbox"
+                  data-testid="wfh-eligible-checkbox"
+                  checked={!!form.wfh_eligible}
+                  onChange={e => set("wfh_eligible", e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-white/20 bg-[#191919] accent-blue-500 cursor-pointer"
+                />
+                <div className="flex-1">
+                  <p className="text-white text-sm font-medium">Eligible for Work From Home</p>
+                  <p className="text-[#B3B3B3] text-xs mt-0.5">
+                    When enabled, this employee can request WFH days (<span className="text-blue-400">max 3 days/month</span>). Requests require admin approval.
                   </p>
                 </div>
               </label>
