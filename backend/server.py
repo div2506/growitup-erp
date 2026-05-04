@@ -177,6 +177,148 @@ class HolidayCreate(BaseModel):
     date: str  # "YYYY-MM-DD"
 
 
+# ===================== PAYROLL HELPERS =====================
+
+async def calculate_monthly_payroll_fn(employee_id: str, month_str: str) -> dict:
+    """
+    Calculate full monthly payroll for one employee.
+    month_str: "YYYY-MM" or "YYYY-MM-DD" (first day of month).
+    Returns complete earnings/deductions/net breakdown.
+    """
+    month_first = month_str[:7] + "-01"
+    try:
+        month_dt = datetime.strptime(month_first, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(400, f"Invalid month: {month_str}")
+
+    year = month_dt.year
+    month_num = month_dt.month
+    days_in_month = cal_module.monthrange(year, month_num)[1]
+    last_day = f"{year}-{month_num:02d}-{days_in_month:02d}"
+
+    # ---------- Employee ----------
+    emp = await db.employees.find_one({"employee_id": employee_id}, {"_id": 0})
+    if not emp:
+        raise HTTPException(404, f"Employee {employee_id} not found")
+
+    basic_salary = float(emp.get("basic_salary") or 0)
+    day_rate = basic_salary / days_in_month if days_in_month else 0
+
+    # ---------- 1. Overtime Earnings ----------
+    ot_records = await db.overtime_requests.find({
+        "employee_id": employee_id, "status": "Approved",
+        "date": {"$gte": month_first, "$lte": last_day}
+    }, {"_id": 0}).to_list(200)
+    overtime_pay = round(sum(r.get("overtime_pay", 0) for r in ot_records), 2)
+    overtime_hours = round(sum(r.get("total_hours", 0) for r in ot_records), 2)
+    gross_earnings = round(basic_salary + overtime_pay, 2)
+
+    # ---------- 2. Regular Leave Deductions (approved leave with regular_days > 0) ----------
+    leave_records = await db.leave_requests.find({
+        "employee_id": employee_id, "status": "Approved",
+        "$or": [
+            {"from_date": {"$gte": month_first, "$lte": last_day}},
+            {"to_date": {"$gte": month_first, "$lte": last_day}}
+        ]
+    }, {"_id": 0}).to_list(200)
+
+    regular_leave_days = round(sum(r.get("regular_days", 0) for r in leave_records), 2)
+    paid_leave_days = round(sum(r.get("paid_days", 0) for r in leave_records), 2)
+    regular_leave_deduction = round(day_rate * regular_leave_days, 2)
+
+    # ---------- 3. Unapproved Absence Deductions ----------
+    absent_records = await db.daily_attendance.find({
+        "employee_id": employee_id, "status": "Absent",
+        "date": {"$gte": month_first, "$lte": last_day}
+    }, {"_id": 0}).sort("date", 1).to_list(200)
+
+    absence_list = []
+    total_absence_deduction = 0.0
+    for ar in absent_records:
+        day_sal = round(day_rate, 2)
+        penalty = round(basic_salary * 0.0167, 2)
+        total = round(day_sal + penalty, 2)
+        total_absence_deduction += total
+        absence_list.append({"date": ar["date"], "day_salary": day_sal, "penalty": penalty, "amount": total})
+    total_absence_deduction = round(total_absence_deduction, 2)
+
+    # ---------- 4. Late Penalties ----------
+    late_tracking = await db.monthly_late_tracking.find_one(
+        {"employee_id": employee_id, "month": month_first}, {"_id": 0}
+    )
+    late_count = late_tracking.get("late_count", 0) if late_tracking else 0
+    late_penalty_list = []
+    total_late_deduction = 0.0
+    if late_tracking:
+        for p in late_tracking.get("penalties_applied", []):
+            ptype = p.get("type", "")
+            amount = float(p.get("amount", 0))
+            if ptype == "leave_or_salary_deduction":
+                # 4th late: 1 day salary deduction (if no paid leave available)
+                total_late_deduction += amount
+                late_penalty_list.append({"date": p.get("date", ""), "type": "4th Late Arrival", "description": "1 day salary", "amount": round(amount, 2)})
+            elif ptype == "salary_deduction_1_67pct":
+                total_late_deduction += amount
+                late_penalty_list.append({"date": p.get("date", ""), "type": f"{p.get('late_number', 5)}th+ Late Arrival", "description": "1.67% salary", "amount": round(amount, 2)})
+    total_late_deduction = round(total_late_deduction, 2)
+
+    # ---------- 5. Half-Day Deductions ----------
+    half_day_records = await db.daily_attendance.find({
+        "employee_id": employee_id, "status": "Half Day",
+        "date": {"$gte": month_first, "$lte": last_day}
+    }, {"_id": 0}).to_list(200)
+    half_day_count = len(half_day_records)
+    half_day_deduction = round(day_rate * 0.5 * half_day_count, 2)
+
+    # ---------- 6. Attendance Summary ----------
+    all_att = await db.daily_attendance.find({
+        "employee_id": employee_id,
+        "date": {"$gte": month_first, "$lte": last_day}
+    }, {"_id": 0}).to_list(500)
+
+    att_summary = {"present": 0, "half_day": 0, "absent": 0, "leave": 0, "wfh": 0, "holiday": 0, "late_count": 0}
+    for a in all_att:
+        s = a.get("status", "")
+        if s == "Present": att_summary["present"] += 1
+        elif s == "Half Day": att_summary["half_day"] += 1
+        elif s == "Absent": att_summary["absent"] += 1
+        elif s == "Leave": att_summary["leave"] += 1
+        elif s == "WFH": att_summary["wfh"] += 1
+        elif s == "Holiday": att_summary["holiday"] += 1
+        if a.get("is_late"): att_summary["late_count"] += 1
+
+    # ---------- Final ----------
+    total_deductions = round(regular_leave_deduction + total_absence_deduction + total_late_deduction + half_day_deduction, 2)
+    net_salary = round(gross_earnings - total_deductions, 2)
+
+    return {
+        "employee_id": employee_id,
+        "employee": {
+            "first_name": emp.get("first_name"), "last_name": emp.get("last_name"),
+            "profile_picture": emp.get("profile_picture"),
+            "department_name": emp.get("department_name"),
+            "job_position_name": emp.get("job_position_name"),
+            "employee_id": employee_id, "basic_salary": basic_salary
+        },
+        "month": month_first, "year": year, "days_in_month": days_in_month,
+        "earnings": {
+            "basic_salary": round(basic_salary, 2),
+            "overtime_pay": overtime_pay, "overtime_hours": overtime_hours,
+            "overtime_count": len(ot_records), "gross_earnings": gross_earnings
+        },
+        "deductions": {
+            "regular_leave": {"days": regular_leave_days, "amount": regular_leave_deduction},
+            "paid_leave": {"days": paid_leave_days, "amount": 0},
+            "absences": {"count": len(absent_records), "details": absence_list, "amount": total_absence_deduction},
+            "late_penalties": {"late_count": late_count, "penalties": late_penalty_list, "amount": total_late_deduction},
+            "half_days": {"count": half_day_count, "amount": half_day_deduction},
+            "total_deductions": total_deductions
+        },
+        "net_salary": net_salary,
+        "attendance_summary": att_summary
+    }
+
+
 class AttendanceEntryCreate(BaseModel):
     employee_id: str
     timestamp: str  # ISO format: "2026-04-27T09:15:30"
@@ -4008,6 +4150,101 @@ async def delete_holiday(holiday_id: str, request: Request):
 
     await db.holidays.delete_one({"holiday_id": holiday_id})
     return {"message": "Holiday deleted successfully"}
+
+
+# ===================== PAYROLL ROUTES =====================
+
+@api_router.get("/payroll/calculate")
+async def get_payroll_calculate(request: Request, employee_id: Optional[str] = None, month: Optional[str] = None):
+    """
+    Calculate detailed payroll for one employee for a given month.
+    Admin can query any employee; non-admin can only query themselves.
+    """
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+
+    # Determine target employee
+    if not employee_id:
+        if not my_emp:
+            raise HTTPException(400, "employee_id required")
+        employee_id = my_emp["employee_id"]
+    elif not is_admin and (not my_emp or employee_id != my_emp["employee_id"]):
+        raise HTTPException(403, "Cannot view other employees' payroll")
+
+    # Default: previous month
+    if not month:
+        today = datetime.now()
+        first = today.replace(day=1)
+        prev = first - timedelta(days=1)
+        month = prev.strftime("%Y-%m")
+
+    return await calculate_monthly_payroll_fn(employee_id, month)
+
+
+@api_router.get("/payroll/summary")
+async def get_payroll_summary(
+    request: Request,
+    month: Optional[str] = None,
+    department: Optional[str] = None,
+    search: Optional[str] = None
+):
+    """
+    Calculate payroll summary for ALL employees for a given month.
+    Admin department only.
+    """
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can view payroll summary")
+
+    if not month:
+        today = datetime.now()
+        first = today.replace(day=1)
+        prev = first - timedelta(days=1)
+        month = prev.strftime("%Y-%m")
+
+    # Fetch active employees
+    emp_query: dict = {"status": "Active"}
+    if department:
+        emp_query["department_name"] = department
+    if search:
+        emp_query["$or"] = [
+            {"first_name": {"$regex": search, "$options": "i"}},
+            {"last_name": {"$regex": search, "$options": "i"}},
+            {"employee_id": {"$regex": search, "$options": "i"}}
+        ]
+
+    employees_list = await db.employees.find(emp_query, {"_id": 0}).to_list(500)
+
+    # Calculate payroll for all employees in parallel
+    import asyncio as _asyncio
+    results = await _asyncio.gather(
+        *[calculate_monthly_payroll_fn(e["employee_id"], month) for e in employees_list],
+        return_exceptions=True
+    )
+
+    summary = []
+    for r in results:
+        if isinstance(r, Exception):
+            continue
+        summary.append({
+            "employee_id": r["employee_id"],
+            "employee": r["employee"],
+            "month": r["month"],
+            "basic_salary": r["earnings"]["basic_salary"],
+            "gross_earnings": r["earnings"]["gross_earnings"],
+            "total_deductions": r["deductions"]["total_deductions"],
+            "net_salary": r["net_salary"],
+        })
+
+    summary.sort(key=lambda x: x.get("employee", {}).get("first_name", "") or "")
+    return summary
 
 
 app.include_router(api_router)

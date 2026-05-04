@@ -13,6 +13,7 @@ import AttendancePage from "@/pages/AttendancePage";
 import LeaveIndexPage from "@/pages/LeaveIndexPage";
 import WFHIndexPage from "@/pages/WFHIndexPage";
 import OvertimeIndexPage from "@/pages/OvertimeIndexPage";
+import PayrollIndexPage from "@/pages/PayrollIndexPage";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Layout from "@/components/Layout";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -55,6 +56,7 @@ function AppRouter() {
         <Route path="leave-requests" element={<LeaveIndexPage />} />
         <Route path="wfh" element={<WFHIndexPage />} />
         <Route path="overtime" element={<OvertimeIndexPage />} />
+        <Route path="payroll" element={<PayrollIndexPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/employees" replace />} />
     </Routes>

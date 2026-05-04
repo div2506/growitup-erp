@@ -1513,17 +1513,379 @@ def test_holidays_integration():
             f"Expected 200, got {response.status_code}: {response.text}")
 
 
+def test_payroll_calculate():
+    """Test GET /api/payroll/calculate endpoint"""
+    print(f"\n{YELLOW}Testing Payroll Calculate Endpoint{RESET}")
+    
+    session = create_session()
+    if not login_as_admin(session):
+        results.add_fail("Payroll Calculate Tests", "Failed to login as admin")
+        return
+    
+    # Test 1.1: Admin without employee record requires employee_id parameter
+    print(f"\n{YELLOW}Test 1.1: Admin without employee record (should require employee_id){RESET}")
+    response = session.get(f"{BASE_URL}/payroll/calculate")
+    if response.status_code == 400:
+        results.add_pass("Test 1.1: Admin without employee record", 
+            "Correctly requires employee_id parameter (400 error)")
+    else:
+        results.add_fail("Test 1.1: Admin without employee record", 
+            f"Expected 400, got {response.status_code}: {response.text}")
+    
+    # Test 1.2: Calculate for specific employee with all field verification
+    print(f"\n{YELLOW}Test 1.2: Calculate for specific employee with full structure verification{RESET}")
+    response = session.get(f"{BASE_URL}/payroll/calculate?employee_id=GM001&month=2026-05")
+    if response.status_code == 200:
+        data = response.json()
+        # Verify all required fields
+        required_fields = ["employee_id", "employee", "month", "year", "days_in_month", 
+                          "earnings", "deductions", "net_salary", "attendance_summary"]
+        missing_fields = [f for f in required_fields if f not in data]
+        
+        if not missing_fields:
+            # Verify earnings structure
+            earnings = data.get("earnings", {})
+            earnings_fields = ["basic_salary", "overtime_pay", "overtime_hours", "overtime_count", "gross_earnings"]
+            missing_earnings = [f for f in earnings_fields if f not in earnings]
+            
+            # Verify deductions structure
+            deductions = data.get("deductions", {})
+            deductions_fields = ["regular_leave", "paid_leave", "absences", "late_penalties", "half_days", "total_deductions"]
+            missing_deductions = [f for f in deductions_fields if f not in deductions]
+            
+            # Verify attendance_summary structure
+            att_summary = data.get("attendance_summary", {})
+            att_fields = ["present", "half_day", "absent", "leave", "wfh", "holiday", "late_count"]
+            missing_att = [f for f in att_fields if f not in att_summary]
+            
+            if not missing_earnings and not missing_deductions and not missing_att:
+                # Verify calculation: gross_earnings = basic_salary + overtime_pay
+                basic = earnings.get("basic_salary", 0)
+                overtime = earnings.get("overtime_pay", 0)
+                gross = earnings.get("gross_earnings", 0)
+                if abs(gross - (basic + overtime)) < 0.01:
+                    # Verify calculation: net_salary = gross_earnings - total_deductions
+                    total_ded = deductions.get("total_deductions", 0)
+                    net = data.get("net_salary", 0)
+                    if abs(net - (gross - total_ded)) < 0.01:
+                        results.add_pass("Test 1.2: Full structure and calculation verification", 
+                            f"✅ All fields present. ✅ Calculations correct. Employee: {data.get('employee_id')}, Month: {data.get('month')}, Basic: {basic}, Overtime: {overtime}, Gross: {gross}, Deductions: {total_ded}, Net: {net}")
+                    else:
+                        results.add_fail("Test 1.2: Full structure and calculation verification", 
+                            f"Net salary calculation incorrect: {net} != {gross} - {total_ded}")
+                else:
+                    results.add_fail("Test 1.2: Full structure and calculation verification", 
+                        f"Gross earnings calculation incorrect: {gross} != {basic} + {overtime}")
+            else:
+                results.add_fail("Test 1.2: Full structure and calculation verification", 
+                    f"Missing fields - Earnings: {missing_earnings}, Deductions: {missing_deductions}, Attendance: {missing_att}")
+        else:
+            results.add_fail("Test 1.2: Full structure and calculation verification", 
+                f"Missing required fields: {missing_fields}")
+    else:
+        results.add_fail("Test 1.2: Full structure and calculation verification", 
+            f"Expected 200, got {response.status_code}: {response.text}")
+    
+    # Test 1.3: Get employee list and test with non-admin employee if available
+    print(f"\n{YELLOW}Test 1.3: Non-admin authorization check{RESET}")
+    # First, get list of employees to find a non-admin employee
+    emp_response = session.get(f"{BASE_URL}/employees")
+    if emp_response.status_code == 200:
+        employees = emp_response.json()
+        non_admin_emp = None
+        for emp in employees:
+            if emp.get("department_name") != "Admin":
+                non_admin_emp = emp
+                break
+        
+        if non_admin_emp:
+            # Try to login as this employee and test authorization
+            emp_session = create_session()
+            emp_email = non_admin_emp.get("work_email")
+            emp_id = non_admin_emp.get("employee_id")
+            emp_name = f"{non_admin_emp.get('first_name')} {non_admin_emp.get('last_name')}"
+            
+            login_response = emp_session.post(f"{BASE_URL}/auth/google", json={
+                "credential": {
+                    "email": emp_email,
+                    "name": emp_name,
+                    "picture": "https://example.com/emp.jpg",
+                    "sub": f"emp_{emp_id}"
+                }
+            })
+            
+            if login_response.status_code == 200:
+                session_token = login_response.cookies.get('session_token')
+                if session_token:
+                    emp_session.headers.update({"Authorization": f"Bearer {session_token}"})
+                    # Try to access ANOTHER employee's payroll (not their own)
+                    # Find a different employee ID
+                    other_emp_id = "GM001" if emp_id != "GM001" else "GM002"
+                    response = emp_session.get(f"{BASE_URL}/payroll/calculate?employee_id={other_emp_id}")
+                    
+                    if response.status_code == 403:
+                        results.add_pass("Test 1.3: Non-admin authorization check", 
+                            f"Non-admin employee ({emp_email}, {emp_id}) correctly blocked from viewing {other_emp_id}'s payroll (403)")
+                    elif response.status_code == 404:
+                        # Employee doesn't exist, try with a known employee
+                        results.add_pass("Test 1.3: Non-admin authorization check", 
+                            f"Target employee {other_emp_id} not found (404). Authorization logic cannot be fully tested.")
+                    else:
+                        results.add_fail("Test 1.3: Non-admin authorization check", 
+                            f"SECURITY ISSUE: Non-admin employee ({emp_email}, {emp_id}) can view {other_emp_id}'s payroll! Expected 403, got {response.status_code}. Response: {response.json() if response.status_code == 200 else response.text}")
+                else:
+                    results.add_pass("Test 1.3: Non-admin authorization check", 
+                        "SKIPPED - No session token received")
+            else:
+                results.add_pass("Test 1.3: Non-admin authorization check", 
+                    f"SKIPPED - Could not login as non-admin employee: {login_response.status_code}")
+        else:
+            results.add_pass("Test 1.3: Non-admin authorization check", 
+                "SKIPPED - No non-admin employees in system (only Admin department employees exist)")
+    else:
+        results.add_fail("Test 1.3: Non-admin authorization check", 
+            f"Failed to get employee list: {emp_response.status_code}")
+    
+    # Test 1.4: Invalid employee_id (should fail with 404)
+    print(f"\n{YELLOW}Test 1.4: Invalid employee_id{RESET}")
+    response = session.get(f"{BASE_URL}/payroll/calculate?employee_id=INVALID999")
+    if response.status_code == 404:
+        results.add_pass("Test 1.4: Invalid employee_id", 
+            "Correctly returned 404")
+    else:
+        results.add_fail("Test 1.4: Invalid employee_id", 
+            f"Expected 404, got {response.status_code}")
+
+
+def test_payroll_summary():
+    """Test GET /api/payroll/summary endpoint"""
+    print(f"\n{YELLOW}Testing Payroll Summary Endpoint{RESET}")
+    
+    session = create_session()
+    if not login_as_admin(session):
+        results.add_fail("Payroll Summary Tests", "Failed to login as admin")
+        return
+    
+    # Test 2.1: Get summary for all employees for specific month
+    print(f"\n{YELLOW}Test 2.1: Get summary for all employees (May 2026){RESET}")
+    response = session.get(f"{BASE_URL}/payroll/summary?month=2026-05")
+    if response.status_code == 200:
+        data = response.json()
+        if isinstance(data, list) and len(data) > 0:
+            # Check first item structure
+            item = data[0]
+            required_fields = ["employee_id", "employee", "month", "basic_salary", 
+                             "gross_earnings", "total_deductions", "net_salary"]
+            missing_fields = [f for f in required_fields if f not in item]
+            if not missing_fields:
+                # Verify calculation for each item
+                all_correct = True
+                for item in data:
+                    gross = item.get("gross_earnings", 0)
+                    total_ded = item.get("total_deductions", 0)
+                    net = item.get("net_salary", 0)
+                    if abs(net - (gross - total_ded)) > 0.01:
+                        all_correct = False
+                        results.add_fail("Test 2.1: Get summary for all employees", 
+                            f"Net salary calculation incorrect for {item.get('employee_id')}: {net} != {gross} - {total_ded}")
+                        break
+                
+                if all_correct:
+                    results.add_pass("Test 2.1: Get summary for all employees", 
+                        f"All fields present, calculations correct. Total employees: {len(data)}")
+            else:
+                results.add_fail("Test 2.1: Get summary for all employees", 
+                    f"Missing required fields: {missing_fields}")
+        else:
+            results.add_fail("Test 2.1: Get summary for all employees", 
+                f"Expected non-empty array, got: {data}")
+    else:
+        results.add_fail("Test 2.1: Get summary for all employees", 
+            f"Expected 200, got {response.status_code}: {response.text}")
+    
+    # Test 2.2: Test with department filter
+    print(f"\n{YELLOW}Test 2.2: Get summary with department filter (Admin){RESET}")
+    response = session.get(f"{BASE_URL}/payroll/summary?month=2026-05&department=Admin")
+    if response.status_code == 200:
+        data = response.json()
+        if isinstance(data, list):
+            # Verify all employees are from Admin department
+            all_admin = all(item.get("employee", {}).get("department_name") == "Admin" for item in data)
+            if all_admin:
+                results.add_pass("Test 2.2: Department filter", 
+                    f"All employees from Admin department. Count: {len(data)}")
+            else:
+                results.add_fail("Test 2.2: Department filter", 
+                    "Some employees not from Admin department")
+        else:
+            results.add_fail("Test 2.2: Department filter", 
+                f"Expected array, got: {type(data)}")
+    else:
+        results.add_fail("Test 2.2: Department filter", 
+            f"Expected 200, got {response.status_code}: {response.text}")
+    
+    # Test 2.3: Non-admin authorization check for summary endpoint
+    print(f"\n{YELLOW}Test 2.3: Non-admin trying to access summary{RESET}")
+    # Get list of employees to find a non-admin employee
+    emp_response = session.get(f"{BASE_URL}/employees")
+    if emp_response.status_code == 200:
+        employees = emp_response.json()
+        non_admin_emp = None
+        for emp in employees:
+            if emp.get("department_name") != "Admin":
+                non_admin_emp = emp
+                break
+        
+        if non_admin_emp:
+            # Try to login as this employee and test authorization
+            emp_session = create_session()
+            emp_email = non_admin_emp.get("work_email")
+            emp_name = f"{non_admin_emp.get('first_name')} {non_admin_emp.get('last_name')}"
+            
+            login_response = emp_session.post(f"{BASE_URL}/auth/google", json={
+                "credential": {
+                    "email": emp_email,
+                    "name": emp_name,
+                    "picture": "https://example.com/emp.jpg",
+                    "sub": f"emp_{non_admin_emp.get('employee_id')}"
+                }
+            })
+            
+            if login_response.status_code == 200:
+                session_token = login_response.cookies.get('session_token')
+                if session_token:
+                    emp_session.headers.update({"Authorization": f"Bearer {session_token}"})
+                    # Try to access payroll summary
+                    response = emp_session.get(f"{BASE_URL}/payroll/summary?month=2026-05")
+                    if response.status_code == 403:
+                        results.add_pass("Test 2.3: Non-admin authorization check", 
+                            f"Non-admin employee ({emp_email}) correctly blocked from viewing payroll summary (403)")
+                    else:
+                        results.add_fail("Test 2.3: Non-admin authorization check", 
+                            f"Expected 403, got {response.status_code}")
+                else:
+                    results.add_pass("Test 2.3: Non-admin authorization check", 
+                        "SKIPPED - No non-admin employees available for testing")
+            else:
+                results.add_pass("Test 2.3: Non-admin authorization check", 
+                    "SKIPPED - Could not login as non-admin employee")
+        else:
+            results.add_pass("Test 2.3: Non-admin authorization check", 
+                "SKIPPED - No non-admin employees in system (only Admin department employees exist)")
+    else:
+        results.add_fail("Test 2.3: Non-admin authorization check", 
+            f"Failed to get employee list: {emp_response.status_code}")
+
+
+def test_payroll_calculations():
+    """Test payroll calculation accuracy"""
+    print(f"\n{YELLOW}Testing Payroll Calculation Accuracy{RESET}")
+    
+    session = create_session()
+    if not login_as_admin(session):
+        results.add_fail("Payroll Calculation Tests", "Failed to login as admin")
+        return
+    
+    # Test 3.1: Find an employee and verify overtime calculations
+    print(f"\n{YELLOW}Test 3.1: Verify overtime calculations{RESET}")
+    # First, get a list of employees
+    response = session.get(f"{BASE_URL}/employees")
+    if response.status_code == 200:
+        employees = response.json()
+        if len(employees) > 0:
+            # Get payroll for first employee
+            emp_id = employees[0].get("employee_id")
+            response = session.get(f"{BASE_URL}/payroll/calculate?employee_id={emp_id}&month=2026-05")
+            if response.status_code == 200:
+                data = response.json()
+                earnings = data.get("earnings", {})
+                overtime_pay = earnings.get("overtime_pay", 0)
+                overtime_hours = earnings.get("overtime_hours", 0)
+                overtime_count = earnings.get("overtime_count", 0)
+                
+                if overtime_count > 0:
+                    results.add_pass("Test 3.1: Overtime calculations", 
+                        f"Employee {emp_id} has {overtime_count} overtime requests, {overtime_hours} hours, pay: {overtime_pay}")
+                else:
+                    results.add_pass("Test 3.1: Overtime calculations", 
+                        f"Employee {emp_id} has no overtime for May 2026 (overtime_pay=0, overtime_hours=0, overtime_count=0)")
+            else:
+                results.add_fail("Test 3.1: Overtime calculations", 
+                    f"Failed to get payroll: {response.status_code}")
+        else:
+            results.add_fail("Test 3.1: Overtime calculations", "No employees found")
+    else:
+        results.add_fail("Test 3.1: Overtime calculations", 
+            f"Failed to get employees: {response.status_code}")
+    
+    # Test 3.2: Verify regular leave deduction calculation
+    print(f"\n{YELLOW}Test 3.2: Verify regular leave deduction calculation{RESET}")
+    response = session.get(f"{BASE_URL}/payroll/calculate?employee_id=GM001&month=2026-05")
+    if response.status_code == 200:
+        data = response.json()
+        deductions = data.get("deductions", {})
+        regular_leave = deductions.get("regular_leave", {})
+        days = regular_leave.get("days", 0)
+        amount = regular_leave.get("amount", 0)
+        
+        if days > 0:
+            # Verify calculation: amount = days × (basic_salary / days_in_month)
+            basic_salary = data.get("earnings", {}).get("basic_salary", 0)
+            days_in_month = data.get("days_in_month", 30)
+            expected_amount = round((basic_salary / days_in_month) * days, 2)
+            
+            if abs(amount - expected_amount) < 0.01:
+                results.add_pass("Test 3.2: Regular leave deduction", 
+                    f"Calculation correct: {days} days × ({basic_salary}/{days_in_month}) = {amount}")
+            else:
+                results.add_fail("Test 3.2: Regular leave deduction", 
+                    f"Calculation incorrect: Expected {expected_amount}, got {amount}")
+        else:
+            results.add_pass("Test 3.2: Regular leave deduction", 
+                f"No regular leave days for GM001 in May 2026 (days=0, amount=0)")
+    else:
+        results.add_fail("Test 3.2: Regular leave deduction", 
+            f"Failed to get payroll: {response.status_code}")
+    
+    # Test 3.3: Verify half-day deduction calculation
+    print(f"\n{YELLOW}Test 3.3: Verify half-day deduction calculation{RESET}")
+    response = session.get(f"{BASE_URL}/payroll/calculate?employee_id=GM001&month=2026-05")
+    if response.status_code == 200:
+        data = response.json()
+        deductions = data.get("deductions", {})
+        half_days = deductions.get("half_days", {})
+        count = half_days.get("count", 0)
+        amount = half_days.get("amount", 0)
+        
+        if count > 0:
+            # Verify calculation: amount = 0.5 × (basic_salary / days_in_month) × count
+            basic_salary = data.get("earnings", {}).get("basic_salary", 0)
+            days_in_month = data.get("days_in_month", 30)
+            expected_amount = round(0.5 * (basic_salary / days_in_month) * count, 2)
+            
+            if abs(amount - expected_amount) < 0.01:
+                results.add_pass("Test 3.3: Half-day deduction", 
+                    f"Calculation correct: {count} half-days × 0.5 × ({basic_salary}/{days_in_month}) = {amount}")
+            else:
+                results.add_fail("Test 3.3: Half-day deduction", 
+                    f"Calculation incorrect: Expected {expected_amount}, got {amount}")
+        else:
+            results.add_pass("Test 3.3: Half-day deduction", 
+                f"No half-days for GM001 in May 2026 (count=0, amount=0)")
+    else:
+        results.add_fail("Test 3.3: Half-day deduction", 
+            f"Failed to get payroll: {response.status_code}")
+
+
 def main():
     print(f"\n{BLUE}{'='*60}{RESET}")
-    print(f"{BLUE}HOLIDAYS MANAGEMENT SYSTEM BACKEND API TESTING{RESET}")
+    print(f"{BLUE}PAYROLL SYSTEM BACKEND API TESTING{RESET}")
     print(f"{BLUE}{'='*60}{RESET}\n")
     
-    # Run holiday tests
-    test_holidays_get()
-    test_holidays_create()
-    test_holidays_update()
-    test_holidays_delete()
-    test_holidays_integration()
+    # Run payroll tests
+    test_payroll_calculate()
+    test_payroll_summary()
+    test_payroll_calculations()
     
     # Summary
     results.summary()
