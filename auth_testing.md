@@ -28,11 +28,11 @@ print('User ID: ' + userId);
 ## Step 2: Test Backend API
 ```bash
 # Test auth endpoint
-curl -X GET "https://workforce-portal-76.preview.emergentagent.com/api/auth/me" \
+curl -X GET "https://team-admin-25.preview.emergentagent.com/api/auth/me" \
   -H "Authorization: Bearer YOUR_SESSION_TOKEN"
 
 # Test employees endpoint
-curl -X GET "https://workforce-portal-76.preview.emergentagent.com/api/employees" \
+curl -X GET "https://team-admin-25.preview.emergentagent.com/api/employees" \
   -H "Authorization: Bearer YOUR_SESSION_TOKEN"
 ```
 
@@ -47,7 +47,7 @@ await page.context.add_cookies([{
     "secure": True,
     "sameSite": "None"
 }])
-await page.goto("https://workforce-portal-76.preview.emergentagent.com")
+await page.goto("https://team-admin-25.preview.emergentagent.com")
 ```
 
 ## Checklist
