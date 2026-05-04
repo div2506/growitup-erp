@@ -12,12 +12,14 @@ from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 import logging
 import json
+import calendar as cal_module
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 ADMIN_EMAIL = "info.growitup@gmail.com"
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
+ATTENDANCE_API_KEY = os.environ.get('ATTENDANCE_API_KEY', 'att_growitup_key_2026')
 
 
 class GoogleAuth(BaseModel):
@@ -131,6 +133,18 @@ class ShiftChangeRequestReview(BaseModel):
     admin_notes: Optional[str] = None
 
 
+class AttendanceEntryCreate(BaseModel):
+    employee_id: str
+    timestamp: str  # ISO format: "2026-04-27T09:15:30"
+
+
+class DailyAttendanceUpdate(BaseModel):
+    status: str  # "Present", "Half Day", "Absent", "Leave", "WFH", "Holiday"
+    notes: Optional[str] = None
+    check_in: Optional[str] = None   # "HH:MM"
+    check_out: Optional[str] = None  # "HH:MM"
+
+
 # ===================== HELPERS =====================
 
 async def get_current_user(request: Request):
@@ -220,6 +234,198 @@ async def ensure_default_shift():
         await db.shifts.insert_one(default_shift)
         return {k: v for k, v in default_shift.items() if k != "_id"}
     return existing
+
+
+# ===================== ATTENDANCE HELPERS =====================
+
+def is_1st_or_3rd_saturday(date_obj) -> bool:
+    """Check if date is 1st or 3rd Saturday of the month."""
+    if date_obj.weekday() != 5:  # Not Saturday
+        return False
+    day = date_obj.day
+    saturday_num = (day - 1) // 7 + 1
+    return saturday_num in [1, 3]
+
+
+def get_shift_timings_for_date(shift: dict, date_obj) -> dict:
+    """Get actual shift timings for a date (handles Saturday half-day)."""
+    if shift.get("shift_name") == "Regular 9-6" and is_1st_or_3rd_saturday(date_obj):
+        return {**shift, "start_time": "08:00", "end_time": "13:00", "total_hours": 5, "break_duration": 0}
+    return shift
+
+
+async def get_active_shift_for_date_async(employee_id: str, date_obj) -> dict:
+    """Get the active shift for an employee on a specific date (handles temp shift changes)."""
+    date_str = date_obj.strftime("%Y-%m-%d")
+    # Check approved temporary shift change for this date
+    temp_req = await db.shift_change_requests.find_one({
+        "employee_id": employee_id, "status": "Approved",
+        "from_date": {"$lte": date_str}, "to_date": {"$gte": date_str}
+    }, {"_id": 0})
+    if temp_req:
+        shift = await db.shifts.find_one({"shift_id": temp_req["requested_shift_id"]}, {"_id": 0})
+        if shift:
+            return shift
+    # Permanent shift assignment
+    emp_shift = await db.employee_shifts.find_one({"employee_id": employee_id}, {"_id": 0})
+    if emp_shift:
+        shift = await db.shifts.find_one({"shift_id": emp_shift["shift_id"]}, {"_id": 0})
+        if shift:
+            return shift
+    return await get_default_shift()
+
+
+async def upsert_daily_attendance(employee_id: str, date_str: str, data: dict) -> dict:
+    """Create or update a daily attendance record (won't override Leave/WFH/Holiday unless explicitly set)."""
+    existing = await db.daily_attendance.find_one(
+        {"employee_id": employee_id, "date": date_str}, {"_id": 0}
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    if existing:
+        # Don't override protected statuses unless explicitly provided in data
+        if existing.get("status") in ["Leave", "WFH", "Holiday"] and "status" not in data:
+            return existing
+        update = {**data, "updated_at": now}
+        await db.daily_attendance.update_one(
+            {"employee_id": employee_id, "date": date_str}, {"$set": update}
+        )
+        return {**existing, **update}
+    else:
+        record = {
+            "attendance_id": f"att_{uuid.uuid4().hex[:12]}",
+            "employee_id": employee_id, "date": date_str,
+            **data, "created_at": now, "updated_at": now
+        }
+        await db.daily_attendance.insert_one(record)
+        return {k: v for k, v in record.items() if k != "_id"}
+
+
+async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Optional[dict]:
+    """Process biometric punches → DailyAttendance record with status + late tracking."""
+    try:
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        shift = await get_active_shift_for_date_async(employee_id, date_obj)
+        if not shift:
+            return None
+        shift_timings = get_shift_timings_for_date(shift, date_obj)
+
+        # Don't override manually-set Leave/WFH/Holiday
+        existing = await db.daily_attendance.find_one(
+            {"employee_id": employee_id, "date": date_str}, {"_id": 0}
+        )
+        if existing and existing.get("status") in ["Leave", "WFH", "Holiday"]:
+            return existing
+
+        # Sunday → Holiday
+        if date_obj.weekday() == 6:
+            return await upsert_daily_attendance(employee_id, date_str, {
+                "shift_id": shift["shift_id"], "check_in": None, "check_out": None,
+                "total_hours": None, "status": "Holiday", "is_late": False, "late_minutes": 0, "notes": "Sunday"
+            })
+
+        # Get raw punches sorted ascending
+        punches = await db.attendance_entries.find(
+            {"employee_id": employee_id, "punch_date": date_str}, {"_id": 0}
+        ).sort("punch_time", 1).to_list(1000)
+
+        if not punches:
+            return await upsert_daily_attendance(employee_id, date_str, {
+                "shift_id": shift["shift_id"], "check_in": None, "check_out": None,
+                "total_hours": 0, "status": "Absent", "is_late": False, "late_minutes": 0, "notes": None
+            })
+
+        ci_dt = datetime.fromisoformat(punches[0]["punch_time"])
+        co_dt = datetime.fromisoformat(punches[-1]["punch_time"])
+
+        # Total hours minus break
+        total_minutes = max(0, (co_dt - ci_dt).total_seconds() / 60 - shift_timings.get("break_duration", 0))
+        total_hours = round(total_minutes / 60, 2)
+
+        # Late detection: 10-minute grace period
+        exp_h, exp_m = map(int, shift_timings["start_time"].split(":"))
+        exp_start_mins = exp_h * 60 + exp_m
+        grace_cutoff = exp_start_mins + 10
+        ci_mins = ci_dt.hour * 60 + ci_dt.minute
+        is_late = ci_mins > grace_cutoff
+        late_minutes = max(0, ci_mins - exp_start_mins) if is_late else 0
+
+        # Status thresholds (Saturday half-day uses different thresholds)
+        if shift_timings.get("total_hours") == 5:
+            full_threshold = 4 * 60 + 50  # 4h50m
+            half_threshold = 2 * 60 + 30  # 2h30m
+        else:
+            full_threshold = 8 * 60 + 50  # 8h50m
+            half_threshold = 3 * 60 + 50  # 3h50m
+
+        if total_minutes >= full_threshold:
+            status = "Present"
+        elif total_minutes >= half_threshold:
+            status = "Half Day"
+        else:
+            status = "Absent"
+
+        result = await upsert_daily_attendance(employee_id, date_str, {
+            "shift_id": shift["shift_id"],
+            "check_in": ci_dt.strftime("%H:%M"),
+            "check_out": co_dt.strftime("%H:%M"),
+            "total_hours": total_hours, "status": status,
+            "is_late": is_late, "late_minutes": late_minutes, "notes": None
+        })
+        if is_late:
+            await update_late_tracking_fn(employee_id, date_str, late_minutes)
+        return result
+    except Exception as e:
+        logger.error(f"[Attendance] Error processing {employee_id} {date_str}: {e}")
+        return None
+
+
+async def update_late_tracking_fn(employee_id: str, date_str: str, late_minutes: int):
+    """Update monthly late count and apply penalties."""
+    try:
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        month_str = date_obj.strftime("%Y-%m-01")
+        year = date_obj.year
+
+        tracking = await db.monthly_late_tracking.find_one(
+            {"employee_id": employee_id, "month": month_str}, {"_id": 0}
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        if not tracking:
+            tracking = {
+                "tracking_id": f"lt_{uuid.uuid4().hex[:12]}",
+                "employee_id": employee_id, "month": month_str, "year": year,
+                "late_count": 0, "penalties_applied": [], "created_at": now, "updated_at": now
+            }
+            await db.monthly_late_tracking.insert_one(tracking)
+
+        new_count = tracking["late_count"] + 1
+        penalties = list(tracking.get("penalties_applied", []))
+
+        if new_count >= 4:
+            emp = await db.employees.find_one({"employee_id": employee_id}, {"_id": 0})
+            if emp:
+                days_in_month = cal_module.monthrange(date_obj.year, date_obj.month)[1]
+                if new_count == 4:
+                    one_day_salary = round(emp.get("basic_salary", 0) / days_in_month, 2)
+                    penalties.append({
+                        "date": date_str, "late_number": new_count,
+                        "type": "leave_or_salary_deduction", "amount": one_day_salary,
+                        "description": f"4th late: 1 paid leave OR {one_day_salary} salary deduction"
+                    })
+                else:
+                    penalty = round(emp.get("basic_salary", 0) * 0.0167, 2)
+                    penalties.append({
+                        "date": date_str, "late_number": new_count,
+                        "type": "salary_deduction_1_67pct", "amount": penalty, "percentage": 1.67,
+                        "description": f"{new_count}th late: 1.67% salary deduction = {penalty}"
+                    })
+
+        await db.monthly_late_tracking.update_one(
+            {"employee_id": employee_id, "month": month_str},
+            {"$set": {"late_count": new_count, "penalties_applied": penalties, "updated_at": now}}
+        )
+    except Exception as e:
+        logger.error(f"[Late Tracking] Error for {employee_id}: {e}")
 
 
 # ===================== AUTH ROUTES =====================
@@ -2385,6 +2591,303 @@ async def cancel_shift_change_request(request_id: str, request: Request):
 
     await db.shift_change_requests.delete_one({"request_id": request_id})
     return {"message": "Request cancelled"}
+
+
+# ===================== ATTENDANCE SYSTEM =====================
+
+@api_router.post("/attendance/entry")
+async def create_attendance_entry(body: AttendanceEntryCreate, request: Request):
+    """Public biometric endpoint — requires X-API-Key header or ?api_key= query param."""
+    api_key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+    if api_key != ATTENDANCE_API_KEY:
+        raise HTTPException(401, "Invalid or missing API key")
+
+    emp = await db.employees.find_one({"employee_id": body.employee_id}, {"_id": 0})
+    if not emp:
+        raise HTTPException(400, f"Employee {body.employee_id} not found")
+
+    try:
+        punch_dt = datetime.fromisoformat(body.timestamp)
+        punch_date = punch_dt.strftime("%Y-%m-%d")
+        punch_time_str = punch_dt.isoformat()
+    except ValueError:
+        raise HTTPException(400, "Invalid timestamp. Use ISO format: YYYY-MM-DDTHH:MM:SS")
+
+    now = datetime.now(timezone.utc).isoformat()
+    entry = {
+        "entry_id": f"ae_{uuid.uuid4().hex[:12]}",
+        "employee_id": body.employee_id,
+        "punch_time": punch_time_str,
+        "punch_date": punch_date,
+        "created_at": now
+    }
+    await db.attendance_entries.insert_one(entry)
+    # Process in real-time
+    await process_daily_attendance_fn(body.employee_id, punch_date)
+    return {"success": True, "message": "Attendance entry recorded", "entry_id": entry["entry_id"]}
+
+
+@api_router.post("/attendance/process")
+async def process_attendance_endpoint(request: Request):
+    """Process/re-process attendance for employee + date. Useful for manual trigger."""
+    user = await get_current_user(request)
+    body = await request.json()
+    employee_id = body.get("employee_id")
+    date_str = body.get("date")
+    if not employee_id or not date_str:
+        raise HTTPException(400, "employee_id and date required")
+
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin and (not my_emp or my_emp["employee_id"] != employee_id):
+        raise HTTPException(403, "Access denied")
+
+    result = await process_daily_attendance_fn(employee_id, date_str)
+    return result or {"message": "No punches found for this date"}
+
+
+@api_router.get("/attendance/daily")
+async def get_daily_attendance(
+    request: Request,
+    employee_id: Optional[str] = None,
+    month: Optional[str] = None  # "YYYY-MM-DD" first day of month
+):
+    """Get all daily attendance records for employee in a month."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+
+    if not employee_id:
+        if not my_emp:
+            raise HTTPException(400, "employee_id required")
+        employee_id = my_emp["employee_id"]
+
+    if not is_admin and (not my_emp or my_emp["employee_id"] != employee_id):
+        raise HTTPException(403, "Access denied")
+
+    query: dict = {"employee_id": employee_id}
+    if month:
+        try:
+            mdt = datetime.strptime(month, "%Y-%m-%d")
+            last = cal_module.monthrange(mdt.year, mdt.month)[1]
+            query["date"] = {"$gte": mdt.strftime("%Y-%m-01"), "$lte": mdt.strftime(f"%Y-%m-{last:02d}")}
+        except ValueError:
+            pass
+
+    records = await db.daily_attendance.find(query, {"_id": 0}).sort("date", 1).to_list(1000)
+
+    # Enrich with shift name
+    shift_cache: dict = {}
+    for rec in records:
+        sid = rec.get("shift_id")
+        if sid:
+            if sid not in shift_cache:
+                s = await db.shifts.find_one({"shift_id": sid}, {"_id": 0})
+                shift_cache[sid] = s
+            rec["shift"] = shift_cache.get(sid)
+    return records
+
+
+@api_router.get("/attendance/summary")
+async def get_attendance_summary(
+    request: Request,
+    employee_id: Optional[str] = None,
+    month: Optional[str] = None
+):
+    """Get attendance summary (counts by status + late tracking) for a month."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+
+    if not employee_id:
+        if not my_emp:
+            raise HTTPException(400, "employee_id required")
+        employee_id = my_emp["employee_id"]
+
+    if not is_admin and (not my_emp or my_emp["employee_id"] != employee_id):
+        raise HTTPException(403, "Access denied")
+
+    query: dict = {"employee_id": employee_id}
+    if month:
+        try:
+            mdt = datetime.strptime(month, "%Y-%m-%d")
+            last = cal_module.monthrange(mdt.year, mdt.month)[1]
+            query["date"] = {"$gte": mdt.strftime("%Y-%m-01"), "$lte": mdt.strftime(f"%Y-%m-{last:02d}")}
+        except ValueError:
+            pass
+
+    records = await db.daily_attendance.find(query, {"_id": 0}).to_list(1000)
+    summary = {
+        "present": sum(1 for r in records if r.get("status") == "Present"),
+        "half_day": sum(1 for r in records if r.get("status") == "Half Day"),
+        "absent": sum(1 for r in records if r.get("status") == "Absent"),
+        "leave": sum(1 for r in records if r.get("status") == "Leave"),
+        "wfh": sum(1 for r in records if r.get("status") == "WFH"),
+        "holiday": sum(1 for r in records if r.get("status") == "Holiday"),
+        "late_count": sum(1 for r in records if r.get("is_late")),
+        "total_hours": round(sum(r.get("total_hours") or 0 for r in records), 2)
+    }
+
+    late_tracking = None
+    if month:
+        month_str = datetime.strptime(month, "%Y-%m-%d").strftime("%Y-%m-01")
+        late_tracking = await db.monthly_late_tracking.find_one(
+            {"employee_id": employee_id, "month": month_str}, {"_id": 0}
+        )
+
+    return {"summary": summary, "late_tracking": late_tracking}
+
+
+@api_router.get("/attendance/all-employees-summary")
+async def get_all_employees_attendance_summary(
+    request: Request,
+    month: Optional[str] = None
+):
+    """Admin only: attendance summary for all employees in a month."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Admin department only")
+
+    date_query: dict = {}
+    if month:
+        try:
+            mdt = datetime.strptime(month, "%Y-%m-%d")
+            last = cal_module.monthrange(mdt.year, mdt.month)[1]
+            date_query = {"$gte": mdt.strftime("%Y-%m-01"), "$lte": mdt.strftime(f"%Y-%m-{last:02d}")}
+        except ValueError:
+            pass
+
+    employees = await db.employees.find({"status": "Active"}, {"_id": 0}).to_list(1000)
+    result = []
+    for emp in employees:
+        q: dict = {"employee_id": emp["employee_id"]}
+        if date_query:
+            q["date"] = date_query
+        recs = await db.daily_attendance.find(q, {"_id": 0}).to_list(1000)
+        result.append({
+            "employee_id": emp["employee_id"],
+            "first_name": emp["first_name"],
+            "last_name": emp["last_name"],
+            "department_name": emp.get("department_name"),
+            "profile_picture": emp.get("profile_picture"),
+            "present": sum(1 for r in recs if r.get("status") == "Present"),
+            "half_day": sum(1 for r in recs if r.get("status") == "Half Day"),
+            "absent": sum(1 for r in recs if r.get("status") == "Absent"),
+            "late_count": sum(1 for r in recs if r.get("is_late")),
+            "total_hours": round(sum(r.get("total_hours") or 0 for r in recs), 2),
+        })
+    return result
+
+
+@api_router.put("/attendance/{attendance_id}")
+async def update_daily_attendance(attendance_id: str, body: DailyAttendanceUpdate, request: Request):
+    """Admin only: manually override attendance status/times for any date."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can override attendance")
+
+    existing = await db.daily_attendance.find_one({"attendance_id": attendance_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Attendance record not found")
+
+    valid = ["Present", "Half Day", "Absent", "Leave", "WFH", "Holiday"]
+    if body.status not in valid:
+        raise HTTPException(400, f"Invalid status. Must be one of: {', '.join(valid)}")
+
+    update: dict = {"status": body.status, "updated_at": datetime.now(timezone.utc).isoformat()}
+    if body.notes is not None:
+        update["notes"] = body.notes
+    if body.check_in is not None:
+        update["check_in"] = body.check_in
+    if body.check_out is not None:
+        update["check_out"] = body.check_out
+
+    await db.daily_attendance.update_one({"attendance_id": attendance_id}, {"$set": update})
+    return {**existing, **update}
+
+
+@api_router.post("/attendance/manual")
+async def create_manual_attendance(request: Request):
+    """Admin only: create or override attendance record manually for any employee+date."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can manually create attendance")
+
+    body = await request.json()
+    employee_id = body.get("employee_id")
+    date_str = body.get("date")
+    status = body.get("status")
+    notes = body.get("notes", "")
+    check_in = body.get("check_in")
+    check_out = body.get("check_out")
+
+    if not employee_id or not date_str or not status:
+        raise HTTPException(400, "employee_id, date, and status required")
+
+    valid = ["Present", "Half Day", "Absent", "Leave", "WFH", "Holiday"]
+    if status not in valid:
+        raise HTTPException(400, f"Invalid status. Must be one of: {', '.join(valid)}")
+
+    emp = await db.employees.find_one({"employee_id": employee_id}, {"_id": 0})
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+
+    shift = await get_active_shift_for_date_async(employee_id, datetime.strptime(date_str, "%Y-%m-%d"))
+    shift_id = shift["shift_id"] if shift else None
+
+    record = await upsert_daily_attendance(employee_id, date_str, {
+        "shift_id": shift_id, "status": status,
+        "check_in": check_in, "check_out": check_out,
+        "total_hours": None, "is_late": False, "late_minutes": 0, "notes": notes
+    })
+    return record
+
+
+@api_router.get("/attendance/late-tracking")
+async def get_late_tracking(
+    request: Request,
+    employee_id: Optional[str] = None,
+    month: Optional[str] = None
+):
+    """Get monthly late tracking data for an employee."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+
+    if not employee_id:
+        if not my_emp:
+            raise HTTPException(400, "employee_id required")
+        employee_id = my_emp["employee_id"]
+
+    if not is_admin and (not my_emp or my_emp["employee_id"] != employee_id):
+        raise HTTPException(403, "Access denied")
+
+    query: dict = {"employee_id": employee_id}
+    if month:
+        query["month"] = datetime.strptime(month, "%Y-%m-%d").strftime("%Y-%m-01")
+
+    records = await db.monthly_late_tracking.find(query, {"_id": 0}).sort("month", -1).to_list(24)
+    return records
 
 
 app.include_router(api_router)

@@ -1,505 +1,659 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for Creative Team of the Month Feature
-Tests all manager performance endpoints with authentication and validation
+Backend API Testing for Attendance System
+Tests all attendance endpoints with proper authentication
 """
 
 import requests
 import json
-import sys
-import uuid
-from datetime import datetime, timedelta, timezone
-import asyncio
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
+from datetime import datetime
 
 # Configuration
-BACKEND_URL = "https://workforce-portal-76.preview.emergentagent.com/api"
+BASE_URL = "http://localhost:8001/api"
+ATTENDANCE_API_KEY = "att_growitup_key_2026"
+
+# Test credentials
 ADMIN_EMAIL = "info.growitup@gmail.com"
+EMPLOYEE_EMAIL = "john.doe@growitup.com"
 
-# Database connection
-MONGO_URL = "mongodb://localhost:27017"
-DB_NAME = "incremental-build-2-growitup_erp"
+# Color codes for output
+GREEN = '\033[92m'
+RED = '\033[91m'
+YELLOW = '\033[93m'
+BLUE = '\033[94m'
+RESET = '\033[0m'
 
-class ManagerPerformanceAPITester:
+class TestResults:
     def __init__(self):
-        self.session_token = None
-        self.admin_session_token = None
-        self.non_admin_session_token = None
-        self.test_results = []
-        self.client = AsyncIOMotorClient(MONGO_URL)
-        self.db = self.client[DB_NAME]
-        
-    async def cleanup_test_data(self):
-        """Clean up any test data created during testing"""
-        try:
-            # Remove test performance entries
-            await self.db.manager_performance.delete_many({
-                "manager_id": "GM001",
-                "month": {"$in": ["2026-05-01", "2026-06-01", "2026-07-01"]}
-            })
-        except Exception as e:
-            print(f"Cleanup warning: {e}")
-        
-    async def create_real_session(self):
-        """Create a real session in the database for testing"""
-        try:
-            # Create admin user if not exists
-            user_id = f"user_{uuid.uuid4().hex[:12]}"
-            admin_user = {
-                "user_id": user_id,
-                "email": ADMIN_EMAIL,
-                "name": "Admin GrowItUp",
-                "picture": "",
-                "is_admin": True,
-                "created_at": datetime.now(timezone.utc).isoformat()
-            }
-            
-            # Check if user exists
-            existing_user = await self.db.users.find_one({"email": ADMIN_EMAIL}, {"_id": 0})
-            if existing_user:
-                user_id = existing_user["user_id"]
-            else:
-                await self.db.users.insert_one(admin_user)
-            
-            # Create session
-            session_token = str(uuid.uuid4())
-            expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-            
-            # Remove old sessions
-            await self.db.user_sessions.delete_many({"user_id": user_id})
-            
-            # Create new session
-            await self.db.user_sessions.insert_one({
-                "user_id": user_id,
-                "session_token": session_token,
-                "expires_at": expires_at.isoformat(),
-                "created_at": datetime.now(timezone.utc).isoformat()
-            })
-            
-            self.admin_session_token = session_token
-            self.session_token = session_token
-            
-            self.log_test("Session Creation", "PASS", f"Real admin session created: {session_token[:8]}...")
-            return True
-            
-        except Exception as e:
-            self.log_test("Session Creation", "FAIL", f"Failed to create session: {str(e)}")
-            return False
+        self.passed = 0
+        self.failed = 0
+        self.tests = []
     
-    async def create_test_manager_and_team(self):
-        """Create test manager and team data if needed"""
-        try:
-            # Check if GM001 exists
-            manager = await self.db.employees.find_one({"employee_id": "GM001"}, {"_id": 0})
-            if not manager:
-                # Create test manager
-                test_manager = {
-                    "employee_id": "GM001",
-                    "first_name": "Test",
-                    "last_name": "Manager",
-                    "work_email": ADMIN_EMAIL,
-                    "department_name": "Admin",
-                    "job_position_name": "Manager",
-                    "profile_picture": "",
-                    "status": "Active",
-                    "created_at": datetime.now(timezone.utc).isoformat()
-                }
-                await self.db.employees.insert_one(test_manager)
-                self.log_test("Test Data Setup", "PASS", "Created test manager GM001")
-            
-            # Check if team exists with GM001 as manager
-            team = await self.db.teams.find_one({"team_manager_id": "GM001"}, {"_id": 0})
-            if not team:
-                # Create test team
-                test_team = {
-                    "team_id": f"team_{uuid.uuid4().hex[:8]}",
-                    "team_name": "Test Creative Team",
-                    "team_manager_id": "GM001",
-                    "created_at": datetime.now(timezone.utc).isoformat()
-                }
-                await self.db.teams.insert_one(test_team)
-                self.log_test("Test Data Setup", "PASS", "Created test team with GM001 as manager")
-                
-        except Exception as e:
-            self.log_test("Test Data Setup", "FAIL", f"Failed to create test data: {str(e)}")
+    def add_pass(self, test_name, details=""):
+        self.passed += 1
+        self.tests.append({"name": test_name, "status": "PASS", "details": details})
+        print(f"{GREEN}✓ PASS{RESET}: {test_name}")
+        if details:
+            print(f"  {details}")
     
-    def create_test_session(self):
-        """Create a test session for authentication"""
-        # This method is now replaced by create_real_session
-        return asyncio.run(self.create_real_session())
-    def log_test(self, test_name, status, details=""):
-        """Log test result"""
-        result = {
-            "test": test_name,
-            "status": status,
-            "details": details,
-            "timestamp": datetime.now().isoformat()
-        }
-        self.test_results.append(result)
-        status_symbol = "✅" if status == "PASS" else "❌" if status == "FAIL" else "⚠️"
-        print(f"{status_symbol} {test_name}: {details}")
-        
-    async def setup_test_environment(self):
-        """Setup test environment with real data"""
-        await self.create_test_manager_and_team()
-        await self.cleanup_test_data()  # Clean any previous test data
-        
-    def test_managers_with_teams_endpoint(self):
-        """Test GET /api/managers-with-teams endpoint"""
-        try:
-            headers = {
-                "Authorization": f"Bearer {self.session_token}",
-                "Content-Type": "application/json"
-            }
-            
-            response = requests.get(f"{BACKEND_URL}/managers-with-teams", headers=headers)
-            
-            if response.status_code == 401:
-                self.log_test("GET /managers-with-teams - Authentication", "FAIL", 
-                            "Authentication required but failed - this is expected in test environment")
-                return False
-                
-            elif response.status_code == 200:
-                data = response.json()
-                
-                # Validate response structure
-                if isinstance(data, list):
-                    self.log_test("GET /managers-with-teams - Response Structure", "PASS", 
-                                f"Returns array with {len(data)} managers")
-                    
-                    # Check if managers have required fields
-                    if data:
-                        manager = data[0]
-                        required_fields = ["employee_id", "first_name", "last_name", "profile_picture"]
-                        missing_fields = [field for field in required_fields if field not in manager]
-                        
-                        if not missing_fields:
-                            self.log_test("GET /managers-with-teams - Field Validation", "PASS", 
-                                        "All required fields present")
-                        else:
-                            self.log_test("GET /managers-with-teams - Field Validation", "FAIL", 
-                                        f"Missing fields: {missing_fields}")
-                    
-                    # Check if sorted alphabetically
-                    if len(data) > 1:
-                        names = [f"{m['first_name']} {m['last_name']}" for m in data]
-                        sorted_names = sorted(names)
-                        if names == sorted_names:
-                            self.log_test("GET /managers-with-teams - Sorting", "PASS", 
-                                        "Managers sorted alphabetically by name")
-                        else:
-                            self.log_test("GET /managers-with-teams - Sorting", "FAIL", 
-                                        "Managers not sorted alphabetically")
-                else:
-                    self.log_test("GET /managers-with-teams - Response Structure", "FAIL", 
-                                "Response is not an array")
-                    
-            else:
-                self.log_test("GET /managers-with-teams", "FAIL", 
-                            f"Unexpected status code: {response.status_code}")
-                
-        except Exception as e:
-            self.log_test("GET /managers-with-teams", "FAIL", f"Request failed: {str(e)}")
+    def add_fail(self, test_name, details=""):
+        self.failed += 1
+        self.tests.append({"name": test_name, "status": "FAIL", "details": details})
+        print(f"{RED}✗ FAIL{RESET}: {test_name}")
+        if details:
+            print(f"  {details}")
     
-    def test_manager_performance_get_endpoint(self):
-        """Test GET /api/manager-performance endpoint with various filters"""
-        try:
-            headers = {
-                "Authorization": f"Bearer {self.session_token}",
-                "Content-Type": "application/json"
-            }
-            
-            # Test 1: Get all manager performance entries
-            response = requests.get(f"{BACKEND_URL}/manager-performance", headers=headers)
-            
-            if response.status_code == 401:
-                self.log_test("GET /manager-performance - Authentication", "FAIL", 
-                            "Authentication required but failed - this is expected in test environment")
-                return False
-                
-            elif response.status_code == 200:
-                data = response.json()
-                self.log_test("GET /manager-performance - All Entries", "PASS", 
-                            f"Returns {len(data)} performance entries")
-                
-                # Validate response structure
-                if data:
-                    entry = data[0]
-                    required_fields = ["manager_id", "month", "client_performance_score", 
-                                     "client_feedback_score", "creative_task_score", 
-                                     "total_points_month", "manager"]
-                    missing_fields = [field for field in required_fields if field not in entry]
-                    
-                    if not missing_fields:
-                        self.log_test("GET /manager-performance - Field Validation", "PASS", 
-                                    "All required fields present")
-                        
-                        # Check manager enrichment
-                        manager = entry.get("manager", {})
-                        manager_fields = ["employee_id", "first_name", "last_name", "profile_picture"]
-                        missing_manager_fields = [field for field in manager_fields if field not in manager]
-                        
-                        if not missing_manager_fields:
-                            self.log_test("GET /manager-performance - Manager Enrichment", "PASS", 
-                                        "Manager details properly enriched")
-                        else:
-                            self.log_test("GET /manager-performance - Manager Enrichment", "FAIL", 
-                                        f"Missing manager fields: {missing_manager_fields}")
-                    else:
-                        self.log_test("GET /manager-performance - Field Validation", "FAIL", 
-                                    f"Missing fields: {missing_fields}")
-                
-                # Test 2: Filter by month
-                test_month = "2026-04-01"
-                response = requests.get(f"{BACKEND_URL}/manager-performance?month={test_month}", 
-                                      headers=headers)
-                if response.status_code == 200:
-                    filtered_data = response.json()
-                    self.log_test("GET /manager-performance - Month Filter", "PASS", 
-                                f"Month filter returns {len(filtered_data)} entries")
-                else:
-                    self.log_test("GET /manager-performance - Month Filter", "FAIL", 
-                                f"Month filter failed: {response.status_code}")
-                
-                # Test 3: Filter by manager_id (if we have data)
-                if data:
-                    test_manager_id = data[0]["manager_id"]
-                    response = requests.get(f"{BACKEND_URL}/manager-performance?manager_id={test_manager_id}", 
-                                          headers=headers)
-                    if response.status_code == 200:
-                        manager_data = response.json()
-                        self.log_test("GET /manager-performance - Manager Filter", "PASS", 
-                                    f"Manager filter returns {len(manager_data)} entries")
-                    else:
-                        self.log_test("GET /manager-performance - Manager Filter", "FAIL", 
-                                    f"Manager filter failed: {response.status_code}")
-                        
-            else:
-                self.log_test("GET /manager-performance", "FAIL", 
-                            f"Unexpected status code: {response.status_code}")
-                
-        except Exception as e:
-            self.log_test("GET /manager-performance", "FAIL", f"Request failed: {str(e)}")
-    
-    def test_manager_performance_post_endpoint(self):
-        """Test POST /api/manager-performance endpoint"""
-        try:
-            headers = {
-                "Authorization": f"Bearer {self.admin_session_token}",
-                "Content-Type": "application/json"
-            }
-            
-            # Test 1: Valid performance entry creation
-            test_data = {
-                "manager_id": "GM001",
-                "month": "2026-05-01",
-                "client_performance_score": 95,
-                "client_feedback_score": 88,
-                "creative_task_score": 92
-            }
-            
-            response = requests.post(f"{BACKEND_URL}/manager-performance", 
-                                   headers=headers, json=test_data)
-            
-            if response.status_code == 401:
-                self.log_test("POST /manager-performance - Authentication", "FAIL", 
-                            "Authentication required but failed - this is expected in test environment")
-                return False
-                
-            elif response.status_code in [200, 201]:
-                data = response.json()
-                expected_total = round((95 + 88 + 92) / 3, 2)  # 91.67
-                
-                if data.get("total_points_month") == expected_total:
-                    self.log_test("POST /manager-performance - Valid Creation", "PASS", 
-                                f"Entry created with correct total_points_month: {expected_total}")
-                else:
-                    self.log_test("POST /manager-performance - Total Calculation", "FAIL", 
-                                f"Expected {expected_total}, got {data.get('total_points_month')}")
-                    
-            elif response.status_code == 400:
-                self.log_test("POST /manager-performance - Valid Creation", "FAIL", 
-                            f"Valid data rejected: {response.json()}")
-            else:
-                self.log_test("POST /manager-performance - Valid Creation", "FAIL", 
-                            f"Unexpected status code: {response.status_code}, expected 200 or 201")
-            
-            # Test 2: Duplicate entry (should fail)
-            duplicate_response = requests.post(f"{BACKEND_URL}/manager-performance", 
-                                             headers=headers, json=test_data)
-            
-            if duplicate_response.status_code == 400:
-                error_msg = duplicate_response.json().get("detail", "")
-                if "duplicate" in error_msg.lower() or "already exists" in error_msg.lower():
-                    self.log_test("POST /manager-performance - Duplicate Prevention", "PASS", 
-                                "Duplicate entry correctly rejected")
-                else:
-                    self.log_test("POST /manager-performance - Duplicate Prevention", "FAIL", 
-                                f"Wrong error message: {error_msg}")
-            else:
-                self.log_test("POST /manager-performance - Duplicate Prevention", "FAIL", 
-                            f"Duplicate not rejected, status: {duplicate_response.status_code}")
-            
-            # Test 3: Invalid score (should fail)
-            invalid_data = {
-                "manager_id": "GM001",
-                "month": "2026-06-01",
-                "client_performance_score": 150,  # Invalid: > 100
-                "client_feedback_score": 88,
-                "creative_task_score": 92
-            }
-            
-            invalid_response = requests.post(f"{BACKEND_URL}/manager-performance", 
-                                           headers=headers, json=invalid_data)
-            
-            if invalid_response.status_code == 400:
-                self.log_test("POST /manager-performance - Score Validation", "PASS", 
-                            "Invalid score correctly rejected")
-            else:
-                self.log_test("POST /manager-performance - Score Validation", "FAIL", 
-                            f"Invalid score not rejected, status: {invalid_response.status_code}")
-            
-            # Test 4: Non-admin access (should fail)
-            non_admin_headers = {
-                "Authorization": f"Bearer {self.non_admin_session_token or 'non_admin_token'}",
-                "Content-Type": "application/json"
-            }
-            
-            non_admin_data = {
-                "manager_id": "GM001",
-                "month": "2026-07-01",
-                "client_performance_score": 95,
-                "client_feedback_score": 88,
-                "creative_task_score": 92
-            }
-            
-            non_admin_response = requests.post(f"{BACKEND_URL}/manager-performance", 
-                                             headers=non_admin_headers, json=non_admin_data)
-            
-            if non_admin_response.status_code in [401, 403]:
-                self.log_test("POST /manager-performance - Admin Only Access", "PASS", 
-                            "Non-admin access correctly rejected")
-            else:
-                self.log_test("POST /manager-performance - Admin Only Access", "FAIL", 
-                            f"Non-admin access not rejected, status: {non_admin_response.status_code}")
-                
-        except Exception as e:
-            self.log_test("POST /manager-performance", "FAIL", f"Request failed: {str(e)}")
-    
-    def test_manager_performance_put_endpoint(self):
-        """Test PUT /api/manager-performance/{perf_id} endpoint"""
-        try:
-            headers = {
-                "Authorization": f"Bearer {self.admin_session_token}",
-                "Content-Type": "application/json"
-            }
-            
-            # First, get existing performance entries to find a perf_id
-            response = requests.get(f"{BACKEND_URL}/manager-performance", headers=headers)
-            
-            if response.status_code != 200:
-                self.log_test("PUT /manager-performance - Get Existing Entry", "FAIL", 
-                            "Cannot get existing entries for update test")
-                return
-            
-            data = response.json()
-            if not data:
-                self.log_test("PUT /manager-performance - Get Existing Entry", "FAIL", 
-                            "No existing entries to update")
-                return
-            
-            perf_id = data[0].get("perf_id")
-            if not perf_id:
-                self.log_test("PUT /manager-performance - Get Existing Entry", "FAIL", 
-                            "No perf_id found in existing entry")
-                return
-            
-            # Test update with valid data
-            update_data = {
-                "manager_id": data[0]["manager_id"],
-                "month": data[0]["month"],
-                "client_performance_score": 98,
-                "client_feedback_score": 95,
-                "creative_task_score": 96
-            }
-            
-            update_response = requests.put(f"{BACKEND_URL}/manager-performance/{perf_id}", 
-                                         headers=headers, json=update_data)
-            
-            if update_response.status_code == 401:
-                self.log_test("PUT /manager-performance - Authentication", "FAIL", 
-                            "Authentication required but failed - this is expected in test environment")
-                return
-                
-            elif update_response.status_code == 200:
-                updated_data = update_response.json()
-                expected_total = round((98 + 95 + 96) / 3, 2)  # 96.33
-                
-                if updated_data.get("total_points_month") == expected_total:
-                    self.log_test("PUT /manager-performance - Valid Update", "PASS", 
-                                f"Entry updated with correct total_points_month: {expected_total}")
-                else:
-                    self.log_test("PUT /manager-performance - Total Recalculation", "FAIL", 
-                                f"Expected {expected_total}, got {updated_data.get('total_points_month')}")
-                    
-            else:
-                self.log_test("PUT /manager-performance - Valid Update", "FAIL", 
-                            f"Update failed with status: {update_response.status_code}")
-                
-        except Exception as e:
-            self.log_test("PUT /manager-performance", "FAIL", f"Request failed: {str(e)}")
-    
-    async def run_all_tests(self):
-        """Run all manager performance API tests"""
-        print("🚀 Starting Creative Team of the Month Backend API Tests")
-        print("=" * 60)
-        
-        # Setup test environment
-        await self.setup_test_environment()
-        
-        # Setup authentication
-        if not await self.create_real_session():
-            print("❌ Cannot proceed without authentication session")
-            return False
-        
-        # Run tests
-        print("\n📋 Testing Manager Performance Endpoints:")
-        self.test_managers_with_teams_endpoint()
-        self.test_manager_performance_get_endpoint()
-        self.test_manager_performance_post_endpoint()
-        self.test_manager_performance_put_endpoint()
-        
-        # Cleanup
-        await self.cleanup_test_data()
-        
-        # Summary
-        print("\n" + "=" * 60)
-        print("📊 TEST SUMMARY")
-        print("=" * 60)
-        
-        passed = len([r for r in self.test_results if r["status"] == "PASS"])
-        failed = len([r for r in self.test_results if r["status"] == "FAIL"])
-        warnings = len([r for r in self.test_results if r["status"] == "WARNING"])
-        
-        print(f"✅ PASSED: {passed}")
-        print(f"❌ FAILED: {failed}")
-        print(f"⚠️  WARNINGS: {warnings}")
-        print(f"📈 TOTAL: {len(self.test_results)}")
-        
-        if failed > 0:
-            print("\n🔍 FAILED TESTS:")
-            for result in self.test_results:
-                if result["status"] == "FAIL":
-                    print(f"  ❌ {result['test']}: {result['details']}")
-        
-        return failed == 0
+    def summary(self):
+        total = self.passed + self.failed
+        print(f"\n{BLUE}{'='*60}{RESET}")
+        print(f"{BLUE}TEST SUMMARY{RESET}")
+        print(f"{BLUE}{'='*60}{RESET}")
+        print(f"Total Tests: {total}")
+        print(f"{GREEN}Passed: {self.passed}{RESET}")
+        print(f"{RED}Failed: {self.failed}{RESET}")
+        print(f"Pass Rate: {(self.passed/total*100) if total > 0 else 0:.1f}%")
+        print(f"{BLUE}{'='*60}{RESET}\n")
 
-async def main():
-    tester = ManagerPerformanceAPITester()
-    success = await tester.run_all_tests()
-    return success
+results = TestResults()
+
+def create_session():
+    """Create a session with cookies for authentication"""
+    session = requests.Session()
+    return session
+
+def login_as_admin(session):
+    """Login as admin user and set Bearer token"""
+    # Using Google auth endpoint with correct credential format
+    response = session.post(f"{BASE_URL}/auth/google", json={
+        "credential": {
+            "email": ADMIN_EMAIL,
+            "name": "Admin GrowItUp",
+            "picture": "https://example.com/admin.jpg",
+            "sub": "admin123"
+        }
+    })
+    if response.status_code == 200:
+        # Extract session token from cookies and set as Bearer token
+        session_token = response.cookies.get('session_token')
+        if session_token:
+            session.headers.update({"Authorization": f"Bearer {session_token}"})
+            print(f"{GREEN}✓ Logged in as Admin{RESET}")
+            return True
+        else:
+            print(f"{RED}✗ No session token in response{RESET}")
+            return False
+    else:
+        print(f"{RED}✗ Failed to login as Admin: {response.text}{RESET}")
+        return False
+
+def login_as_employee(session):
+    """Login as regular employee and set Bearer token"""
+    response = session.post(f"{BASE_URL}/auth/google", json={
+        "credential": {
+            "email": EMPLOYEE_EMAIL,
+            "name": "John Doe",
+            "picture": "https://example.com/john.jpg",
+            "sub": "employee123"
+        }
+    })
+    if response.status_code == 200:
+        # Extract session token from cookies and set as Bearer token
+        session_token = response.cookies.get('session_token')
+        if session_token:
+            session.headers.update({"Authorization": f"Bearer {session_token}"})
+            print(f"{GREEN}✓ Logged in as Employee{RESET}")
+            return True
+        else:
+            print(f"{RED}✗ No session token in response{RESET}")
+            return False
+    else:
+        print(f"{RED}✗ Failed to login as Employee: {response.text}{RESET}")
+        return False
+
+def setup_test_data():
+    """Setup test data - create GM002 employee if not exists"""
+    session = create_session()
+    login_as_admin(session)
+    
+    # Check if GM002 exists
+    response = session.get(f"{BASE_URL}/employees")
+    if response.status_code == 200:
+        employees = response.json()
+        gm002_exists = any(emp.get("employee_id") == "GM002" for emp in employees)
+        
+        if not gm002_exists:
+            print(f"{YELLOW}Creating GM002 employee...{RESET}")
+            # Create GM002
+            emp_data = {
+                "employee_id": "GM002",
+                "first_name": "Jane",
+                "last_name": "Smith",
+                "work_email": "jane.smith@growitup.com",
+                "personal_email": "jane.smith@personal.com",
+                "phone_number": "+919876543210",
+                "date_of_birth": "1995-05-15",
+                "gender": "Female",
+                "address": "456 Test Street",
+                "city": "Mumbai",
+                "state": "Maharashtra",
+                "pincode": "400001",
+                "date_of_joining": "2024-01-15",
+                "department_name": "Operations",
+                "job_position": "Video Editor",
+                "employment_type": "Full-Time",
+                "status": "Active",
+                "shift_id": "shift_default"
+            }
+            response = session.post(f"{BASE_URL}/employees", json=emp_data)
+            if response.status_code == 200:
+                print(f"{GREEN}✓ Created GM002 employee{RESET}")
+            else:
+                print(f"{YELLOW}Note: Could not create GM002: {response.text}{RESET}")
+
+def test_biometric_entry():
+    """Test 1: POST /api/attendance/entry - Biometric endpoint"""
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}TEST 1: POST /api/attendance/entry - Biometric Entry{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}\n")
+    
+    # Test 1.1: Valid entry with API key
+    headers = {"X-API-Key": ATTENDANCE_API_KEY}
+    data = {"employee_id": "GM001", "timestamp": "2026-07-04T09:15:30"}
+    response = requests.post(f"{BASE_URL}/attendance/entry", json=data, headers=headers)
+    
+    if response.status_code == 200 and response.json().get("success"):
+        results.add_pass("1.1: Biometric entry with valid API key", 
+                        f"Response: {response.json()}")
+    else:
+        results.add_fail("1.1: Biometric entry with valid API key", 
+                        f"Status: {response.status_code}, Response: {response.text}")
+    
+    # Test 1.2: Without API key (should fail with 401)
+    response = requests.post(f"{BASE_URL}/attendance/entry", json=data)
+    
+    if response.status_code == 401:
+        results.add_pass("1.2: Biometric entry without API key returns 401")
+    else:
+        results.add_fail("1.2: Biometric entry without API key returns 401", 
+                        f"Expected 401, got {response.status_code}")
+    
+    # Test 1.3: Invalid employee_id (should fail with 400)
+    data_invalid = {"employee_id": "INVALID999", "timestamp": "2026-07-04T09:15:30"}
+    response = requests.post(f"{BASE_URL}/attendance/entry", json=data_invalid, headers=headers)
+    
+    if response.status_code == 400:
+        results.add_pass("1.3: Biometric entry with invalid employee_id returns 400")
+    else:
+        results.add_fail("1.3: Biometric entry with invalid employee_id returns 400", 
+                        f"Expected 400, got {response.status_code}")
+    
+    # Test 1.4: Second punch same day (check-out)
+    data_checkout = {"employee_id": "GM001", "timestamp": "2026-07-04T18:05:00"}
+    response = requests.post(f"{BASE_URL}/attendance/entry", json=data_checkout, headers=headers)
+    
+    if response.status_code == 200 and response.json().get("success"):
+        results.add_pass("1.4: Second punch same day (check-out)", 
+                        f"Response: {response.json()}")
+    else:
+        results.add_fail("1.4: Second punch same day (check-out)", 
+                        f"Status: {response.status_code}, Response: {response.text}")
+
+def test_process_attendance():
+    """Test 2: POST /api/attendance/process - Re-process attendance"""
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}TEST 2: POST /api/attendance/process - Re-process Attendance{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}\n")
+    
+    session = create_session()
+    login_as_admin(session)
+    
+    # Test 2.1: Process GM001 for 2026-07-04
+    data = {"employee_id": "GM001", "date": "2026-07-04"}
+    response = session.post(f"{BASE_URL}/attendance/process", json=data)
+    
+    if response.status_code == 200:
+        result = response.json()
+        # Verify fields
+        checks = []
+        checks.append(("check_in exists", result.get("check_in") is not None))
+        checks.append(("check_out exists", result.get("check_out") is not None))
+        checks.append(("status exists", result.get("status") is not None))
+        checks.append(("is_late exists", result.get("is_late") is not None))
+        checks.append(("total_hours exists", result.get("total_hours") is not None))
+        
+        # Verify values
+        # NOTE: July 4, 2026 is 1st Saturday, so shift is 08:00-13:00 (Saturday half-day)
+        checks.append(("check_in is 09:15", result.get("check_in") == "09:15"))
+        checks.append(("check_out is 18:05", result.get("check_out") == "18:05"))
+        checks.append(("status is Present", result.get("status") == "Present"))
+        checks.append(("is_late is True", result.get("is_late") == True))
+        # late_minutes = 09:15 - 08:00 = 75 minutes (Saturday start time is 08:00)
+        checks.append(("late_minutes is 75", result.get("late_minutes") == 75))
+        
+        # Calculate expected total hours: 18:05 - 09:15 = 8h50m, no break for Saturday = 8.83h
+        expected_hours = 8.83
+        actual_hours = result.get("total_hours", 0)
+        checks.append(("total_hours is ~8.83", abs(actual_hours - expected_hours) < 0.1))
+        
+        all_passed = all(check[1] for check in checks)
+        details = "\n  ".join([f"{check[0]}: {'✓' if check[1] else '✗'}" for check in checks])
+        details += f"\n  Full response: {json.dumps(result, indent=2)}"
+        
+        if all_passed:
+            results.add_pass("2.1: Process attendance for GM001 on 2026-07-04", details)
+        else:
+            results.add_fail("2.1: Process attendance for GM001 on 2026-07-04", details)
+    else:
+        results.add_fail("2.1: Process attendance for GM001 on 2026-07-04", 
+                        f"Status: {response.status_code}, Response: {response.text}")
+
+def test_get_daily_attendance():
+    """Test 3: GET /api/attendance/daily - Get daily records"""
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}TEST 3: GET /api/attendance/daily - Get Daily Records{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}\n")
+    
+    session = create_session()
+    login_as_admin(session)
+    
+    # Test 3.1: Get records for GM001 in July 2026
+    params = {"employee_id": "GM001", "month": "2026-07-01"}
+    response = session.get(f"{BASE_URL}/attendance/daily", params=params)
+    
+    if response.status_code == 200:
+        records = response.json()
+        # Find record for 2026-07-04
+        july4_record = next((r for r in records if r.get("date") == "2026-07-04"), None)
+        
+        if july4_record:
+            checks = []
+            checks.append(("Record exists for 2026-07-04", True))
+            checks.append(("check_in is 09:15", july4_record.get("check_in") == "09:15"))
+            checks.append(("check_out is 18:05", july4_record.get("check_out") == "18:05"))
+            checks.append(("status is Present", july4_record.get("status") == "Present"))
+            checks.append(("is_late is True", july4_record.get("is_late") == True))
+            checks.append(("shift info enriched", july4_record.get("shift") is not None))
+            
+            all_passed = all(check[1] for check in checks)
+            details = "\n  ".join([f"{check[0]}: {'✓' if check[1] else '✗'}" for check in checks])
+            
+            if all_passed:
+                results.add_pass("3.1: Get daily attendance for GM001 in July 2026", details)
+            else:
+                results.add_fail("3.1: Get daily attendance for GM001 in July 2026", details)
+        else:
+            results.add_fail("3.1: Get daily attendance for GM001 in July 2026", 
+                            "Record for 2026-07-04 not found")
+    else:
+        results.add_fail("3.1: Get daily attendance for GM001 in July 2026", 
+                        f"Status: {response.status_code}, Response: {response.text}")
+    
+    # Test 3.2: Get records without employee_id (should require employee_id for admin)
+    response = session.get(f"{BASE_URL}/attendance/daily", params={"month": "2026-07-01"})
+    
+    # Admin without employee record should get 400 requiring employee_id
+    if response.status_code == 400:
+        results.add_pass("3.2: Admin without employee record requires employee_id (400)")
+    else:
+        results.add_fail("3.2: Admin without employee record requires employee_id (400)", 
+                        f"Expected 400, got {response.status_code}")
+
+def test_get_summary():
+    """Test 4: GET /api/attendance/summary - Monthly summary"""
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}TEST 4: GET /api/attendance/summary - Monthly Summary{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}\n")
+    
+    session = create_session()
+    login_as_admin(session)
+    
+    # Test 4.1: Get summary for GM001 in July 2026
+    params = {"employee_id": "GM001", "month": "2026-07-01"}
+    response = session.get(f"{BASE_URL}/attendance/summary", params=params)
+    
+    if response.status_code == 200:
+        data = response.json()
+        summary = data.get("summary", {})
+        late_tracking = data.get("late_tracking")
+        
+        checks = []
+        checks.append(("summary exists", summary is not None))
+        checks.append(("summary has present count", "present" in summary))
+        checks.append(("summary has absent count", "absent" in summary))
+        checks.append(("summary has late_count", "late_count" in summary))
+        checks.append(("summary has total_hours", "total_hours" in summary))
+        checks.append(("late_count >= 1", summary.get("late_count", 0) >= 1))
+        checks.append(("late_tracking exists", late_tracking is not None))
+        
+        all_passed = all(check[1] for check in checks)
+        details = "\n  ".join([f"{check[0]}: {'✓' if check[1] else '✗'}" for check in checks])
+        details += f"\n  Summary: {json.dumps(summary, indent=2)}"
+        
+        if all_passed:
+            results.add_pass("4.1: Get attendance summary for GM001 in July 2026", details)
+        else:
+            results.add_fail("4.1: Get attendance summary for GM001 in July 2026", details)
+    else:
+        results.add_fail("4.1: Get attendance summary for GM001 in July 2026", 
+                        f"Status: {response.status_code}, Response: {response.text}")
+
+def test_manual_attendance():
+    """Test 5: POST /api/attendance/manual - Admin creates manual record"""
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}TEST 5: POST /api/attendance/manual - Manual Attendance{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}\n")
+    
+    session = create_session()
+    login_as_admin(session)
+    
+    # Test 5.1: Create manual leave record
+    data = {
+        "employee_id": "GM001",
+        "date": "2026-07-05",
+        "status": "Leave",
+        "notes": "Annual leave"
+    }
+    response = session.post(f"{BASE_URL}/attendance/manual", json=data)
+    
+    if response.status_code == 200:
+        result = response.json()
+        checks = []
+        checks.append(("Record created", result is not None))
+        checks.append(("status is Leave", result.get("status") == "Leave"))
+        checks.append(("notes saved", result.get("notes") == "Annual leave"))
+        
+        all_passed = all(check[1] for check in checks)
+        details = "\n  ".join([f"{check[0]}: {'✓' if check[1] else '✗'}" for check in checks])
+        
+        if all_passed:
+            results.add_pass("5.1: Create manual leave record", details)
+        else:
+            results.add_fail("5.1: Create manual leave record", details)
+    else:
+        results.add_fail("5.1: Create manual leave record", 
+                        f"Status: {response.status_code}, Response: {response.text}")
+    
+    # Test 5.2: Invalid status (should fail with 400)
+    data_invalid = {
+        "employee_id": "GM001",
+        "date": "2026-07-06",
+        "status": "InvalidStatus",
+        "notes": "Test"
+    }
+    response = session.post(f"{BASE_URL}/attendance/manual", json=data_invalid)
+    
+    if response.status_code == 400:
+        results.add_pass("5.2: Manual attendance with invalid status returns 400")
+    else:
+        results.add_fail("5.2: Manual attendance with invalid status returns 400", 
+                        f"Expected 400, got {response.status_code}")
+
+def test_update_attendance():
+    """Test 6: PUT /api/attendance/{attendance_id} - Admin override"""
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}TEST 6: PUT /api/attendance/{{attendance_id}} - Admin Override{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}\n")
+    
+    session = create_session()
+    login_as_admin(session)
+    
+    # First, get an attendance_id from previous records
+    params = {"employee_id": "GM001", "month": "2026-07-01"}
+    response = session.get(f"{BASE_URL}/attendance/daily", params=params)
+    
+    if response.status_code == 200:
+        records = response.json()
+        if records:
+            attendance_id = records[0].get("attendance_id")
+            
+            # Test 6.1: Update status to WFH
+            data = {
+                "status": "WFH",
+                "notes": "Working from home"
+            }
+            response = session.put(f"{BASE_URL}/attendance/{attendance_id}", json=data)
+            
+            if response.status_code == 200:
+                result = response.json()
+                checks = []
+                checks.append(("Status updated to WFH", result.get("status") == "WFH"))
+                checks.append(("Notes updated", result.get("notes") == "Working from home"))
+                
+                all_passed = all(check[1] for check in checks)
+                details = "\n  ".join([f"{check[0]}: {'✓' if check[1] else '✗'}" for check in checks])
+                
+                if all_passed:
+                    results.add_pass("6.1: Admin override attendance status", details)
+                else:
+                    results.add_fail("6.1: Admin override attendance status", details)
+            else:
+                results.add_fail("6.1: Admin override attendance status", 
+                                f"Status: {response.status_code}, Response: {response.text}")
+            
+            # Test 6.2: Non-admin should get 403
+            emp_session = create_session()
+            login_as_employee(emp_session)
+            
+            response = emp_session.put(f"{BASE_URL}/attendance/{attendance_id}", json=data)
+            
+            if response.status_code == 403:
+                results.add_pass("6.2: Non-admin cannot override attendance (403)")
+            else:
+                results.add_fail("6.2: Non-admin cannot override attendance (403)", 
+                                f"Expected 403, got {response.status_code}")
+        else:
+            results.add_fail("6.1-6.2: Admin override tests", "No attendance records found")
+    else:
+        results.add_fail("6.1-6.2: Admin override tests", 
+                        f"Failed to get attendance records: {response.status_code}")
+
+def test_all_employees_summary():
+    """Test 7: GET /api/attendance/all-employees-summary - Admin bulk view"""
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}TEST 7: GET /api/attendance/all-employees-summary - Admin Bulk View{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}\n")
+    
+    # Test 7.1: Admin can access
+    admin_session = create_session()
+    login_as_admin(admin_session)
+    
+    params = {"month": "2026-07-01"}
+    response = admin_session.get(f"{BASE_URL}/attendance/all-employees-summary", params=params)
+    
+    if response.status_code == 200:
+        data = response.json()
+        checks = []
+        checks.append(("Returns list", isinstance(data, list)))
+        if data:
+            checks.append(("Has employee_id", "employee_id" in data[0]))
+            checks.append(("Has first_name", "first_name" in data[0]))
+            checks.append(("Has present count", "present" in data[0]))
+            checks.append(("Has late_count", "late_count" in data[0]))
+        
+        all_passed = all(check[1] for check in checks)
+        details = "\n  ".join([f"{check[0]}: {'✓' if check[1] else '✗'}" for check in checks])
+        
+        if all_passed:
+            results.add_pass("7.1: Admin can access all employees summary", details)
+        else:
+            results.add_fail("7.1: Admin can access all employees summary", details)
+    else:
+        results.add_fail("7.1: Admin can access all employees summary", 
+                        f"Status: {response.status_code}, Response: {response.text}")
+    
+    # Test 7.2: Non-admin should get 403
+    emp_session = create_session()
+    login_as_employee(emp_session)
+    
+    response = emp_session.get(f"{BASE_URL}/attendance/all-employees-summary", params=params)
+    
+    if response.status_code == 403:
+        results.add_pass("7.2: Non-admin cannot access all employees summary (403)")
+    else:
+        results.add_fail("7.2: Non-admin cannot access all employees summary (403)", 
+                        f"Expected 403, got {response.status_code}")
+
+def test_saturday_half_day():
+    """Test 8: Saturday half-day logic"""
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}TEST 8: Saturday Half-Day Logic (1st Saturday){RESET}")
+    print(f"{BLUE}{'='*60}{RESET}\n")
+    
+    # Create punches for GM002 on Saturday (July 4, 2026 - 1st Saturday)
+    headers = {"X-API-Key": ATTENDANCE_API_KEY}
+    
+    # Check-in at 08:15
+    data_in = {"employee_id": "GM002", "timestamp": "2026-07-04T08:15:00"}
+    response = requests.post(f"{BASE_URL}/attendance/entry", json=data_in, headers=headers)
+    
+    if response.status_code == 200:
+        results.add_pass("8.1: Saturday check-in punch recorded")
+    else:
+        results.add_fail("8.1: Saturday check-in punch recorded", 
+                        f"Status: {response.status_code}, Response: {response.text}")
+    
+    # Check-out at 13:10
+    data_out = {"employee_id": "GM002", "timestamp": "2026-07-04T13:10:00"}
+    response = requests.post(f"{BASE_URL}/attendance/entry", json=data_out, headers=headers)
+    
+    if response.status_code == 200:
+        results.add_pass("8.2: Saturday check-out punch recorded")
+    else:
+        results.add_fail("8.2: Saturday check-out punch recorded", 
+                        f"Status: {response.status_code}, Response: {response.text}")
+    
+    # Process and verify
+    session = create_session()
+    login_as_admin(session)
+    
+    data = {"employee_id": "GM002", "date": "2026-07-04"}
+    response = session.post(f"{BASE_URL}/attendance/process", json=data)
+    
+    if response.status_code == 200:
+        result = response.json()
+        checks = []
+        checks.append(("check_in is 08:15", result.get("check_in") == "08:15"))
+        checks.append(("check_out is 13:10", result.get("check_out") == "13:10"))
+        # For Saturday half-day: 13:10 - 08:15 = 4h55m, no break, threshold is 4h50m
+        checks.append(("status is Present", result.get("status") == "Present"))
+        # is_late check: Saturday start is 08:00, grace is 08:10, actual is 08:15
+        checks.append(("is_late is True", result.get("is_late") == True))
+        checks.append(("late_minutes is 15", result.get("late_minutes") == 15))
+        
+        all_passed = all(check[1] for check in checks)
+        details = "\n  ".join([f"{check[0]}: {'✓' if check[1] else '✗'}" for check in checks])
+        details += f"\n  Full response: {json.dumps(result, indent=2)}"
+        
+        if all_passed:
+            results.add_pass("8.3: Saturday half-day logic verified", details)
+        else:
+            results.add_fail("8.3: Saturday half-day logic verified", details)
+    else:
+        results.add_fail("8.3: Saturday half-day logic verified", 
+                        f"Status: {response.status_code}, Response: {response.text}")
+
+def test_late_tracking():
+    """Test 9: Late tracking validation"""
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}TEST 9: Late Tracking Validation{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}\n")
+    
+    session = create_session()
+    login_as_admin(session)
+    
+    # Get late tracking for GM001 in July 2026
+    params = {"employee_id": "GM001", "month": "2026-07-01"}
+    response = session.get(f"{BASE_URL}/attendance/late-tracking", params=params)
+    
+    if response.status_code == 200:
+        tracking_list = response.json()
+        checks = []
+        checks.append(("Returns list", isinstance(tracking_list, list)))
+        checks.append(("Has at least one record", len(tracking_list) > 0))
+        
+        if tracking_list:
+            tracking = tracking_list[0]  # Get first record
+            checks.append(("Has late_count", "late_count" in tracking))
+            checks.append(("late_count >= 1", tracking.get("late_count", 0) >= 1))
+            checks.append(("Has penalties_applied", "penalties_applied" in tracking))
+            # No penalties yet (penalty starts at 4th late)
+            checks.append(("No penalties yet", len(tracking.get("penalties_applied", [])) == 0))
+        
+        all_passed = all(check[1] for check in checks)
+        details = "\n  ".join([f"{check[0]}: {'✓' if check[1] else '✗'}" for check in checks])
+        if tracking_list:
+            details += f"\n  Tracking: {json.dumps(tracking_list[0], indent=2)}"
+        
+        if all_passed:
+            results.add_pass("9.1: Late tracking validation", details)
+        else:
+            results.add_fail("9.1: Late tracking validation", details)
+    else:
+        results.add_fail("9.1: Late tracking validation", 
+                        f"Status: {response.status_code}, Response: {response.text}")
+
+def test_sunday_holiday():
+    """Test 10: Business logic - Holiday on Sunday"""
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}TEST 10: Sunday Holiday Logic{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}\n")
+    
+    # July 12, 2026 is a Sunday
+    headers = {"X-API-Key": ATTENDANCE_API_KEY}
+    data = {"employee_id": "GM001", "timestamp": "2026-07-12T09:00:00"}
+    response = requests.post(f"{BASE_URL}/attendance/entry", json=data, headers=headers)
+    
+    if response.status_code == 200:
+        results.add_pass("10.1: Sunday punch recorded")
+    else:
+        results.add_fail("10.1: Sunday punch recorded", 
+                        f"Status: {response.status_code}, Response: {response.text}")
+    
+    # Process and verify status is Holiday
+    session = create_session()
+    login_as_admin(session)
+    
+    data = {"employee_id": "GM001", "date": "2026-07-12"}
+    response = session.post(f"{BASE_URL}/attendance/process", json=data)
+    
+    if response.status_code == 200:
+        result = response.json()
+        if result.get("status") == "Holiday":
+            results.add_pass("10.2: Sunday status is Holiday", 
+                            f"Status: {result.get('status')}, Notes: {result.get('notes')}")
+        else:
+            results.add_fail("10.2: Sunday status is Holiday", 
+                            f"Expected Holiday, got {result.get('status')}")
+    else:
+        results.add_fail("10.2: Sunday status is Holiday", 
+                        f"Status: {response.status_code}, Response: {response.text}")
+
+def main():
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}ATTENDANCE SYSTEM BACKEND API TESTING{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}\n")
+    
+    # Setup
+    print(f"{YELLOW}Setting up test data...{RESET}")
+    setup_test_data()
+    
+    # Run all tests
+    test_biometric_entry()
+    test_process_attendance()
+    test_get_daily_attendance()
+    test_get_summary()
+    test_manual_attendance()
+    test_update_attendance()
+    test_all_employees_summary()
+    test_saturday_half_day()
+    test_late_tracking()
+    test_sunday_holiday()
+    
+    # Summary
+    results.summary()
+    
+    # Return exit code based on results
+    return 0 if results.failed == 0 else 1
 
 if __name__ == "__main__":
-    success = asyncio.run(main())
-    sys.exit(0 if success else 1)
+    exit(main())
