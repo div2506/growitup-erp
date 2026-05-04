@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Pencil, Trash2, Building2, Briefcase, Users, Database, Lock, ExternalLink, Upload, FileJson } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, Briefcase, Users, Database, Lock, ExternalLink, Upload, FileJson, Clock, RefreshCw, CheckCircle, XCircle, Hourglass, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import axios from "axios";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import DeleteConfirm from "@/components/DeleteConfirm";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -864,6 +865,419 @@ function DataImportTab() {
 }
 
 
+// ================== SHIFTS TAB ==================
+const BREAK_OPTIONS = [0, 30, 60, 90, 120];
+
+function formatTime(t) {
+  if (!t) return "—";
+  const [h, m] = t.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const hr = h % 12 || 12;
+  return `${hr}:${m.toString().padStart(2, "0")} ${ampm}`;
+}
+
+function calcHours(start, end) {
+  if (!start || !end) return 0;
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  let startM = sh * 60 + sm;
+  let endM = eh * 60 + em;
+  if (endM <= startM) endM += 24 * 60;
+  return ((endM - startM) / 60).toFixed(2);
+}
+
+function ShiftsTab() {
+  const [shifts, setShifts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editShift, setEditShift] = useState(null);
+  const [form, setForm] = useState({ shift_name: "", start_time: "09:00", end_time: "18:00", break_duration: 60 });
+  const [formErrors, setFormErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  const fetchShifts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/shifts`, { withCredentials: true });
+      setShifts(data);
+    } catch { toast.error("Failed to load shifts"); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchShifts(); }, [fetchShifts]);
+
+  const openAdd = () => {
+    setEditShift(null);
+    setForm({ shift_name: "", start_time: "09:00", end_time: "18:00", break_duration: 60 });
+    setFormErrors({});
+    setShowModal(true);
+  };
+  const openEdit = (s) => {
+    setEditShift(s);
+    setForm({ shift_name: s.shift_name, start_time: s.start_time, end_time: s.end_time, break_duration: s.break_duration });
+    setFormErrors({});
+    setShowModal(true);
+  };
+
+  const validate = () => {
+    const e = {};
+    if (!form.shift_name.trim()) e.shift_name = "Shift name is required";
+    if (!form.start_time) e.start_time = "Start time is required";
+    if (!form.end_time) e.end_time = "End time is required";
+    if (form.start_time && form.end_time && form.start_time === form.end_time) e.end_time = "End time must differ from start time";
+    setFormErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSave = async () => {
+    if (!validate()) return;
+    setSaving(true);
+    try {
+      if (editShift) {
+        const { data } = await axios.put(`${API}/shifts/${editShift.shift_id}`, form, { withCredentials: true });
+        setShifts(prev => prev.map(s => s.shift_id === data.shift_id ? { ...s, ...data } : s));
+        toast.success("Shift updated");
+      } else {
+        const { data } = await axios.post(`${API}/shifts`, form, { withCredentials: true });
+        setShifts(prev => [...prev, { ...data, employee_count: 0 }]);
+        toast.success("Shift created");
+      }
+      setShowModal(false);
+    } catch (err) {
+      setFormErrors(e => ({ ...e, shift_name: err.response?.data?.detail || "Failed to save" }));
+    } finally { setSaving(false); }
+  };
+
+  const handleDelete = async (shift) => {
+    try {
+      await axios.delete(`${API}/shifts/${shift.shift_id}`, { withCredentials: true });
+      toast.success("Shift deleted");
+      fetchShifts();
+    } catch (err) { toast.error(err.response?.data?.detail || "Failed to delete"); }
+    setDeleteTarget(null);
+  };
+
+  const totalHours = calcHours(form.start_time, form.end_time);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-[#B3B3B3] text-sm">{shifts.length} shift{shifts.length !== 1 ? "s" : ""}</p>
+        <button onClick={openAdd}
+          className="flex items-center gap-2 bg-[#E53935] hover:bg-[#F44336] text-white rounded-lg px-3 py-1.5 text-sm font-medium transition-colors">
+          <Plus size={15} /> Add Shift
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="space-y-2">{[1, 2].map(i => <div key={i} className="h-16 bg-[#2F2F2F] rounded-xl animate-pulse border border-white/10" />)}</div>
+      ) : (
+        <div className="rounded-xl border border-white/10 overflow-hidden overflow-x-auto">
+          <table className="w-full min-w-[600px]">
+            <thead className="bg-[#191919] border-b border-white/10">
+              <tr>
+                <th className="text-left py-3 px-5 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Shift Name</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Timing</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Hours</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Break</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Employees</th>
+                <th className="py-3 px-4 w-24" />
+              </tr>
+            </thead>
+            <tbody>
+              {shifts.map((shift, i) => (
+                <tr key={shift.shift_id} className={`border-b border-white/5 hover:bg-white/5 transition-colors ${i % 2 === 0 ? "bg-[#2F2F2F]" : "bg-[#2F2F2F]/60"}`}>
+                  <td className="py-3 px-5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-white text-sm font-medium">{shift.shift_name}</span>
+                      {shift.is_system_default && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                          <Lock size={9} /> Default
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="py-3 px-4 text-sm text-[#B3B3B3]">{formatTime(shift.start_time)} – {formatTime(shift.end_time)}</td>
+                  <td className="py-3 px-4 text-sm text-white">{shift.total_hours}h</td>
+                  <td className="py-3 px-4 text-sm text-[#B3B3B3]">{shift.break_duration} min</td>
+                  <td className="py-3 px-4 text-sm text-[#B3B3B3]">{shift.employee_count || 0}</td>
+                  <td className="py-3 px-4">
+                    <div className="flex items-center justify-end gap-1">
+                      <button onClick={() => openEdit(shift)} className="p-1.5 text-[#B3B3B3] hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+                        <Pencil size={14} />
+                      </button>
+                      {!shift.is_system_default && (
+                        <button onClick={() => setDeleteTarget(shift)} className="p-1.5 text-[#B3B3B3] hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors">
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Add/Edit Shift Modal */}
+      <Dialog open={showModal} onOpenChange={(o) => { if (!o) setShowModal(false); }}>
+        <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white sm:max-w-md w-[calc(100%-2rem)] rounded-xl p-0 overflow-hidden flex flex-col">
+          <DialogHeader className="px-5 pt-5 pb-4 border-b border-white/10 shrink-0">
+            <DialogTitle className="text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
+              {editShift ? "Edit Shift" : "Add New Shift"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="px-5 py-5 space-y-4">
+            <div className="space-y-1">
+              <Label className={labelCls}>Shift Name *</Label>
+              <Input value={form.shift_name} onChange={e => setForm(f => ({ ...f, shift_name: e.target.value }))}
+                disabled={editShift?.is_system_default}
+                className={`${inputCls} ${editShift?.is_system_default ? "opacity-50 cursor-not-allowed" : ""}`}
+                placeholder="e.g. Early 8-5" />
+              {editShift?.is_system_default && <p className="text-[#666] text-xs">System default shift name cannot be changed</p>}
+              {formErrors.shift_name && <p className="text-red-400 text-xs">{formErrors.shift_name}</p>}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className={labelCls}>Start Time *</Label>
+                <Input type="time" value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))}
+                  className={inputCls} />
+                {formErrors.start_time && <p className="text-red-400 text-xs">{formErrors.start_time}</p>}
+              </div>
+              <div className="space-y-1">
+                <Label className={labelCls}>End Time *</Label>
+                <Input type="time" value={form.end_time} onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))}
+                  className={inputCls} />
+                {formErrors.end_time && <p className="text-red-400 text-xs">{formErrors.end_time}</p>}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className={labelCls}>Break Duration *</Label>
+              <Select value={String(form.break_duration)} onValueChange={v => setForm(f => ({ ...f, break_duration: Number(v) }))}>
+                <SelectTrigger className={`${inputCls} focus:ring-0`}><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-[#2F2F2F] border-white/10">
+                  {BREAK_OPTIONS.map(b => <SelectItem key={b} value={String(b)} className="text-white focus:bg-white/10">{b === 0 ? "No break" : `${b} minutes`}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Calculated Total Hours */}
+            <div className="bg-[#191919] border border-white/10 rounded-lg px-4 py-3 flex items-center justify-between">
+              <span className="text-[#B3B3B3] text-sm">Total Hours (calculated)</span>
+              <span className="text-white font-semibold text-lg">{totalHours}h</span>
+            </div>
+          </div>
+          <div className="px-5 pb-5 flex gap-3">
+            <Button variant="outline" onClick={() => setShowModal(false)}
+              className="flex-1 bg-transparent border-white/20 text-[#B3B3B3] hover:bg-white/5 hover:text-white min-h-[44px]">
+              Cancel
+            </Button>
+            <Button onClick={handleSave} disabled={saving}
+              className="flex-1 bg-[#E53935] hover:bg-[#F44336] text-white min-h-[44px]">
+              {saving ? "Saving..." : "Save"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {deleteTarget && (
+        <DeleteConfirm
+          message={`Are you sure you want to delete "${deleteTarget.shift_name}"? ${deleteTarget.employee_count > 0 ? `${deleteTarget.employee_count} employee(s) assigned to this shift will be moved to "Regular 9-6".` : ""}`}
+          onConfirm={() => handleDelete(deleteTarget)}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+
+// ================== SHIFT REQUESTS TAB ==================
+function ShiftRequestsTab() {
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeFilter, setActiveFilter] = useState("Pending");
+  const [rejectTarget, setRejectTarget] = useState(null);
+  const [rejectNotes, setRejectNotes] = useState("");
+  const [processing, setProcessing] = useState(null);
+
+  const fetchRequests = useCallback(async (statusFilter) => {
+    setLoading(true);
+    try {
+      const params = statusFilter !== "All" ? `?status=${statusFilter}` : "";
+      const { data } = await axios.get(`${API}/shift-change-requests${params}`, { withCredentials: true });
+      setRequests(data);
+    } catch { toast.error("Failed to load requests"); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchRequests(activeFilter); }, [activeFilter, fetchRequests]);
+
+  const handleApprove = async (requestId, empName) => {
+    setProcessing(requestId);
+    try {
+      await axios.put(`${API}/shift-change-requests/${requestId}/review`, { status: "Approved" }, { withCredentials: true });
+      toast.success(`Shift change approved for ${empName}`);
+      fetchRequests(activeFilter);
+    } catch (err) { toast.error(err.response?.data?.detail || "Failed to approve"); }
+    finally { setProcessing(null); }
+  };
+
+  const handleReject = async () => {
+    if (!rejectTarget) return;
+    setProcessing(rejectTarget.request_id);
+    try {
+      await axios.put(`${API}/shift-change-requests/${rejectTarget.request_id}/review`,
+        { status: "Rejected", admin_notes: rejectNotes.trim() || "" },
+        { withCredentials: true }
+      );
+      toast.success("Shift change rejected");
+      setRejectTarget(null);
+      setRejectNotes("");
+      fetchRequests(activeFilter);
+    } catch (err) { toast.error(err.response?.data?.detail || "Failed to reject"); }
+    finally { setProcessing(null); }
+  };
+
+  const formatDate = (d) => {
+    if (!d) return "—";
+    try { return new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }); }
+    catch { return d; }
+  };
+
+  const filterTabs = ["Pending", "Approved", "Rejected", "All"];
+  const statusColors = {
+    Pending: "bg-amber-400/10 text-amber-400 border-amber-400/20",
+    Approved: "bg-green-400/10 text-green-400 border-green-400/20",
+    Rejected: "bg-red-400/10 text-red-400 border-red-400/20",
+  };
+
+  return (
+    <div>
+      {/* Filter tabs */}
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {filterTabs.map(f => (
+          <button key={f} onClick={() => setActiveFilter(f)}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeFilter === f ? "bg-white/10 text-white" : "text-[#B3B3B3] hover:bg-white/5 hover:text-white"}`}>
+            {f}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="h-24 bg-[#2F2F2F] rounded-xl animate-pulse border border-white/10" />)}</div>
+      ) : requests.length === 0 ? (
+        <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-10 text-center">
+          <RefreshCw size={28} className="text-[#B3B3B3] mx-auto mb-3" />
+          <p className="text-[#B3B3B3]">No {activeFilter !== "All" ? activeFilter.toLowerCase() : ""} shift change requests</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {requests.map(req => (
+            <div key={req.request_id} className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4">
+              <div className="flex flex-col sm:flex-row gap-4">
+                {/* Employee info */}
+                <div className="flex items-center gap-3 shrink-0">
+                  {req.employee?.profile_picture ? (
+                    <img src={req.employee.profile_picture} alt="" className="w-10 h-10 rounded-full object-cover border border-white/10" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white text-sm font-bold">
+                      {req.employee?.first_name?.[0] || "?"}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-white text-sm font-medium">{req.employee ? `${req.employee.first_name} ${req.employee.last_name}` : "Unknown"}</p>
+                    <p className="text-[#B3B3B3] text-xs">{req.employee?.employee_id}</p>
+                  </div>
+                </div>
+
+                {/* Request details */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${statusColors[req.status] || ""}`}>
+                      {req.status}
+                    </span>
+                    <span className="text-[#B3B3B3] text-xs">{formatDate(req.from_date)} → {formatDate(req.to_date)}</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 mb-1.5 text-sm">
+                    <span className="text-[#B3B3B3]">{req.current_shift?.shift_name || "—"}</span>
+                    <span className="text-[#B3B3B3]">→</span>
+                    <span className="text-blue-400 font-medium">{req.requested_shift?.shift_name || "—"}</span>
+                  </div>
+                  <p className="text-[#B3B3B3] text-xs line-clamp-2">{req.reason}</p>
+                  {req.status === "Rejected" && req.admin_notes && (
+                    <div className="mt-1.5 flex items-start gap-1.5 bg-red-400/10 border border-red-400/20 rounded px-2.5 py-1.5">
+                      <AlertCircle size={12} className="text-red-400 mt-0.5 shrink-0" />
+                      <p className="text-red-400 text-xs">{req.admin_notes}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions */}
+                {req.status === "Pending" && (
+                  <div className="flex sm:flex-col gap-2 shrink-0">
+                    <button
+                      onClick={() => handleApprove(req.request_id, `${req.employee?.first_name} ${req.employee?.last_name}`)}
+                      disabled={processing === req.request_id}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500/20 rounded-lg text-sm transition-colors disabled:opacity-50 min-h-[36px]"
+                    >
+                      <CheckCircle size={13} /> Approve
+                    </button>
+                    <button
+                      onClick={() => { setRejectTarget(req); setRejectNotes(""); }}
+                      disabled={processing === req.request_id}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 rounded-lg text-sm transition-colors disabled:opacity-50 min-h-[36px]"
+                    >
+                      <XCircle size={13} /> Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Reject Modal */}
+      <Dialog open={!!rejectTarget} onOpenChange={(o) => { if (!o) { setRejectTarget(null); setRejectNotes(""); } }}>
+        <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white sm:max-w-md w-[calc(100%-2rem)] rounded-xl p-0 overflow-hidden">
+          <DialogHeader className="px-5 pt-5 pb-4 border-b border-white/10">
+            <DialogTitle className="text-white" style={{ fontFamily: "Manrope, sans-serif" }}>Reject Shift Request</DialogTitle>
+          </DialogHeader>
+          <div className="px-5 py-4 space-y-3">
+            <p className="text-[#B3B3B3] text-sm">
+              Rejecting shift change request for <span className="text-white font-medium">
+                {rejectTarget?.employee ? `${rejectTarget.employee.first_name} ${rejectTarget.employee.last_name}` : ""}
+              </span>
+            </p>
+            <div className="space-y-1">
+              <Label className={labelCls}>Rejection Reason (optional)</Label>
+              <Textarea value={rejectNotes} onChange={e => setRejectNotes(e.target.value)}
+                className={`${inputCls} min-h-[80px] resize-none`}
+                placeholder="Explain why the request is being rejected..." />
+            </div>
+          </div>
+          <div className="px-5 pb-5 flex gap-3">
+            <Button variant="outline" onClick={() => { setRejectTarget(null); setRejectNotes(""); }}
+              className="flex-1 bg-transparent border-white/20 text-[#B3B3B3] hover:bg-white/5 min-h-[44px]">
+              Cancel
+            </Button>
+            <Button onClick={handleReject} disabled={processing !== null}
+              className="flex-1 bg-red-500 hover:bg-red-600 text-white min-h-[44px]">
+              {processing ? "Rejecting..." : "Reject Request"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+
 // ================== MAIN SETTINGS PAGE ==================
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("departments");
@@ -880,7 +1294,11 @@ export default function SettingsPage() {
     { val: "job-positions", label: "Job Positions", icon: Briefcase },
     { val: "teams", label: "Teams", icon: Users },
     { val: "notion", label: "Notion Integration", icon: Database },
-    ...(isAdmin ? [{ val: "data-import", label: "Data Import", icon: Upload }] : []),
+    ...(isAdmin ? [
+      { val: "shifts", label: "Shifts", icon: Clock },
+      { val: "shift-requests", label: "Shift Requests", icon: RefreshCw },
+      { val: "data-import", label: "Data Import", icon: Upload },
+    ] : []),
   ];
 
   return (
@@ -907,7 +1325,11 @@ export default function SettingsPage() {
         <TabsContent value="teams"><TeamsTab /></TabsContent>
         <TabsContent value="notion"><NotionIntegrationTab /></TabsContent>
         {isAdmin && (
-          <TabsContent value="data-import"><DataImportTab /></TabsContent>
+          <>
+            <TabsContent value="shifts"><ShiftsTab /></TabsContent>
+            <TabsContent value="shift-requests"><ShiftRequestsTab /></TabsContent>
+            <TabsContent value="data-import"><DataImportTab /></TabsContent>
+          </>
         )}
       </Tabs>
     </div>

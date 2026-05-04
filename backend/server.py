@@ -86,6 +86,7 @@ class EmployeeCreate(BaseModel):
     profile_picture: Optional[str] = None
     status: str = "Active"
     teams: List[str] = []
+    shift_id: Optional[str] = None  # Shift assignment
 
 class TeamCreate(BaseModel):
     team_name: str
@@ -108,6 +109,26 @@ class ManagerPerformanceCreate(BaseModel):
     client_performance_notes: Optional[str] = None  # Optional, max 500 chars
     client_feedback_notes: Optional[str] = None  # Optional, max 500 chars
     creative_task_notes: Optional[str] = None  # Optional, max 500 chars
+
+
+class ShiftCreate(BaseModel):
+    shift_name: str
+    start_time: str   # "09:00"
+    end_time: str     # "18:00"
+    break_duration: int  # minutes: 0, 30, 60, 90, 120
+    is_system_default: bool = False
+
+
+class ShiftChangeRequestCreate(BaseModel):
+    requested_shift_id: str
+    from_date: str   # "2024-01-15"
+    to_date: str     # "2024-01-20"
+    reason: str
+
+
+class ShiftChangeRequestReview(BaseModel):
+    status: str  # "Approved" or "Rejected"
+    admin_notes: Optional[str] = None
 
 
 # ===================== HELPERS =====================
@@ -160,6 +181,45 @@ async def get_next_employee_id():
             return f"GM{str(i).zfill(3)}"
     # No gaps — continue sequence
     return f"GM{str(max_num + 1).zfill(3)}"
+
+
+def calc_total_hours(start_time: str, end_time: str) -> float:
+    """Calculate total hours between start and end time strings (HH:MM)."""
+    try:
+        sh, sm = map(int, start_time.split(":"))
+        eh, em = map(int, end_time.split(":"))
+        start_mins = sh * 60 + sm
+        end_mins = eh * 60 + em
+        if end_mins <= start_mins:  # crosses midnight
+            end_mins += 24 * 60
+        return round((end_mins - start_mins) / 60, 2)
+    except Exception:
+        return 0.0
+
+
+async def get_default_shift():
+    """Get the system default shift."""
+    return await db.shifts.find_one({"is_system_default": True}, {"_id": 0})
+
+
+async def ensure_default_shift():
+    """Create the default Regular 9-6 shift if it doesn't exist."""
+    existing = await db.shifts.find_one({"is_system_default": True}, {"_id": 0})
+    if not existing:
+        default_shift = {
+            "shift_id": f"shift_default",
+            "shift_name": "Regular 9-6",
+            "start_time": "09:00",
+            "end_time": "18:00",
+            "break_duration": 60,
+            "total_hours": calc_total_hours("09:00", "18:00"),
+            "is_system_default": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.shifts.insert_one(default_shift)
+        return {k: v for k, v in default_shift.items() if k != "_id"}
+    return existing
 
 
 # ===================== AUTH ROUTES =====================
@@ -457,14 +517,28 @@ async def create_employee(body: EmployeeCreate, request: Request):
 
     emp_id = await get_next_employee_id()
     now = datetime.now(timezone.utc).isoformat()
-    emp = {"employee_id": emp_id, **body.model_dump(), "created_at": now, "updated_at": now}
+    emp_data = body.model_dump()
+    shift_id = emp_data.pop("shift_id", None)
+    emp = {"employee_id": emp_id, **emp_data, "created_at": now, "updated_at": now}
     await db.employees.insert_one(emp)
+
+    # Assign shift (use provided or default)
+    if not shift_id:
+        default_shift = await get_default_shift()
+        shift_id = default_shift["shift_id"] if default_shift else None
+    if shift_id:
+        await db.employee_shifts.update_one(
+            {"employee_id": emp_id},
+            {"$set": {"employee_id": emp_id, "shift_id": shift_id, "assigned_at": now, "assigned_by": None}},
+            upsert=True
+        )
+
     return {k: v for k, v in emp.items() if k != "_id"}
 
 
 @api_router.put("/employees/{emp_id}")
 async def update_employee(emp_id: str, body: EmployeeCreate, request: Request):
-    await get_current_user(request)
+    user = await get_current_user(request)
     existing = await db.employees.find_one({"employee_id": emp_id}, {"_id": 0})
     if not existing:
         raise HTTPException(404, "Employee not found")
@@ -479,8 +553,23 @@ async def update_employee(emp_id: str, body: EmployeeCreate, request: Request):
     new_email = body.work_email
     email_changed = old_email.lower() != new_email.lower()
 
-    update = {**body.model_dump(), "updated_at": datetime.now(timezone.utc).isoformat()}
+    emp_data = body.model_dump()
+    shift_id = emp_data.pop("shift_id", None)
+    update = {**emp_data, "updated_at": datetime.now(timezone.utc).isoformat()}
     await db.employees.update_one({"employee_id": emp_id}, {"$set": update})
+
+    # Update shift assignment if shift_id provided
+    if shift_id:
+        requesting_emp = await db.employees.find_one(
+            {"work_email": {"$regex": f"^{user.get('email', '')}$", "$options": "i"}}, {"_id": 0}
+        )
+        assigned_by_id = requesting_emp["employee_id"] if requesting_emp else None
+        await db.employee_shifts.update_one(
+            {"employee_id": emp_id},
+            {"$set": {"employee_id": emp_id, "shift_id": shift_id,
+                      "assigned_at": datetime.now(timezone.utc).isoformat(), "assigned_by": assigned_by_id}},
+            upsert=True
+        )
 
     # If work_email changed: invalidate all sessions for the old email and update the user record
     if email_changed and old_email:
@@ -1231,6 +1320,8 @@ async def seed_v2():
             await db.job_positions.insert_one(pos)
     # Remove the duplicate HR Manager from HR dept if it exists
     await db.job_positions.delete_one({"position_id": "pos_hr_manager_hr"})
+    # Ensure default shift exists
+    await ensure_default_shift()
     return {"message": "Seeded v2 successfully"}
 
 
@@ -1947,7 +2038,352 @@ async def update_manager_performance(perf_id: str, body: ManagerPerformanceCreat
     return updated
 
 
+# ===================== SHIFTS MANAGEMENT =====================
+
+@api_router.get("/shifts")
+async def get_shifts(request: Request):
+    await get_current_user(request)
+    await ensure_default_shift()
+    shifts = await db.shifts.find({}, {"_id": 0}).sort("shift_name", 1).to_list(1000)
+    for shift in shifts:
+        count = await db.employee_shifts.count_documents({"shift_id": shift["shift_id"]})
+        shift["employee_count"] = count
+    return shifts
+
+
+@api_router.post("/shifts")
+async def create_shift(body: ShiftCreate, request: Request):
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can manage shifts")
+
+    if not body.start_time or not body.end_time:
+        raise HTTPException(400, "Start time and end time are required")
+    if body.start_time == body.end_time:
+        raise HTTPException(400, "Start time and end time cannot be the same")
+
+    existing = await db.shifts.find_one(
+        {"shift_name": {"$regex": f"^{re.escape(body.shift_name)}$", "$options": "i"}}, {"_id": 0}
+    )
+    if existing:
+        raise HTTPException(400, "A shift with this name already exists")
+
+    total_hours = calc_total_hours(body.start_time, body.end_time)
+    shift = {
+        "shift_id": f"shift_{uuid.uuid4().hex[:8]}",
+        "shift_name": body.shift_name.strip(),
+        "start_time": body.start_time,
+        "end_time": body.end_time,
+        "break_duration": body.break_duration,
+        "total_hours": total_hours,
+        "is_system_default": body.is_system_default,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.shifts.insert_one(shift)
+    return {k: v for k, v in shift.items() if k != "_id"}
+
+
+@api_router.put("/shifts/{shift_id}")
+async def update_shift(shift_id: str, body: ShiftCreate, request: Request):
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can manage shifts")
+
+    existing = await db.shifts.find_one({"shift_id": shift_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Shift not found")
+
+    if existing.get("is_system_default") and body.shift_name.strip().lower() != existing["shift_name"].strip().lower():
+        raise HTTPException(400, "Cannot rename the system default shift")
+
+    if body.shift_name.strip().lower() != existing["shift_name"].strip().lower():
+        dup = await db.shifts.find_one(
+            {"shift_name": {"$regex": f"^{re.escape(body.shift_name)}$", "$options": "i"},
+             "shift_id": {"$ne": shift_id}}, {"_id": 0}
+        )
+        if dup:
+            raise HTTPException(400, "A shift with this name already exists")
+
+    total_hours = calc_total_hours(body.start_time, body.end_time)
+    update = {
+        "shift_name": body.shift_name.strip(),
+        "start_time": body.start_time,
+        "end_time": body.end_time,
+        "break_duration": body.break_duration,
+        "total_hours": total_hours,
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.shifts.update_one({"shift_id": shift_id}, {"$set": update})
+    return {**existing, **update}
+
+
+@api_router.delete("/shifts/{shift_id}")
+async def delete_shift(shift_id: str, request: Request):
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can manage shifts")
+
+    existing = await db.shifts.find_one({"shift_id": shift_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Shift not found")
+    if existing.get("is_system_default"):
+        raise HTTPException(400, "Cannot delete the system default shift")
+
+    default_shift = await get_default_shift()
+    if not default_shift:
+        raise HTTPException(500, "System default shift not found")
+
+    now = datetime.now(timezone.utc).isoformat()
+    await db.employee_shifts.update_many(
+        {"shift_id": shift_id},
+        {"$set": {"shift_id": default_shift["shift_id"], "assigned_at": now}}
+    )
+    await db.shifts.delete_one({"shift_id": shift_id})
+    return {"message": "Shift deleted. Employees reassigned to default shift."}
+
+
+# ===================== EMPLOYEE SHIFTS =====================
+
+@api_router.get("/employee-shifts/{employee_id}")
+async def get_employee_shift(employee_id: str, request: Request):
+    await get_current_user(request)
+    await ensure_default_shift()
+    emp_shift = await db.employee_shifts.find_one({"employee_id": employee_id}, {"_id": 0})
+    if not emp_shift:
+        default_shift = await get_default_shift()
+        if default_shift:
+            return {"employee_id": employee_id, "shift_id": default_shift["shift_id"], "shift": default_shift, "is_default": True}
+        return None
+    shift = await db.shifts.find_one({"shift_id": emp_shift["shift_id"]}, {"_id": 0})
+    if not shift:
+        # Shift was deleted, fallback to default
+        default_shift = await get_default_shift()
+        shift = default_shift
+    emp_shift["shift"] = shift
+    emp_shift["is_default"] = False
+    return emp_shift
+
+
+@api_router.post("/employee-shifts")
+async def assign_employee_shift(request: Request):
+    user = await get_current_user(request)
+    body = await request.json()
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can assign shifts")
+
+    employee_id = body.get("employee_id")
+    shift_id = body.get("shift_id")
+    if not employee_id or not shift_id:
+        raise HTTPException(400, "employee_id and shift_id required")
+
+    shift = await db.shifts.find_one({"shift_id": shift_id}, {"_id": 0})
+    if not shift:
+        raise HTTPException(404, "Shift not found")
+    emp = await db.employees.find_one({"employee_id": employee_id}, {"_id": 0})
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+
+    assigned_by_id = my_emp["employee_id"] if my_emp else None
+    now = datetime.now(timezone.utc).isoformat()
+    await db.employee_shifts.update_one(
+        {"employee_id": employee_id},
+        {"$set": {"employee_id": employee_id, "shift_id": shift_id,
+                  "assigned_at": now, "assigned_by": assigned_by_id}},
+        upsert=True
+    )
+    return {"employee_id": employee_id, "shift_id": shift_id, "shift": shift, "assigned_at": now}
+
+
+# ===================== SHIFT CHANGE REQUESTS =====================
+
+@api_router.get("/shift-change-requests")
+async def get_shift_change_requests(
+    request: Request,
+    status: Optional[str] = None,
+    employee_id: Optional[str] = None
+):
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+
+    query = {}
+    if status:
+        query["status"] = status
+    if is_admin:
+        if employee_id:
+            query["employee_id"] = employee_id
+    else:
+        if not my_emp:
+            return []
+        query["employee_id"] = my_emp["employee_id"]
+
+    requests_list = await db.shift_change_requests.find(query, {"_id": 0}).sort("requested_at", -1).to_list(1000)
+
+    for req in requests_list:
+        emp = await db.employees.find_one({"employee_id": req["employee_id"]}, {"_id": 0})
+        req["employee"] = {
+            "employee_id": emp["employee_id"],
+            "first_name": emp["first_name"],
+            "last_name": emp["last_name"],
+            "profile_picture": emp.get("profile_picture")
+        } if emp else None
+
+        requested_shift = await db.shifts.find_one({"shift_id": req["requested_shift_id"]}, {"_id": 0})
+        req["requested_shift"] = requested_shift
+
+        emp_shift = await db.employee_shifts.find_one({"employee_id": req["employee_id"]}, {"_id": 0})
+        if emp_shift:
+            curr_shift = await db.shifts.find_one({"shift_id": emp_shift["shift_id"]}, {"_id": 0})
+            req["current_shift"] = curr_shift
+        else:
+            req["current_shift"] = await get_default_shift()
+
+        if req.get("reviewed_by"):
+            reviewer = await db.employees.find_one({"employee_id": req["reviewed_by"]}, {"_id": 0})
+            if reviewer:
+                req["reviewer_name"] = f"{reviewer['first_name']} {reviewer['last_name']}"
+
+    return requests_list
+
+
+@api_router.post("/shift-change-requests")
+async def create_shift_change_request(body: ShiftChangeRequestCreate, request: Request):
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    if not my_emp:
+        raise HTTPException(403, "Employee profile not found")
+
+    is_admin = user.get("is_admin") or my_emp.get("department_name") == "Admin"
+    if is_admin:
+        raise HTTPException(403, "Admin department users cannot submit shift change requests")
+
+    requested_shift = await db.shifts.find_one({"shift_id": body.requested_shift_id}, {"_id": 0})
+    if not requested_shift:
+        raise HTTPException(404, "Requested shift not found")
+
+    try:
+        from_date_dt = datetime.strptime(body.from_date, "%Y-%m-%d")
+        to_date_dt = datetime.strptime(body.to_date, "%Y-%m-%d")
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+
+    if from_date_dt < today:
+        raise HTTPException(400, "Cannot request shift change for past dates")
+    if to_date_dt < from_date_dt:
+        raise HTTPException(400, "To date must be >= From date")
+
+    if not body.reason or not body.reason.strip():
+        raise HTTPException(400, "Reason is required")
+    if len(body.reason) > 500:
+        raise HTTPException(400, "Reason must be 500 characters or less")
+
+    # Check for overlapping pending/approved requests
+    overlapping = await db.shift_change_requests.find_one({
+        "employee_id": my_emp["employee_id"],
+        "status": {"$in": ["Pending", "Approved"]},
+        "from_date": {"$lte": body.to_date},
+        "to_date": {"$gte": body.from_date}
+    }, {"_id": 0})
+    if overlapping:
+        raise HTTPException(400, "You already have a shift change request for these dates")
+
+    now = datetime.now(timezone.utc).isoformat()
+    new_request = {
+        "request_id": f"scr_{uuid.uuid4().hex[:12]}",
+        "employee_id": my_emp["employee_id"],
+        "requested_shift_id": body.requested_shift_id,
+        "from_date": body.from_date,
+        "to_date": body.to_date,
+        "reason": body.reason.strip(),
+        "status": "Pending",
+        "requested_at": now,
+        "reviewed_by": None,
+        "reviewed_at": None,
+        "admin_notes": None
+    }
+    await db.shift_change_requests.insert_one(new_request)
+    return {k: v for k, v in new_request.items() if k != "_id"}
+
+
+@api_router.put("/shift-change-requests/{request_id}/review")
+async def review_shift_change_request(request_id: str, body: ShiftChangeRequestReview, request: Request):
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can review shift change requests")
+
+    if body.status not in ["Approved", "Rejected"]:
+        raise HTTPException(400, "Status must be 'Approved' or 'Rejected'")
+
+    existing = await db.shift_change_requests.find_one({"request_id": request_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Request not found")
+    if existing["status"] != "Pending":
+        raise HTTPException(400, "Can only review pending requests")
+
+    reviewer_id = my_emp["employee_id"] if my_emp else None
+    now = datetime.now(timezone.utc).isoformat()
+    update = {
+        "status": body.status,
+        "reviewed_by": reviewer_id,
+        "reviewed_at": now,
+        "admin_notes": body.admin_notes or ""
+    }
+    await db.shift_change_requests.update_one({"request_id": request_id}, {"$set": update})
+    return {**existing, **update}
+
+
+@api_router.delete("/shift-change-requests/{request_id}")
+async def cancel_shift_change_request(request_id: str, request: Request):
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    if not my_emp:
+        raise HTTPException(403, "Employee profile not found")
+
+    existing = await db.shift_change_requests.find_one({"request_id": request_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Request not found")
+
+    is_admin = user.get("is_admin") or my_emp.get("department_name") == "Admin"
+    if not is_admin and existing["employee_id"] != my_emp["employee_id"]:
+        raise HTTPException(403, "You can only cancel your own requests")
+
+    if existing["status"] != "Pending":
+        raise HTTPException(400, "Only pending requests can be cancelled")
+
+    await db.shift_change_requests.delete_one({"request_id": request_id})
+    return {"message": "Request cancelled"}
+
+
 app.include_router(api_router)
+
 
 # Custom CORS middleware that always reflects the request Origin back.
 # This is required because allow_credentials=True is incompatible with

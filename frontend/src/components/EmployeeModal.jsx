@@ -25,7 +25,8 @@ const EMPTY_FORM = {
   reporting_manager_id: "", reporting_manager_name: "", employee_type: "",
   joining_date: "", basic_salary: "", bank_name: "", account_name: "",
   account_number: "", ifsc_code: "", profile_picture: null, status: "Active",
-  teams: []
+  teams: [],
+  shift_id: ""
 };
 
 const inputCls = "bg-[#191919] border-white/10 text-white placeholder-[#B3B3B3] focus-visible:ring-white/20 focus-visible:border-white/30";
@@ -60,6 +61,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
   const [jobPositions, setJobPositions] = useState([]); // filtered by dept
   const [allEmployees, setAllEmployees] = useState([]);
   const [allTeams, setAllTeams] = useState([]);
+  const [allShifts, setAllShifts] = useState([]);
 
   const selectedJobPos = jobPositions.find(jp => jp.position_id === form.job_position_id);
   const showLevel = selectedJobPos?.has_levels === true;
@@ -68,16 +70,18 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
   useEffect(() => {
     const load = async () => {
       try {
-        const [statesRes, deptsRes, empsRes, teamsRes] = await Promise.all([
+        const [statesRes, deptsRes, empsRes, teamsRes, shiftsRes] = await Promise.all([
           axios.get(`${API}/states`, { withCredentials: true }),
           axios.get(`${API}/departments`, { withCredentials: true }),
           axios.get(`${API}/employees`, { withCredentials: true }),
           axios.get(`${API}/teams`, { withCredentials: true }),
+          axios.get(`${API}/shifts`, { withCredentials: true }),
         ]);
         setStates(statesRes.data);
         setDepartments(deptsRes.data);
         setAllEmployees(empsRes.data);
         setAllTeams(teamsRes.data);
+        setAllShifts(shiftsRes.data);
       } catch {
         toast.error("Failed to load form data");
       }
@@ -97,7 +101,18 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
         reporting_manager_name: employee.reporting_manager_name || "",
         profile_picture: employee.profile_picture || null,
         teams: employee.teams || [],
+        shift_id: employee.shift_id || "",
       });
+      // Load employee's current shift if editing
+      if (employee.employee_id) {
+        axios.get(`${API}/employee-shifts/${employee.employee_id}`, { withCredentials: true })
+          .then(res => {
+            if (res.data?.shift_id) {
+              setForm(prev => ({ ...prev, shift_id: res.data.shift_id }));
+            }
+          })
+          .catch(() => {});
+      }
     } else {
       setForm(EMPTY_FORM);
     }
@@ -524,6 +539,43 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
                     </p>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Shift Assignment */}
+            {allShifts.length > 0 && (
+              <div className="mt-5 pt-5 border-t border-white/10">
+                <p className="text-white font-medium text-sm mb-3">Shift Assignment</p>
+                <FormField label="Assigned Shift" error={errors.shift_id}>
+                  <Select value={form.shift_id || "__default__"} onValueChange={v => set("shift_id", v === "__default__" ? "" : v)}>
+                    <SelectTrigger className={`${inputCls} focus:ring-0`}>
+                      <SelectValue placeholder="Select shift (defaults to Regular 9-6)" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#2F2F2F] border-white/10">
+                      {allShifts.map(s => {
+                        const sh = s.start_time ? (() => {
+                          const [h, m] = s.start_time.split(":").map(Number);
+                          const ampm = h >= 12 ? "PM" : "AM";
+                          const hr = h % 12 || 12;
+                          return `${hr}:${m.toString().padStart(2, "0")} ${ampm}`;
+                        })() : "";
+                        const eh = s.end_time ? (() => {
+                          const [h, m] = s.end_time.split(":").map(Number);
+                          const ampm = h >= 12 ? "PM" : "AM";
+                          const hr = h % 12 || 12;
+                          return `${hr}:${m.toString().padStart(2, "0")} ${ampm}`;
+                        })() : "";
+                        return (
+                          <SelectItem key={s.shift_id} value={s.shift_id} className="text-white focus:bg-white/10">
+                            {s.shift_name} {sh && eh ? `(${sh} – ${eh})` : ""}
+                            {s.is_system_default ? " — Default" : ""}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[#666] text-xs mt-1">Defaults to "Regular 9-6" if not selected</p>
+                </FormField>
               </div>
             )}
 

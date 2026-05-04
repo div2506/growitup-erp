@@ -8,6 +8,7 @@ import DepartmentsPage from "@/pages/DepartmentsPage";
 import JobPositionsPage from "@/pages/JobPositionsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import PerformancePage from "@/pages/PerformancePage";
+import ShiftsPage from "@/pages/ShiftsPage";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Layout from "@/components/Layout";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -44,6 +45,7 @@ function AppRouter() {
         <Route path="job-positions" element={<JobPositionsPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="performance" element={<PerformancePage />} />
+        <Route path="shifts" element={<ShiftsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/employees" replace />} />
     </Routes>
