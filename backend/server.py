@@ -160,6 +160,18 @@ class WFHRequestReview(BaseModel):
     approved_days: Optional[List[str]] = None  # For partial approval (list of date strings)
 
 
+class OvertimeRequestCreate(BaseModel):
+    date: str           # "YYYY-MM-DD"
+    overtime_from: str  # "HH:MM" - must be >= shift end time
+    overtime_to: str    # "HH:MM" - must be > overtime_from
+    reason: str
+
+
+class OvertimeRequestReview(BaseModel):
+    status: str  # "Approved" or "Rejected"
+    admin_notes: Optional[str] = None
+
+
 class AttendanceEntryCreate(BaseModel):
     employee_id: str
     timestamp: str  # ISO format: "2026-04-27T09:15:30"
@@ -600,6 +612,44 @@ async def notify_leave_submitted(leave_req: dict, employee: dict) -> None:
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[Leave] Slack notification failed (non-blocking): {exc}")
+
+
+# ===================== OVERTIME HELPERS =====================
+
+def get_days_in_month(date_str: str) -> int:
+    """Return number of days in the month of the given date."""
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return cal_module.monthrange(dt.year, dt.month)[1]
+    except Exception:
+        return 30
+
+
+def calc_hourly_rate(basic_salary: float, date_str: str) -> float:
+    """Hourly rate = basic_salary / days_in_month / 8 working hours."""
+    days = get_days_in_month(date_str)
+    if days == 0:
+        days = 30
+    return round(basic_salary / days / 8, 4)
+
+
+def calc_overtime_hours(from_time: str, to_time: str) -> float:
+    """Calculate duration in hours between two HH:MM times. Handles midnight crossover."""
+    try:
+        fh, fm = map(int, from_time.split(":"))
+        th, tm = map(int, to_time.split(":"))
+        from_mins = fh * 60 + fm
+        to_mins = th * 60 + tm
+        if to_mins <= from_mins:          # midnight crossover
+            to_mins += 24 * 60
+        return round((to_mins - from_mins) / 60, 2)
+    except Exception:
+        return 0.0
+
+
+def calc_overtime_pay(total_hours: float, hourly_rate: float) -> float:
+    """Overtime pay = total_hours × hourly_rate × 1.25."""
+    return round(total_hours * hourly_rate * 1.25, 2)
 
 
 # ===================== WFH HELPERS =====================
@@ -3592,7 +3642,222 @@ async def get_late_tracking(
     return records
 
 
-# ===================== WFH ROUTES =====================
+# ===================== OVERTIME ROUTES =====================
+
+@api_router.get("/overtime/shift-info")
+async def get_overtime_shift_info(request: Request, date: str):
+    """Return the active shift info (including effective end_time) for the logged-in employee on a given date."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    if not my_emp:
+        raise HTTPException(403, "Employee profile not found")
+    try:
+        date_dt = datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+
+    shift = await get_active_shift_for_date_async(my_emp["employee_id"], date_dt)
+    if not shift:
+        raise HTTPException(404, "No active shift found for this date")
+
+    timings = get_shift_timings_for_date(shift, date_dt)
+    return {
+        "shift_id": shift["shift_id"],
+        "shift_name": shift["shift_name"],
+        "start_time": timings.get("start_time", shift["start_time"]),
+        "end_time": timings.get("end_time", shift["end_time"]),
+        "total_hours": timings.get("total_hours", shift.get("total_hours")),
+    }
+
+
+@api_router.get("/overtime/requests")
+async def get_overtime_requests(
+    request: Request,
+    employee_id: Optional[str] = None,
+    status: Optional[str] = None,
+    month: Optional[str] = None
+):
+    """Get overtime requests. Admin sees all, employee sees own."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+
+    query: dict = {}
+    if not is_admin:
+        if not my_emp:
+            return []
+        query["employee_id"] = my_emp["employee_id"]
+    elif employee_id:
+        query["employee_id"] = employee_id
+
+    if status and status != "All":
+        query["status"] = status
+
+    if month:
+        m = month[:7] if len(month) >= 7 else month
+        try:
+            yr, mo = m.split("-")
+            first_day = f"{yr}-{mo}-01"
+            last_day = f"{yr}-{mo}-{cal_module.monthrange(int(yr), int(mo))[1]:02d}"
+            query["date"] = {"$gte": first_day, "$lte": last_day}
+        except Exception:
+            pass
+
+    ot_list = await db.overtime_requests.find(query, {"_id": 0}).sort("date", -1).to_list(500)
+
+    # Enrich with employee info
+    emp_cache: dict = {}
+    for r in ot_list:
+        eid = r["employee_id"]
+        if eid not in emp_cache:
+            e = await db.employees.find_one({"employee_id": eid}, {
+                "_id": 0, "employee_id": 1, "first_name": 1, "last_name": 1,
+                "profile_picture": 1, "department_name": 1, "job_position_name": 1,
+                "basic_salary": 1
+            })
+            emp_cache[eid] = e
+        r["employee"] = emp_cache.get(eid)
+
+        if r.get("reviewed_by"):
+            rev = await db.employees.find_one({"employee_id": r["reviewed_by"]}, {"_id": 0, "first_name": 1, "last_name": 1})
+            r["reviewer_name"] = f"{rev['first_name']} {rev['last_name']}" if rev else None
+        else:
+            r["reviewer_name"] = None
+
+    return ot_list
+
+
+@api_router.post("/overtime/requests")
+async def create_overtime_request(body: OvertimeRequestCreate, request: Request):
+    """Submit an overtime request."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    if not my_emp:
+        raise HTTPException(403, "Employee profile not found")
+
+    # Reason validation
+    if not body.reason or not body.reason.strip():
+        raise HTTPException(400, "Reason is required")
+    if len(body.reason) > 1000:
+        raise HTTPException(400, "Reason must be 1000 characters or less")
+
+    # Date validation — no future dates
+    try:
+        date_dt = datetime.strptime(body.date, "%Y-%m-%d")
+        today_dt = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+
+    if date_dt > today_dt:
+        raise HTTPException(400, "Cannot log overtime for future dates")
+
+    # Duplicate check (one overtime per employee per day)
+    existing_ot = await db.overtime_requests.find_one({
+        "employee_id": my_emp["employee_id"], "date": body.date
+    }, {"_id": 0})
+    if existing_ot:
+        raise HTTPException(400, "Overtime already logged for this date")
+
+    # Cannot log on Leave or Absent days
+    att = await db.daily_attendance.find_one({
+        "employee_id": my_emp["employee_id"], "date": body.date
+    }, {"_id": 0})
+    if att and att.get("status") in ["Leave", "Absent"]:
+        raise HTTPException(400, f"Cannot log overtime for a day marked as {att['status']}")
+
+    # Get active shift
+    shift = await get_active_shift_for_date_async(my_emp["employee_id"], date_dt)
+    if not shift:
+        raise HTTPException(400, "No active shift found for this date. Contact HR.")
+
+    timings = get_shift_timings_for_date(shift, date_dt)
+    shift_end_time = timings.get("end_time", shift.get("end_time", "18:00"))
+
+    # Validate time format
+    try:
+        end_h, end_m = map(int, shift_end_time.split(":"))
+        fh, fm = map(int, body.overtime_from.split(":"))
+        th, tm = map(int, body.overtime_to.split(":"))
+    except Exception:
+        raise HTTPException(400, "Invalid time format. Use HH:MM")
+
+    from_mins = fh * 60 + fm
+    end_mins = end_h * 60 + end_m
+    to_mins = th * 60 + tm
+    to_mins_adj = to_mins if to_mins > from_mins else to_mins + 24 * 60
+
+    if from_mins < end_mins:
+        raise HTTPException(400, f"Overtime start time must be at or after shift end time ({shift_end_time})")
+    if to_mins_adj <= from_mins:
+        raise HTTPException(400, "Overtime end time must be after start time")
+
+    # Calculate
+    total_hours = calc_overtime_hours(body.overtime_from, body.overtime_to)
+    basic_salary = float(my_emp.get("basic_salary") or 0)
+    hourly_rate = calc_hourly_rate(basic_salary, body.date)
+    overtime_pay = calc_overtime_pay(total_hours, hourly_rate)
+
+    now = datetime.now(timezone.utc).isoformat()
+    new_req = {
+        "request_id": f"ot_{uuid.uuid4().hex[:12]}",
+        "employee_id": my_emp["employee_id"],
+        "date": body.date,
+        "shift_id": shift["shift_id"],
+        "shift_end_time": shift_end_time,
+        "overtime_from": body.overtime_from,
+        "overtime_to": body.overtime_to,
+        "total_hours": total_hours,
+        "hourly_rate": hourly_rate,
+        "overtime_pay": overtime_pay,
+        "reason": body.reason.strip(),
+        "status": "Pending",
+        "requested_at": now,
+        "reviewed_by": None, "reviewed_at": None,
+        "admin_notes": None,
+        "created_at": now, "updated_at": now
+    }
+    await db.overtime_requests.insert_one(new_req)
+    return {k: v for k, v in new_req.items() if k != "_id"}
+
+
+@api_router.put("/overtime/requests/{request_id}/review")
+async def review_overtime_request(request_id: str, body: OvertimeRequestReview, request: Request):
+    """Admin approve or reject an overtime request."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can review overtime requests")
+
+    if body.status not in ["Approved", "Rejected"]:
+        raise HTTPException(400, "Status must be 'Approved' or 'Rejected'")
+
+    existing = await db.overtime_requests.find_one({"request_id": request_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Overtime request not found")
+    if existing["status"] != "Pending":
+        raise HTTPException(400, "Only pending requests can be reviewed")
+
+    reviewer_id = my_emp["employee_id"] if my_emp else None
+    now = datetime.now(timezone.utc).isoformat()
+    update = {
+        "status": body.status, "reviewed_by": reviewer_id,
+        "reviewed_at": now, "admin_notes": body.admin_notes or "",
+        "updated_at": now
+    }
+    await db.overtime_requests.update_one({"request_id": request_id}, {"$set": update})
+    return {**existing, **update}
+
+
+app.include_router(api_router)
 
 @api_router.get("/wfh/usage")
 async def get_wfh_usage(

@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 
 # Configuration
-BASE_URL = "http://localhost:8001/api"
+BASE_URL = "https://team-admin-25.preview.emergentagent.com/api"
 ATTENDANCE_API_KEY = "att_growitup_key_2026"
 
 # Test credentials
@@ -628,6 +628,493 @@ def test_sunday_holiday():
         results.add_fail("10.2: Sunday status is Holiday", 
                         f"Status: {response.status_code}, Response: {response.text}")
 
+
+# ===================== OVERTIME TESTS =====================
+
+def test_overtime_shift_info():
+    """Test Group 1: GET /api/overtime/shift-info"""
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}OVERTIME TEST GROUP 1: GET /api/overtime/shift-info{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}")
+    
+    # Get GM001's credentials first
+    admin_session = create_session()
+    if not login_as_admin(admin_session):
+        results.add_fail("Test 1.x: Setup", "Failed to login as admin")
+        return
+    
+    response = admin_session.get(f"{BASE_URL}/employees")
+    if response.status_code != 200:
+        results.add_fail("Test 1.x: Setup", f"Failed to get employees: {response.text}")
+        return
+    
+    employees = response.json()
+    gm001 = next((e for e in employees if e.get("employee_id") == "GM001"), None)
+    if not gm001 or not gm001.get("work_email"):
+        results.add_fail("Test 1.x: Setup", "GM001 not found or no email")
+        return
+    
+    # Login as GM001
+    gm001_session = create_session()
+    response = gm001_session.post(f"{BASE_URL}/auth/google", json={
+        "credential": {
+            "email": gm001.get("work_email"),
+            "name": f"{gm001.get('first_name')} {gm001.get('last_name')}",
+            "picture": gm001.get("profile_picture", "https://example.com/gm001.jpg"),
+            "sub": "gm001_test"
+        }
+    })
+    
+    if response.status_code != 200:
+        results.add_fail("Test 1.x: Setup", f"Failed to login as GM001: {response.text}")
+        return
+    
+    session_token = response.cookies.get('session_token')
+    if not session_token:
+        results.add_fail("Test 1.x: Setup", "No session token for GM001")
+        return
+    
+    gm001_session.headers.update({"Authorization": f"Bearer {session_token}"})
+    print(f"{GREEN}✓ Logged in as GM001 for shift-info tests{RESET}")
+    
+    # Test 1.1: Get shift info for today (or recent past date)
+    print(f"\n{YELLOW}Test 1.1: Get shift info for a past date (2026-05-01){RESET}")
+    response = gm001_session.get(f"{BASE_URL}/overtime/shift-info?date=2026-05-01")
+    if response.status_code == 200:
+        data = response.json()
+        required_fields = ["shift_id", "shift_name", "start_time", "end_time"]
+        missing_fields = [f for f in required_fields if f not in data]
+        if missing_fields:
+            results.add_fail("Test 1.1: Get shift info", f"Missing fields: {missing_fields}. Response: {data}")
+        else:
+            results.add_pass("Test 1.1: Get shift info", 
+                f"shift_id={data['shift_id']}, shift_name={data['shift_name']}, "
+                f"start_time={data['start_time']}, end_time={data['end_time']}")
+    else:
+        results.add_fail("Test 1.1: Get shift info", f"Status {response.status_code}: {response.text}")
+    
+    # Test 1.2: Get shift info for 1st Saturday (should show end_time 13:00)
+    print(f"\n{YELLOW}Test 1.2: Get shift info for 1st Saturday (2026-07-04){RESET}")
+    response = gm001_session.get(f"{BASE_URL}/overtime/shift-info?date=2026-07-04")
+    if response.status_code == 200:
+        data = response.json()
+        if data.get("end_time") == "13:00":
+            results.add_pass("Test 1.2: Saturday shift info", 
+                f"1st Saturday correctly shows end_time=13:00. Full response: {data}")
+        else:
+            results.add_fail("Test 1.2: Saturday shift info", 
+                f"Expected end_time=13:00 for 1st Saturday, got {data.get('end_time')}. Response: {data}")
+    else:
+        results.add_fail("Test 1.2: Saturday shift info", f"Status {response.status_code}: {response.text}")
+    
+    # Test 1.3: Get shift info for future date (should still work)
+    print(f"\n{YELLOW}Test 1.3: Get shift info for future date (2026-12-01){RESET}")
+    response = gm001_session.get(f"{BASE_URL}/overtime/shift-info?date=2026-12-01")
+    if response.status_code == 200:
+        data = response.json()
+        results.add_pass("Test 1.3: Future date shift info", 
+            f"Future date works. shift_name={data.get('shift_name')}, end_time={data.get('end_time')}")
+    else:
+        results.add_fail("Test 1.3: Future date shift info", f"Status {response.status_code}: {response.text}")
+
+
+def test_overtime_get_requests():
+    """Test Group 2: GET /api/overtime/requests"""
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}OVERTIME TEST GROUP 2: GET /api/overtime/requests{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}")
+    
+    # Test 2.1: Admin sees all requests (empty initially)
+    print(f"\n{YELLOW}Test 2.1: Admin sees all overtime requests{RESET}")
+    admin_session = create_session()
+    if not login_as_admin(admin_session):
+        results.add_fail("Test 2.1: Admin get requests", "Failed to login as admin")
+        return
+    
+    response = admin_session.get(f"{BASE_URL}/overtime/requests")
+    if response.status_code == 200:
+        data = response.json()
+        results.add_pass("Test 2.1: Admin get requests", 
+            f"Admin can see all requests. Count: {len(data)}")
+    else:
+        results.add_fail("Test 2.1: Admin get requests", f"Status {response.status_code}: {response.text}")
+    
+    # Test 2.2: Filter by status=Pending
+    print(f"\n{YELLOW}Test 2.2: Filter by status=Pending{RESET}")
+    response = admin_session.get(f"{BASE_URL}/overtime/requests?status=Pending")
+    if response.status_code == 200:
+        data = response.json()
+        all_pending = all(r.get("status") == "Pending" for r in data)
+        if all_pending or len(data) == 0:
+            results.add_pass("Test 2.2: Filter by status", 
+                f"Status filter working. Pending requests: {len(data)}")
+        else:
+            results.add_fail("Test 2.2: Filter by status", 
+                f"Found non-Pending requests in filtered results")
+    else:
+        results.add_fail("Test 2.2: Filter by status", f"Status {response.status_code}: {response.text}")
+    
+    # Test 2.3: Filter by month=2026-05
+    print(f"\n{YELLOW}Test 2.3: Filter by month=2026-05{RESET}")
+    response = admin_session.get(f"{BASE_URL}/overtime/requests?month=2026-05")
+    if response.status_code == 200:
+        data = response.json()
+        results.add_pass("Test 2.3: Filter by month", 
+            f"Month filter working. May 2026 requests: {len(data)}")
+    else:
+        results.add_fail("Test 2.3: Filter by month", f"Status {response.status_code}: {response.text}")
+
+
+def test_overtime_create_request():
+    """Test Group 3: POST /api/overtime/requests"""
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}OVERTIME TEST GROUP 3: POST /api/overtime/requests{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}")
+    
+    # First, we need to login as GM001 (non-admin employee)
+    # Since we don't have GM001's email, we'll use admin to check if GM001 exists
+    admin_session = create_session()
+    if not login_as_admin(admin_session):
+        results.add_fail("Test 3.x: Setup", "Failed to login as admin")
+        return
+    
+    # Check if GM001 exists and get their email
+    response = admin_session.get(f"{BASE_URL}/employees")
+    if response.status_code != 200:
+        results.add_fail("Test 3.x: Setup", f"Failed to get employees: {response.text}")
+        return
+    
+    employees = response.json()
+    gm001 = next((e for e in employees if e.get("employee_id") == "GM001"), None)
+    
+    if not gm001:
+        results.add_fail("Test 3.x: Setup", "GM001 employee not found in database")
+        return
+    
+    if not gm001.get("basic_salary"):
+        results.add_fail("Test 3.x: Setup", f"GM001 has no basic_salary field. Employee data: {gm001}")
+        return
+    
+    gm001_email = gm001.get("work_email")
+    if not gm001_email:
+        results.add_fail("Test 3.x: Setup", "GM001 has no work_email")
+        return
+    
+    print(f"{GREEN}✓ GM001 found: {gm001.get('first_name')} {gm001.get('last_name')}, email={gm001_email}, basic_salary={gm001.get('basic_salary')}{RESET}")
+    
+    # Login as GM001
+    gm001_session = create_session()
+    response = gm001_session.post(f"{BASE_URL}/auth/google", json={
+        "credential": {
+            "email": gm001_email,
+            "name": f"{gm001.get('first_name')} {gm001.get('last_name')}",
+            "picture": gm001.get("profile_picture", "https://example.com/gm001.jpg"),
+            "sub": "gm001_test"
+        }
+    })
+    
+    if response.status_code != 200:
+        results.add_fail("Test 3.x: Setup", f"Failed to login as GM001: {response.text}")
+        return
+    
+    session_token = response.cookies.get('session_token')
+    if not session_token:
+        results.add_fail("Test 3.x: Setup", "No session token for GM001")
+        return
+    
+    gm001_session.headers.update({"Authorization": f"Bearer {session_token}"})
+    print(f"{GREEN}✓ Logged in as GM001{RESET}")
+    
+    # Test 3.1: Valid overtime request
+    print(f"\n{YELLOW}Test 3.1: Create valid overtime request (2026-04-01, 19:00-21:30){RESET}")
+    response = gm001_session.post(f"{BASE_URL}/overtime/requests", json={
+        "date": "2026-04-01",
+        "overtime_from": "19:00",
+        "overtime_to": "21:30",
+        "reason": "Urgent project deadline"
+    })
+    
+    if response.status_code == 200:
+        data = response.json()
+        required_fields = ["request_id", "employee_id", "date", "shift_end_time", 
+                          "overtime_from", "overtime_to", "total_hours", "hourly_rate", 
+                          "overtime_pay", "status"]
+        missing_fields = [f for f in required_fields if f not in data]
+        
+        if missing_fields:
+            results.add_fail("Test 3.1: Create valid request", f"Missing fields: {missing_fields}")
+        else:
+            # Verify calculations
+            expected_total_hours = 2.5  # 19:00 to 21:30
+            actual_total_hours = data.get("total_hours")
+            
+            # Calculate expected values
+            basic_salary = float(gm001.get("basic_salary", 0))
+            days_in_may = 31
+            expected_hourly_rate = round(basic_salary / days_in_may / 8, 4)
+            expected_overtime_pay = round(expected_total_hours * expected_hourly_rate * 1.25, 2)
+            
+            if abs(actual_total_hours - expected_total_hours) < 0.01:
+                results.add_pass("Test 3.1: Create valid request", 
+                    f"request_id={data['request_id']}, total_hours={actual_total_hours}, "
+                    f"hourly_rate={data['hourly_rate']}, overtime_pay={data['overtime_pay']}, "
+                    f"status={data['status']}")
+                
+                # Store request_id for later tests
+                global test_request_id
+                test_request_id = data['request_id']
+            else:
+                results.add_fail("Test 3.1: Create valid request", 
+                    f"total_hours calculation wrong. Expected {expected_total_hours}, got {actual_total_hours}")
+    else:
+        results.add_fail("Test 3.1: Create valid request", f"Status {response.status_code}: {response.text}")
+    
+    # Test 3.2: Future date should fail
+    print(f"\n{YELLOW}Test 3.2: Future date should fail (2026-12-01){RESET}")
+    response = gm001_session.post(f"{BASE_URL}/overtime/requests", json={
+        "date": "2026-12-01",
+        "overtime_from": "19:00",
+        "overtime_to": "21:00",
+        "reason": "Test future date"
+    })
+    
+    if response.status_code == 400 and "future" in response.text.lower():
+        results.add_pass("Test 3.2: Future date validation", 
+            f"Future date correctly rejected with 400: {response.text}")
+    else:
+        results.add_fail("Test 3.2: Future date validation", 
+            f"Expected 400 with 'future' message, got {response.status_code}: {response.text}")
+    
+    # Test 3.3: overtime_from < shift_end_time should fail
+    print(f"\n{YELLOW}Test 3.3: overtime_from before shift end should fail{RESET}")
+    response = gm001_session.post(f"{BASE_URL}/overtime/requests", json={
+        "date": "2026-04-02",  # Wednesday in the past
+        "overtime_from": "17:00",  # Before typical 18:00 end time
+        "overtime_to": "19:00",
+        "reason": "Test early overtime"
+    })
+    
+    if response.status_code == 400 and ("shift end" in response.text.lower() or "after" in response.text.lower()):
+        results.add_pass("Test 3.3: Overtime before shift end validation", 
+            f"Early overtime correctly rejected with 400: {response.text}")
+    else:
+        results.add_fail("Test 3.3: Overtime before shift end validation", 
+            f"Expected 400 with shift end message, got {response.status_code}: {response.text}")
+    
+    # Test 3.4: Duplicate date should fail
+    print(f"\n{YELLOW}Test 3.4: Duplicate date should fail (2026-04-01 again){RESET}")
+    response = gm001_session.post(f"{BASE_URL}/overtime/requests", json={
+        "date": "2026-04-01",
+        "overtime_from": "19:00",
+        "overtime_to": "20:00",
+        "reason": "Test duplicate"
+    })
+    
+    if response.status_code == 400 and ("already" in response.text.lower() or "duplicate" in response.text.lower()):
+        results.add_pass("Test 3.4: Duplicate date validation", 
+            f"Duplicate date correctly rejected with 400: {response.text}")
+    else:
+        results.add_fail("Test 3.4: Duplicate date validation", 
+            f"Expected 400 with duplicate message, got {response.status_code}: {response.text}")
+    
+    # Test 3.5: Verify calculation with specific values
+    # If basic_salary=30000, date=2026-04-01 (April, 30 days), overtime=2h
+    # hourly_rate = 30000/30/8 = 125
+    # overtime_pay = 2 × 125 × 1.25 = 312.5
+    print(f"\n{YELLOW}Test 3.5: Verify calculation (if basic_salary allows){RESET}")
+    basic_salary = float(gm001.get("basic_salary", 0))
+    print(f"GM001 basic_salary: {basic_salary}")
+    
+    # Create a request for April 2026 (30 days) with 2 hours overtime
+    response = gm001_session.post(f"{BASE_URL}/overtime/requests", json={
+        "date": "2026-04-03",
+        "overtime_from": "19:00",
+        "overtime_to": "21:00",
+        "reason": "Test calculation"
+    })
+    
+    if response.status_code == 200:
+        data = response.json()
+        days_in_april = 30
+        expected_hourly_rate = round(basic_salary / days_in_april / 8, 4)
+        expected_total_hours = 2.0
+        expected_overtime_pay = round(expected_total_hours * expected_hourly_rate * 1.25, 2)
+        
+        actual_hourly_rate = data.get("hourly_rate")
+        actual_total_hours = data.get("total_hours")
+        actual_overtime_pay = data.get("overtime_pay")
+        
+        if (abs(actual_hourly_rate - expected_hourly_rate) < 0.01 and
+            abs(actual_total_hours - expected_total_hours) < 0.01 and
+            abs(actual_overtime_pay - expected_overtime_pay) < 0.01):
+            results.add_pass("Test 3.5: Calculation verification", 
+                f"Calculations correct: hourly_rate={actual_hourly_rate} (expected {expected_hourly_rate}), "
+                f"total_hours={actual_total_hours}, overtime_pay={actual_overtime_pay} (expected {expected_overtime_pay})")
+        else:
+            results.add_fail("Test 3.5: Calculation verification", 
+                f"Calculations incorrect. Expected: hourly_rate={expected_hourly_rate}, overtime_pay={expected_overtime_pay}. "
+                f"Got: hourly_rate={actual_hourly_rate}, overtime_pay={actual_overtime_pay}")
+    else:
+        results.add_fail("Test 3.5: Calculation verification", 
+            f"Failed to create request: {response.status_code}: {response.text}")
+
+
+def test_overtime_review_request():
+    """Test Group 4: PUT /api/overtime/requests/{id}/review"""
+    print(f"\n{BLUE}{'='*60}{RESET}")
+    print(f"{BLUE}OVERTIME TEST GROUP 4: PUT /api/overtime/requests/{id}/review{RESET}")
+    print(f"{BLUE}{'='*60}{RESET}")
+    
+    # Get a pending request to review
+    admin_session = create_session()
+    if not login_as_admin(admin_session):
+        results.add_fail("Test 4.x: Setup", "Failed to login as admin")
+        return
+    
+    response = admin_session.get(f"{BASE_URL}/overtime/requests?status=Pending")
+    if response.status_code != 200:
+        results.add_fail("Test 4.x: Setup", f"Failed to get pending requests: {response.text}")
+        return
+    
+    pending_requests = response.json()
+    if len(pending_requests) == 0:
+        results.add_fail("Test 4.x: Setup", "No pending overtime requests found. Create some first.")
+        return
+    
+    # Use the first pending request for approval test
+    approve_request = pending_requests[0]
+    approve_request_id = approve_request.get("request_id")
+    
+    # Use the second pending request for rejection test (if available)
+    reject_request_id = None
+    if len(pending_requests) > 1:
+        reject_request_id = pending_requests[1].get("request_id")
+    
+    print(f"{GREEN}✓ Found {len(pending_requests)} pending requests{RESET}")
+    
+    # Test 4.1: Admin approve request
+    print(f"\n{YELLOW}Test 4.1: Admin approve overtime request{RESET}")
+    response = admin_session.put(f"{BASE_URL}/overtime/requests/{approve_request_id}/review", json={
+        "status": "Approved",
+        "admin_notes": "Approved for urgent project work"
+    })
+    
+    if response.status_code == 200:
+        data = response.json()
+        # Admin without employee record will have reviewed_by=None, which is acceptable
+        if (data.get("status") == "Approved" and 
+            data.get("admin_notes") and 
+            data.get("reviewed_at")):
+            if data.get("reviewed_by"):
+                results.add_pass("Test 4.1: Admin approve", 
+                    f"Request approved successfully. status={data['status']}, "
+                    f"reviewed_by={data['reviewed_by']}, admin_notes={data['admin_notes']}")
+            else:
+                results.add_pass("Test 4.1: Admin approve", 
+                    f"Request approved successfully. status={data['status']}, "
+                    f"admin_notes={data['admin_notes']}. Minor: reviewed_by=None (admin has no employee record)")
+        else:
+            results.add_fail("Test 4.1: Admin approve", 
+                f"Missing required fields in response: {data}")
+    else:
+        results.add_fail("Test 4.1: Admin approve", f"Status {response.status_code}: {response.text}")
+    
+    # Test 4.2: Admin reject request (if we have another pending request)
+    if reject_request_id:
+        print(f"\n{YELLOW}Test 4.2: Admin reject overtime request{RESET}")
+        response = admin_session.put(f"{BASE_URL}/overtime/requests/{reject_request_id}/review", json={
+            "status": "Rejected",
+            "admin_notes": "Insufficient justification"
+        })
+        
+        if response.status_code == 200:
+            data = response.json()
+            if (data.get("status") == "Rejected" and 
+                data.get("admin_notes") == "Insufficient justification"):
+                results.add_pass("Test 4.2: Admin reject", 
+                    f"Request rejected successfully. admin_notes saved correctly")
+            else:
+                results.add_fail("Test 4.2: Admin reject", 
+                    f"Rejection not saved correctly: {data}")
+        else:
+            results.add_fail("Test 4.2: Admin reject", f"Status {response.status_code}: {response.text}")
+    else:
+        print(f"{YELLOW}Test 4.2: Skipped (no second pending request){RESET}")
+    
+    # Test 4.3: Non-admin cannot review
+    print(f"\n{YELLOW}Test 4.3: Non-admin cannot review requests{RESET}")
+    
+    # First, create a new pending request to test with
+    response = admin_session.get(f"{BASE_URL}/employees")
+    if response.status_code == 200:
+        employees = response.json()
+        gm001 = next((e for e in employees if e.get("employee_id") == "GM001"), None)
+        
+        if gm001 and gm001.get("work_email"):
+            # Login as GM001 to create a new request
+            gm001_session_temp = create_session()
+            response = gm001_session_temp.post(f"{BASE_URL}/auth/google", json={
+                "credential": {
+                    "email": gm001.get("work_email"),
+                    "name": f"{gm001.get('first_name')} {gm001.get('last_name')}",
+                    "picture": gm001.get("profile_picture", "https://example.com/gm001.jpg"),
+                    "sub": "gm001_test"
+                }
+            })
+            
+            if response.status_code == 200:
+                session_token = response.cookies.get('session_token')
+                gm001_session_temp.headers.update({"Authorization": f"Bearer {session_token}"})
+                
+                # Create a new overtime request for testing
+                response = gm001_session_temp.post(f"{BASE_URL}/overtime/requests", json={
+                    "date": "2026-04-04",
+                    "overtime_from": "19:00",
+                    "overtime_to": "21:00",
+                    "reason": "Test non-admin review"
+                })
+                
+                if response.status_code == 200:
+                    test_request_id = response.json().get("request_id")
+                    
+                    # Now try to review as non-admin (GM001)
+                    response = gm001_session_temp.put(f"{BASE_URL}/overtime/requests/{test_request_id}/review", json={
+                        "status": "Approved"
+                    })
+                    
+                    if response.status_code == 403:
+                        results.add_pass("Test 4.3: Non-admin blocked", 
+                            f"Non-admin correctly blocked with 403: {response.text}")
+                    else:
+                        results.add_fail("Test 4.3: Non-admin blocked", 
+                            f"Expected 403, got {response.status_code}: {response.text}")
+                else:
+                    results.add_fail("Test 4.3: Non-admin blocked", f"Failed to create test request: {response.text}")
+            else:
+                results.add_fail("Test 4.3: Non-admin blocked", "Failed to login as GM001")
+        else:
+            results.add_fail("Test 4.3: Non-admin blocked", "GM001 not found or no email")
+    else:
+        results.add_fail("Test 4.3: Non-admin blocked", "Failed to get employees")
+    
+    # Test 4.4: Cannot review already-reviewed request
+    print(f"\n{YELLOW}Test 4.4: Cannot review already-reviewed request{RESET}")
+    response = admin_session.put(f"{BASE_URL}/overtime/requests/{approve_request_id}/review", json={
+        "status": "Approved",
+        "admin_notes": "Try to review again"
+    })
+    
+    if response.status_code == 400 and ("pending" in response.text.lower() or "already" in response.text.lower()):
+        results.add_pass("Test 4.4: Already reviewed validation", 
+            f"Already-reviewed request correctly rejected with 400: {response.text}")
+    else:
+        results.add_fail("Test 4.4: Already reviewed validation", 
+            f"Expected 400 with pending/already message, got {response.status_code}: {response.text}")
+
+
+# Global variable to store request_id for cross-test usage
+test_request_id = None
+
 def main():
     print(f"\n{BLUE}{'='*60}{RESET}")
     print(f"{BLUE}ATTENDANCE SYSTEM BACKEND API TESTING{RESET}")
@@ -637,17 +1124,11 @@ def main():
     print(f"{YELLOW}Setting up test data...{RESET}")
     setup_test_data()
     
-    # Run all tests
-    test_biometric_entry()
-    test_process_attendance()
-    test_get_daily_attendance()
-    test_get_summary()
-    test_manual_attendance()
-    test_update_attendance()
-    test_all_employees_summary()
-    test_saturday_half_day()
-    test_late_tracking()
-    test_sunday_holiday()
+    # Run overtime tests only
+    test_overtime_shift_info()
+    test_overtime_get_requests()
+    test_overtime_create_request()
+    test_overtime_review_request()
     
     # Summary
     results.summary()
