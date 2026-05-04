@@ -183,7 +183,16 @@ Internal HR Employee Management + Performance Management System for GrowItUp com
 - **CSS utility**: `.no-scrollbar` added in `index.css` for clean horizontal scroll
 - Pushed to GitHub repo `growitup-erp` (main, commit `04ea098`) on 2026-05-02
 
-### Shift Management System (COMPLETE - 2026-07-2026)
+### Attendance System (COMPLETE - 2026-07-xx)
+- **Collections**: attendance_entries (raw biometric punches), daily_attendance (processed records), monthly_late_tracking (penalties)
+- **Biometric API**: POST /api/attendance/entry (X-API-Key: att_growitup_key_2026) — stores punch, triggers real-time processing
+- **Processing Logic**: First/last punch = check_in/out, total_hours = (co-ci)-break, 10min grace, Present>=8h50m, HalfDay>=3h50m, Saturday half-day (08:00-13:00, 4h50m threshold for 1st & 3rd Saturday)
+- **Late Penalties**: 4th late = 1 paid leave OR 1 day salary; 5th+ = 1.67% salary; stored in monthly_late_tracking
+- **API Endpoints**: GET /api/attendance/daily, /summary, /all-employees-summary; PUT /api/attendance/{id}; POST /api/attendance/manual, /process, /late-tracking
+- **Frontend**: AttendancePage.jsx — Calendar view (color-coded, late dot), Table view (filter/paginate), All Employees bulk view (admin), Summary cards, Admin edit modals, Late penalty alert banner
+- **Access**: Admin dept → all employees + edit; Others → own only; Attendance link in sidebar for all users
+
+### Shift Management System (COMPLETE - 2026-07-xx)
 - **Shifts DB**: shifts, employee_shifts, shift_change_requests collections
 - **Default Shift**: "Regular 9-6" (09:00-18:00, 60min break, 9h) — system default, cannot delete/rename
 - **Admin Shifts CRUD** (Settings → Shifts tab): Create/Edit/Delete shifts with time pickers, break dropdown, calculated total_hours
