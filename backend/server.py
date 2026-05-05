@@ -3904,6 +3904,14 @@ async def get_dashboard_my_requests(request: Request):
         return {"is_admin": False, "requests": requests_list}
 
 
+async def _write_biometric_log(log: dict):
+    """Fire-and-forget: insert a biometric API log record."""
+    try:
+        await db.biometric_logs.insert_one(log)
+    except Exception as exc:
+        logger.warning(f"[BiometricLog] Failed to write log: {exc}")
+
+
 @api_router.post("/attendance/entries")
 @api_router.post("/attendance/entry")
 async def create_attendance_entry(body: AttendanceEntryCreate, request: Request):
@@ -3913,7 +3921,19 @@ async def create_attendance_entry(body: AttendanceEntryCreate, request: Request)
     if api_key != ATTENDANCE_API_KEY:
         raise HTTPException(401, "Invalid or missing API key")
 
+    now = datetime.now(timezone.utc).isoformat()
+    log_base = {
+        "log_id": f"bl_{uuid.uuid4().hex[:12]}",
+        "source": body.source or "biometric",
+        "biometric_employee_code": body.biometric_employee_code or None,
+        "employee_id_input": body.employee_id or None,
+        "timestamp_input": body.timestamp,
+        "called_at": now,
+    }
+
     if not body.employee_id and not body.biometric_employee_code:
+        log = {**log_base, "status": "error", "message": "Neither employee_id nor biometric_employee_code provided", "resolved_employee_id": None}
+        await _write_biometric_log(log)
         raise HTTPException(400, "Provide either employee_id or biometric_employee_code")
 
     # Resolve employee
@@ -3922,23 +3942,32 @@ async def create_attendance_entry(body: AttendanceEntryCreate, request: Request)
             {"biometric_employee_code": body.biometric_employee_code}, {"_id": 0}
         ).to_list(5)
         if not matches:
-            return {"success": True, "message": f"Biometric code {body.biometric_employee_code} not mapped to any employee, skipped", "skipped": True}
+            log = {**log_base, "status": "skipped", "message": f"Biometric code {body.biometric_employee_code} not mapped to any employee", "resolved_employee_id": None}
+            await _write_biometric_log(log)
+            return {"success": True, "message": log["message"], "skipped": True}
         if len(matches) > 1:
-            raise HTTPException(400, f"Multiple employees found for biometric code {body.biometric_employee_code}")
+            log = {**log_base, "status": "error", "message": f"Multiple employees found for biometric code {body.biometric_employee_code}", "resolved_employee_id": None}
+            await _write_biometric_log(log)
+            raise HTTPException(400, log["message"])
         emp = matches[0]
     else:
         emp = await db.employees.find_one({"employee_id": body.employee_id}, {"_id": 0})
         if not emp:
-            raise HTTPException(400, f"Employee {body.employee_id} not found")
+            log = {**log_base, "status": "error", "message": f"Employee {body.employee_id} not found", "resolved_employee_id": None}
+            await _write_biometric_log(log)
+            raise HTTPException(400, log["message"])
 
     try:
         punch_dt = datetime.fromisoformat(body.timestamp)
         punch_date = punch_dt.strftime("%Y-%m-%d")
         punch_time_str = punch_dt.isoformat()
     except ValueError:
+        log = {**log_base, "status": "error", "message": "Invalid timestamp format", "resolved_employee_id": emp.get("employee_id")}
+        await _write_biometric_log(log)
         raise HTTPException(400, "Invalid timestamp. Use ISO format: YYYY-MM-DDTHH:MM:SS")
 
     resolved_employee_id = emp["employee_id"]
+    emp_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
 
     # Deduplicate: skip if this exact punch already exists
     existing = await db.attendance_entries.find_one(
@@ -3946,17 +3975,18 @@ async def create_attendance_entry(body: AttendanceEntryCreate, request: Request)
         {"_id": 1}
     )
     if existing:
+        log = {**log_base, "status": "duplicate", "message": "Punch already recorded", "resolved_employee_id": resolved_employee_id, "employee_name": emp_name, "punch_date": punch_date, "punch_time": punch_time_str}
+        await _write_biometric_log(log)
         return {"success": True, "message": "Punch already recorded", "skipped": True}
 
-    now = datetime.now(timezone.utc).isoformat()
     entry = {
         "entry_id": f"ae_{uuid.uuid4().hex[:12]}",
         "employee_id": resolved_employee_id,
         "punch_time": punch_time_str,
         "punch_date": punch_date,
         "created_at": now,
+        "source": body.source or "biometric",
     }
-    entry["source"] = body.source or "biometric"
     if body.biometric_employee_code:
         entry["biometric_employee_code"] = body.biometric_employee_code
     await db.attendance_entries.insert_one(entry)
@@ -3969,7 +3999,6 @@ async def create_attendance_entry(body: AttendanceEntryCreate, request: Request)
         {"_id": 0}
     )
     if prev_record:
-        # Previous day had only 1 punch — still only 1 punch, mark as "Forgot to Punch Out"
         await db.daily_attendance.update_one(
             {"employee_id": resolved_employee_id, "date": prev_date_str},
             {"$set": {"status": "Forgot Punch Out", "notes": "Employee forgot to punch out"}}
@@ -3977,7 +4006,51 @@ async def create_attendance_entry(body: AttendanceEntryCreate, request: Request)
 
     # Process today's attendance
     await process_daily_attendance_fn(resolved_employee_id, punch_date)
+
+    log = {**log_base, "status": "recorded", "message": "Attendance entry recorded", "resolved_employee_id": resolved_employee_id, "employee_name": emp_name, "punch_date": punch_date, "punch_time": punch_time_str, "entry_id": entry["entry_id"]}
+    await _write_biometric_log(log)
     return {"success": True, "message": "Attendance entry recorded", "entry_id": entry["entry_id"]}
+
+
+@api_router.get("/attendance/biometric-logs")
+async def get_biometric_logs(
+    request: Request,
+    date: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 200,
+):
+    """Admin only: fetch biometric API call logs."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Admin access required")
+
+    query = {}
+    if date:
+        # Filter by date in called_at or punch_date
+        query["$or"] = [
+            {"punch_date": date},
+            {"called_at": {"$regex": f"^{date}"}},
+        ]
+    if status:
+        query["status"] = status
+
+    logs = await db.biometric_logs.find(query, {"_id": 0}).sort("called_at", -1).limit(limit).to_list(limit)
+
+    # Summary counts
+    all_today = await db.biometric_logs.find(
+        {"punch_date": date} if date else {}, {"_id": 0, "status": 1}
+    ).to_list(10000)
+    summary = {"recorded": 0, "duplicate": 0, "skipped": 0, "error": 0, "total": len(all_today)}
+    for l in all_today:
+        s = l.get("status", "")
+        if s in summary:
+            summary[s] += 1
+
+    return {"logs": logs, "summary": summary}
 
 
 @api_router.post("/attendance/process")

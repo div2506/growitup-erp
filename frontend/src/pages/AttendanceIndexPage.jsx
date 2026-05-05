@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Calendar, Clock, Home, Timer } from "lucide-react";
+import { Calendar, Clock, Home, Timer, ScrollText } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import AttendancePage from "@/pages/AttendancePage";
@@ -9,6 +9,7 @@ import WFHRequestsPage from "@/pages/WFHRequestsPage";
 import OvertimePage from "@/pages/OvertimePage";
 import OvertimeRequestsPage from "@/pages/OvertimeRequestsPage";
 import ShiftRequestsPage from "@/pages/ShiftRequestsPage";
+import BiometricLogsPage from "@/pages/BiometricLogsPage";
 
 /**
  * Attendance entry point — surfaces all attendance-related modules as tabs.
@@ -27,6 +28,7 @@ export default function AttendanceIndexPage() {
         { val: "wfh-requests",       label: "WFH Requests",       icon: Home },
         { val: "overtime-requests",  label: "Overtime Requests",  icon: Timer },
         { val: "shift-requests",     label: "Shift Requests",     icon: Clock },
+        { val: "biometric-logs",     label: "API Logs",           icon: ScrollText },
       ]
     : [
         { val: "attendance",         label: "Attendance",          icon: Calendar },
@@ -72,6 +74,9 @@ export default function AttendanceIndexPage() {
           </TabsContent>
           <TabsContent value="overtime-requests" className="mt-0">
             <OvertimeRequestsPage />
+          </TabsContent>
+          <TabsContent value="biometric-logs" className="mt-0">
+            <BiometricLogsPage />
           </TabsContent>
         </>
       ) : (
