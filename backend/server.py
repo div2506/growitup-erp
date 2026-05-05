@@ -3922,7 +3922,7 @@ async def create_attendance_entry(body: AttendanceEntryCreate, request: Request)
             {"biometric_employee_code": body.biometric_employee_code}, {"_id": 0}
         ).to_list(5)
         if not matches:
-            raise HTTPException(400, f"No employee found for biometric code {body.biometric_employee_code}")
+            return {"success": True, "message": f"Biometric code {body.biometric_employee_code} not mapped to any employee, skipped", "skipped": True}
         if len(matches) > 1:
             raise HTTPException(400, f"Multiple employees found for biometric code {body.biometric_employee_code}")
         emp = matches[0]
