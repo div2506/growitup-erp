@@ -204,7 +204,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
   };
 
   // Tab 1 required fields
-  const tab1Required = ["first_name", "last_name", "personal_email", "phone", "date_of_birth", "gender", "qualification", "address", "state_id", "city_id", "zipcode", "emergency_contact_name", "emergency_contact_number", "emergency_contact_relation"];
+  const tab1Required = ["first_name", "last_name", "personal_email", "phone", "date_of_birth", "gender", "qualification", "biometric_employee_code", "address", "state_id", "city_id", "zipcode", "emergency_contact_name", "emergency_contact_number", "emergency_contact_relation"];
   // Tab 2 required fields
   const tab2Required = ["work_email", "department_id", "job_position_id", "employee_type", "joining_date", "basic_salary"];
   // Tab 3 required fields
@@ -368,7 +368,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
               <FormField label="Qualification" required error={errors.qualification}>
                 <Input data-testid="qualification-input" value={form.qualification} onChange={e => set("qualification", e.target.value)} className={inputCls} placeholder="e.g. B.Tech, MBA" />
               </FormField>
-              <FormField label="Biometric Employee Code">
+              <FormField label="Biometric Employee Code" required error={errors.biometric_employee_code}>
                 <Input data-testid="biometric-code-input" value={form.biometric_employee_code || ""} onChange={e => set("biometric_employee_code", e.target.value.trim())} className={inputCls} placeholder="e.g. 12" />
               </FormField>
 
@@ -496,6 +496,29 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
                 <Input data-testid="joining-date-input" type="date" value={form.joining_date} onChange={e => set("joining_date", e.target.value)} className={inputCls} />
               </FormField>
 
+              {/* Shift Assignment — inline with Joining Date row */}
+              {allShifts.length > 0 && (
+                <FormField label="Assigned Shift" error={errors.shift_id}>
+                  <Select value={form.shift_id || "__default__"} onValueChange={v => set("shift_id", v === "__default__" ? "" : v)}>
+                    <SelectTrigger className={`${inputCls} focus:ring-0`}>
+                      <SelectValue placeholder="Select shift (defaults to Regular 9-6)" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#2F2F2F] border-white/10">
+                      {allShifts.map(s => {
+                        const sh = s.start_time ? (() => { const [h, m] = s.start_time.split(":").map(Number); return `${h % 12 || 12}:${m.toString().padStart(2,"0")} ${h >= 12 ? "PM" : "AM"}`; })() : "";
+                        const eh = s.end_time   ? (() => { const [h, m] = s.end_time.split(":").map(Number);   return `${h % 12 || 12}:${m.toString().padStart(2,"0")} ${h >= 12 ? "PM" : "AM"}`; })() : "";
+                        return (
+                          <SelectItem key={s.shift_id} value={s.shift_id} className="text-white focus:bg-white/10">
+                            {s.shift_name} {sh && eh ? `(${sh} – ${eh})` : ""}{s.is_system_default ? " — Default" : ""}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[#666] text-xs mt-1">Defaults to "Regular 9-6" if not selected</p>
+                </FormField>
+              )}
+
               <FormField label="Basic Salary (₹)" required error={errors.basic_salary}>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#B3B3B3] text-sm">₹</span>
@@ -555,81 +578,41 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
               </div>
             )}
 
-            {/* Shift Assignment */}
-            {allShifts.length > 0 && (
-              <div className="mt-5 pt-5 border-t border-white/10">
-                <p className="text-white font-medium text-sm mb-3">Shift Assignment</p>
-                <FormField label="Assigned Shift" error={errors.shift_id}>
-                  <Select value={form.shift_id || "__default__"} onValueChange={v => set("shift_id", v === "__default__" ? "" : v)}>
-                    <SelectTrigger className={`${inputCls} focus:ring-0`}>
-                      <SelectValue placeholder="Select shift (defaults to Regular 9-6)" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#2F2F2F] border-white/10">
-                      {allShifts.map(s => {
-                        const sh = s.start_time ? (() => {
-                          const [h, m] = s.start_time.split(":").map(Number);
-                          const ampm = h >= 12 ? "PM" : "AM";
-                          const hr = h % 12 || 12;
-                          return `${hr}:${m.toString().padStart(2, "0")} ${ampm}`;
-                        })() : "";
-                        const eh = s.end_time ? (() => {
-                          const [h, m] = s.end_time.split(":").map(Number);
-                          const ampm = h >= 12 ? "PM" : "AM";
-                          const hr = h % 12 || 12;
-                          return `${hr}:${m.toString().padStart(2, "0")} ${ampm}`;
-                        })() : "";
-                        return (
-                          <SelectItem key={s.shift_id} value={s.shift_id} className="text-white focus:bg-white/10">
-                            {s.shift_name} {sh && eh ? `(${sh} – ${eh})` : ""}
-                            {s.is_system_default ? " — Default" : ""}
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-[#666] text-xs mt-1">Defaults to "Regular 9-6" if not selected</p>
-                </FormField>
+            {/* Leave Eligibility & WFH Eligibility — side by side */}
+            <div className="mt-5 pt-5 border-t border-white/10">
+              <p className="text-white font-medium text-sm mb-3">Eligibility</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="flex items-start gap-3 cursor-pointer bg-[#191919] border border-white/10 rounded-lg px-4 py-3 hover:border-white/20 transition-colors">
+                  <input
+                    type="checkbox"
+                    data-testid="paid-leave-eligible-checkbox"
+                    checked={!!form.paid_leave_eligible}
+                    onChange={e => set("paid_leave_eligible", e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-white/20 bg-[#191919] accent-green-500 cursor-pointer shrink-0"
+                  />
+                  <div className="flex-1">
+                    <p className="text-white text-sm font-medium">Leave Eligibility</p>
+                    <p className="text-[#B3B3B3] text-xs mt-0.5">
+                      Accrues <span className="text-green-400">1 paid leave/month</span> automatically.
+                    </p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer bg-[#191919] border border-white/10 rounded-lg px-4 py-3 hover:border-white/20 transition-colors">
+                  <input
+                    type="checkbox"
+                    data-testid="wfh-eligible-checkbox"
+                    checked={!!form.wfh_eligible}
+                    onChange={e => set("wfh_eligible", e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-white/20 bg-[#191919] accent-blue-500 cursor-pointer shrink-0"
+                  />
+                  <div className="flex-1">
+                    <p className="text-white text-sm font-medium">WFH Eligibility</p>
+                    <p className="text-[#B3B3B3] text-xs mt-0.5">
+                      Can request WFH days (<span className="text-blue-400">max 3/month</span>).
+                    </p>
+                  </div>
+                </label>
               </div>
-            )}
-
-            {/* Paid Leave Eligibility */}
-            <div className="mt-5 pt-5 border-t border-white/10">
-              <p className="text-white font-medium text-sm mb-3">Leave Eligibility</p>
-              <label className="flex items-start gap-3 cursor-pointer bg-[#191919] border border-white/10 rounded-lg px-4 py-3 hover:border-white/20 transition-colors">
-                <input
-                  type="checkbox"
-                  data-testid="paid-leave-eligible-checkbox"
-                  checked={!!form.paid_leave_eligible}
-                  onChange={e => set("paid_leave_eligible", e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded border-white/20 bg-[#191919] accent-green-500 cursor-pointer"
-                />
-                <div className="flex-1">
-                  <p className="text-white text-sm font-medium">Eligible for Paid Leave</p>
-                  <p className="text-[#B3B3B3] text-xs mt-0.5">
-                    When enabled, this employee accrues <span className="text-green-400">1 paid leave per month</span> automatically. Disabled employees can still apply for unpaid (regular) leave.
-                  </p>
-                </div>
-              </label>
-            </div>
-
-            {/* WFH Eligibility */}
-            <div className="mt-5 pt-5 border-t border-white/10">
-              <p className="text-white font-medium text-sm mb-3">WFH Eligibility</p>
-              <label className="flex items-start gap-3 cursor-pointer bg-[#191919] border border-white/10 rounded-lg px-4 py-3 hover:border-white/20 transition-colors">
-                <input
-                  type="checkbox"
-                  data-testid="wfh-eligible-checkbox"
-                  checked={!!form.wfh_eligible}
-                  onChange={e => set("wfh_eligible", e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded border-white/20 bg-[#191919] accent-blue-500 cursor-pointer"
-                />
-                <div className="flex-1">
-                  <p className="text-white text-sm font-medium">Eligible for Work From Home</p>
-                  <p className="text-[#B3B3B3] text-xs mt-0.5">
-                    When enabled, this employee can request WFH days (<span className="text-blue-400">max 3 days/month</span>). Requests require admin approval.
-                  </p>
-                </div>
-              </label>
             </div>
 
             <div className="flex justify-between mt-6 gap-3">

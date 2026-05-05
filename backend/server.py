@@ -97,7 +97,7 @@ class EmployeeCreate(BaseModel):
     shift_id: Optional[str] = None  # Shift assignment
     paid_leave_eligible: Optional[bool] = False  # Whether employee receives monthly paid leave
     wfh_eligible: Optional[bool] = False  # Whether employee can request WFH
-    biometric_employee_code: Optional[str] = None  # EasyTime Pro / ZKTeco device employee code
+    biometric_employee_code: str  # EasyTime Pro / ZKTeco device employee code (required)
 
 class TeamCreate(BaseModel):
     team_name: str
