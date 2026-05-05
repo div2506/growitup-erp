@@ -274,12 +274,9 @@ async def calculate_monthly_payroll_fn(employee_id: str, month_str: str) -> dict
         for p in late_tracking.get("penalties_applied", []):
             ptype = p.get("type", "")
             amount = float(p.get("amount", 0))
-            if ptype == "leave_or_salary_deduction":
+            if ptype in ("leave_or_salary_deduction", "salary_deduction_1_67pct"):
                 total_late_deduction += amount
-                late_penalty_list.append({"date": p.get("date", ""), "type": "4th Late Arrival", "description": "1 day salary", "amount": round(amount, 2)})
-            elif ptype == "salary_deduction_1_67pct":
-                total_late_deduction += amount
-                late_penalty_list.append({"date": p.get("date", ""), "type": f"{p.get('late_number', 5)}th+ Late Arrival", "description": "1.67% salary", "amount": round(amount, 2)})
+                late_penalty_list.append({"date": p.get("date", ""), "type": f"{p.get('late_number', 4)}th+ Late Arrival", "description": "1.67% salary", "amount": round(amount, 2)})
     total_late_deduction = round(total_late_deduction, 2)
 
     # ---------- 5. Half-Day Deductions ----------
@@ -786,21 +783,12 @@ async def update_late_tracking_fn(employee_id: str, date_str: str, late_minutes:
         if new_count >= 4:
             emp = await db.employees.find_one({"employee_id": employee_id}, {"_id": 0})
             if emp:
-                days_in_month = cal_module.monthrange(date_obj.year, date_obj.month)[1]
-                if new_count == 4:
-                    one_day_salary = round(emp.get("basic_salary", 0) / days_in_month, 2)
-                    penalties.append({
-                        "date": date_str, "late_number": new_count,
-                        "type": "leave_or_salary_deduction", "amount": one_day_salary,
-                        "description": f"4th late: 1 paid leave OR {one_day_salary} salary deduction"
-                    })
-                else:
-                    penalty = round(emp.get("basic_salary", 0) * 0.0167, 2)
-                    penalties.append({
-                        "date": date_str, "late_number": new_count,
-                        "type": "salary_deduction_1_67pct", "amount": penalty, "percentage": 1.67,
-                        "description": f"{new_count}th late: 1.67% salary deduction = {penalty}"
-                    })
+                penalty = round(emp.get("basic_salary", 0) * 0.0167, 2)
+                penalties.append({
+                    "date": date_str, "late_number": new_count,
+                    "type": "salary_deduction_1_67pct", "amount": penalty, "percentage": 1.67,
+                    "description": f"{new_count}th late: 1.67% salary deduction = {penalty}"
+                })
 
         await db.monthly_late_tracking.update_one(
             {"employee_id": employee_id, "month": month_str},
