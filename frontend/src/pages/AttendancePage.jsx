@@ -663,21 +663,37 @@ export default function AttendancePage() {
 
           {isAdmin && viewMode !== "all" && (
             <div className="flex items-center gap-2 w-full sm:w-auto">
-              <Select
-                value={selectedEmployee || myEmployee?.employee_id || ""}
-                onValueChange={v => setSelectedEmployee(v)}
-              >
-                <SelectTrigger className="bg-[#2F2F2F] border-white/10 text-white w-full sm:min-w-[200px] focus:ring-0">
-                  <SelectValue placeholder="Select employee" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#2F2F2F] border-white/10 max-h-60">
-                  {allEmployees.map(e => (
-                    <SelectItem key={e.employee_id} value={e.employee_id} className="text-white focus:bg-white/10">
-                      {e.first_name} {e.last_name} ({e.employee_id})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {allEmployees.length === 0 ? (
+                // Employees still loading — show skeleton so user knows it's coming
+                <div className="bg-[#2F2F2F] border border-white/10 rounded-lg px-3 py-2 w-full sm:min-w-[200px] flex items-center gap-2 animate-pulse">
+                  <div className="h-3 bg-white/10 rounded w-32" />
+                  <div className="ml-auto h-3 w-3 bg-white/10 rounded" />
+                </div>
+              ) : (
+                <Select
+                  value={selectedEmployee || myEmployee?.employee_id || ""}
+                  onValueChange={v => setSelectedEmployee(v)}
+                >
+                  <SelectTrigger className="bg-[#2F2F2F] border-white/10 text-white w-full sm:min-w-[200px] focus:ring-0">
+                    <SelectValue placeholder="Select employee" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#2F2F2F] border-white/10 max-h-60">
+                    {/* My own entry at the top labelled "My Attendance", rest below */}
+                    {myEmployee?.employee_id && (
+                      <SelectItem value={myEmployee.employee_id} className="text-white focus:bg-white/10">
+                        My Attendance
+                      </SelectItem>
+                    )}
+                    {allEmployees
+                      .filter(e => e.employee_id !== myEmployee?.employee_id)
+                      .map(e => (
+                        <SelectItem key={e.employee_id} value={e.employee_id} className="text-white focus:bg-white/10">
+                          {e.first_name} {e.last_name} ({e.employee_id})
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           )}
 
