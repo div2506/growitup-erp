@@ -368,8 +368,8 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
               <FormField label="Qualification" required error={errors.qualification}>
                 <Input data-testid="qualification-input" value={form.qualification} onChange={e => set("qualification", e.target.value)} className={inputCls} placeholder="e.g. B.Tech, MBA" />
               </FormField>
-              <FormField label="Zipcode" required error={errors.zipcode}>
-                <Input data-testid="zipcode-input" value={form.zipcode} onChange={e => set("zipcode", e.target.value)} className={inputCls} placeholder="380001" />
+              <FormField label="Biometric Employee Code">
+                <Input data-testid="biometric-code-input" value={form.biometric_employee_code || ""} onChange={e => set("biometric_employee_code", e.target.value.trim())} className={inputCls} placeholder="e.g. 12" />
               </FormField>
 
               <div className="sm:col-span-2">
@@ -398,7 +398,9 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
                   </SelectContent>
                 </Select>
               </FormField>
-              <div className="hidden sm:block" /> {/* spacer */}
+              <FormField label="Zipcode" required error={errors.zipcode}>
+                <Input data-testid="zipcode-input" value={form.zipcode} onChange={e => set("zipcode", e.target.value)} className={inputCls} placeholder="380001" />
+              </FormField>
             </div>
 
             {/* Emergency Contact */}
@@ -628,21 +630,6 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
                   </p>
                 </div>
               </label>
-            </div>
-
-            {/* Biometric Integration */}
-            <div className="mt-5 pt-5 border-t border-white/10">
-              <p className="text-white font-medium text-sm mb-1">Biometric Integration</p>
-              <p className="text-[#B3B3B3] text-xs mb-3">Employee code assigned in the biometric device (e.g. EasyTime Pro / ZKTeco). Leave blank if not using a biometric device.</p>
-              <FormField label="Biometric Employee Code">
-                <Input
-                  data-testid="biometric-code-input"
-                  value={form.biometric_employee_code || ""}
-                  onChange={e => set("biometric_employee_code", e.target.value.trim())}
-                  className={inputCls}
-                  placeholder="e.g. 12"
-                />
-              </FormField>
             </div>
 
             <div className="flex justify-between mt-6 gap-3">
