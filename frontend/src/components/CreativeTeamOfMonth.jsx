@@ -478,8 +478,17 @@ export default function CreativeTeamOfMonth() {
 
       {/* Leaderboard */}
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+        <div className="space-y-3 px-4 py-4 animate-pulse">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="flex items-center gap-3 bg-white/5 rounded-xl p-3">
+              <div className="w-8 h-8 rounded-full bg-white/10 shrink-0" />
+              <div className="flex-1 space-y-1.5">
+                <div className="h-3.5 bg-white/10 rounded w-2/3" />
+                <div className="h-2.5 bg-white/10 rounded w-1/3" />
+              </div>
+              <div className="h-5 w-12 bg-white/10 rounded-full" />
+            </div>
+          ))}
         </div>
       ) : leaderboard.length === 0 ? (
         <div className="text-center py-16 sm:py-20">

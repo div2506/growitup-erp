@@ -243,8 +243,23 @@ function PayslipModal({ employeeId, month, onClose }) {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="w-7 h-7 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+          <div className="animate-pulse space-y-4 py-4">
+            <div className="flex justify-between items-center">
+              <div className="h-5 bg-white/10 rounded w-1/3" />
+              <div className="h-5 bg-white/10 rounded w-1/4" />
+            </div>
+            <div className="h-px bg-white/10" />
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="flex justify-between">
+                <div className="h-3.5 bg-white/10 rounded w-1/3" />
+                <div className="h-3.5 bg-white/10 rounded w-1/5" />
+              </div>
+            ))}
+            <div className="h-px bg-white/10" />
+            <div className="flex justify-between">
+              <div className="h-4 bg-white/10 rounded w-1/4" />
+              <div className="h-4 bg-white/10 rounded w-1/6" />
+            </div>
           </div>
         ) : data ? (
           <div ref={printRef}>
@@ -334,9 +349,21 @@ function AdminPayrollView({ month }) {
       {/* Table */}
       <div className="bg-[#2F2F2F] rounded-xl border border-white/10 overflow-hidden">
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin mr-3" />
-            <span className="text-[#B3B3B3] text-sm">Calculating payroll...</span>
+          <div className="animate-pulse">
+            <table className="w-full">
+              <tbody>
+                {[...Array(6)].map((_, i) => (
+                  <tr key={i} className="border-b border-white/5">
+                    <td className="px-4 py-3"><div className="h-3.5 bg-white/10 rounded w-3/4" /></td>
+                    <td className="px-4 py-3"><div className="h-3.5 bg-white/10 rounded w-1/2" /></td>
+                    <td className="px-4 py-3"><div className="h-3.5 bg-white/10 rounded w-1/2" /></td>
+                    <td className="px-4 py-3"><div className="h-3.5 bg-white/10 rounded w-1/3" /></td>
+                    <td className="px-4 py-3"><div className="h-3.5 bg-white/10 rounded w-1/3" /></td>
+                    <td className="px-4 py-3"><div className="h-6 bg-white/10 rounded-full w-16" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-12">
@@ -444,9 +471,23 @@ function EmployeePayslipView({ month }) {
   return (
     <div>
       {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin mr-3" />
-          <span className="text-[#B3B3B3] text-sm">Calculating your payslip...</span>
+        <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4 md:p-6 animate-pulse space-y-4">
+          <div className="flex justify-between items-center">
+            <div className="h-5 bg-white/10 rounded w-1/3" />
+            <div className="h-5 bg-white/10 rounded w-1/4" />
+          </div>
+          <div className="h-px bg-white/10" />
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="flex justify-between">
+              <div className="h-3.5 bg-white/10 rounded w-1/3" />
+              <div className="h-3.5 bg-white/10 rounded w-1/5" />
+            </div>
+          ))}
+          <div className="h-px bg-white/10" />
+          <div className="flex justify-between">
+            <div className="h-4 bg-white/10 rounded w-1/4" />
+            <div className="h-4 bg-white/10 rounded w-1/6" />
+          </div>
         </div>
       ) : data ? (
         <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4 md:p-6">

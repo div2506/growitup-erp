@@ -109,9 +109,15 @@ function CallRow({ call }) {
           <td colSpan={6} className="px-0 py-0">
             <div className="bg-[#191919] border-t border-white/5">
               {loading ? (
-                <div className="flex items-center gap-2 px-8 py-4">
-                  <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                  <p className="text-[#B3B3B3] text-xs">Loading entries…</p>
+                <div className="animate-pulse px-6 py-3 space-y-2">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="flex gap-4">
+                      <div className="h-3 bg-white/10 rounded w-1/4" />
+                      <div className="h-3 bg-white/10 rounded w-1/6" />
+                      <div className="h-3 bg-white/10 rounded w-1/5" />
+                      <div className="h-4 bg-white/10 rounded-full w-14" />
+                    </div>
+                  ))}
                 </div>
               ) : !detail || detail.length === 0 ? (
                 <p className="text-[#B3B3B3] text-xs px-8 py-4">No entries found for this call.</p>
@@ -233,9 +239,21 @@ export default function BiometricLogsPage() {
       {/* Calls Table */}
       <div className="bg-[#2F2F2F] rounded-xl border border-white/10 overflow-hidden">
         {loading ? (
-          <div className="flex items-center justify-center py-16 gap-3">
-            <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-            <p className="text-[#B3B3B3] text-sm">Loading…</p>
+          <div className="animate-pulse">
+            <table className="w-full min-w-[700px]">
+              <tbody>
+                {[...Array(5)].map((_, i) => (
+                  <tr key={i} className="border-b border-white/5">
+                    <td className="px-4 py-3"><div className="h-4 bg-white/10 rounded w-3/4" /></td>
+                    <td className="px-4 py-3"><div className="h-4 bg-white/10 rounded-full w-16" /></td>
+                    <td className="px-4 py-3"><div className="h-4 bg-white/10 rounded-full w-20" /></td>
+                    <td className="px-4 py-3"><div className="h-4 bg-white/10 rounded w-8" /></td>
+                    <td className="px-4 py-3"><div className="h-4 bg-white/10 rounded w-32" /></td>
+                    <td className="px-4 py-3"><div className="h-4 bg-white/10 rounded-full w-16" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : calls.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">

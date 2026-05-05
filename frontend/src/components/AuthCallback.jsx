@@ -61,9 +61,12 @@ export default function AuthCallback() {
   }, [navigate, setUser, setMyEmployee]);
 
   return (
-    <div className="min-h-screen bg-[#191919] flex flex-col items-center justify-center gap-4">
-      <div className="w-10 h-10 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-      <p className="text-[#B3B3B3] text-sm">Signing you in...</p>
+    <div className="min-h-screen bg-[#191919] flex flex-col items-center justify-center gap-6 animate-pulse">
+      <div className="w-16 h-16 rounded-full bg-white/10" />
+      <div className="space-y-2 text-center">
+        <div className="h-4 w-40 bg-white/10 rounded mx-auto" />
+        <div className="h-3 w-24 bg-white/5 rounded mx-auto" />
+      </div>
     </div>
   );
 }

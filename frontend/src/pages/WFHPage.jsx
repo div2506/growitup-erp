@@ -412,8 +412,18 @@ export default function WFHPage() {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+          <div className="animate-pulse divide-y divide-white/5">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="px-4 py-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3.5 bg-white/10 rounded w-1/3" />
+                    <div className="h-2.5 bg-white/10 rounded w-1/2" />
+                  </div>
+                  <div className="h-5 w-16 bg-white/10 rounded-full" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-12">

@@ -1082,7 +1082,7 @@ function DataImportTab() {
         {/* Progress */}
         {importing && progress && (
           <div data-testid="import-progress" className="flex items-center gap-3 text-[#B3B3B3] text-sm">
-            <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin shrink-0" />
+            <div className="w-4 h-4 rounded bg-white/10 animate-pulse shrink-0" />
             {progress}
           </div>
         )}
@@ -1700,8 +1700,14 @@ function HolidaysTab() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+        <div className="space-y-2 animate-pulse">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="flex items-center gap-4 bg-[#191919] rounded-xl border border-white/10 px-4 py-3">
+              <div className="h-3.5 bg-white/10 rounded w-1/4" />
+              <div className="h-3.5 bg-white/10 rounded w-1/3" />
+              <div className="ml-auto h-5 w-14 bg-white/10 rounded-full" />
+            </div>
+          ))}
         </div>
       ) : holidays.length === 0 ? (
         <div className="bg-[#191919] rounded-xl border border-white/10 text-center py-12">
