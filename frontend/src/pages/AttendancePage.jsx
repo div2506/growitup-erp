@@ -4,8 +4,9 @@ import { toast } from "sonner";
 import {
   Calendar, Table2, ChevronLeft, ChevronRight, Users,
   Clock, AlertCircle, CheckCircle, XCircle, Pencil, X,
-  TrendingDown, Hourglass, CloudOff, Home
+  TrendingDown, Hourglass, CloudOff, Home, Timer
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -122,7 +123,8 @@ function SummaryCards({ summary, lateTracking }) {
 // ─────────────────────────────────────────────
 // Date Detail Modal
 // ─────────────────────────────────────────────
-function DateDetailModal({ date, record, isAdmin, isHoliday, onClose, onEdit }) {
+function DateDetailModal({ date, record, isAdmin, isHoliday, onClose, onEdit, isFuture }) {
+  const navigate = useNavigate();
   if (!date) return null;
   const dateLabel = date.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const cfg = record ? STATUS_CONFIG[record.status] : null;
@@ -192,9 +194,19 @@ function DateDetailModal({ date, record, isAdmin, isHoliday, onClose, onEdit }) 
                   <p className="text-white text-sm">{record.notes}</p>
                 </div>
               )}
-              {isAdmin && isHoliday ? (
-                <div className="w-full flex items-center justify-center gap-2 py-2.5 bg-white/5 border border-white/10 rounded-lg text-[#555] text-sm cursor-not-allowed select-none">
-                  <span>🔒</span> Holiday — cannot edit attendance
+              {isHoliday ? (
+                <div className="space-y-2">
+                  <div className="w-full flex items-center justify-center gap-2 py-2.5 bg-white/5 border border-white/10 rounded-lg text-[#555] text-sm cursor-not-allowed select-none">
+                    <span>🔒</span> Holiday — attendance cannot be edited
+                  </div>
+                  {!isFuture && (
+                    <button
+                      onClick={() => { onClose(); navigate("/overtime"); }}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 rounded-lg text-orange-400 text-sm font-medium transition-colors"
+                    >
+                      <Timer size={14} /> Log Overtime for this Holiday
+                    </button>
+                  )}
                 </div>
               ) : isAdmin ? (
                 <button onClick={onEdit}
@@ -766,7 +778,8 @@ export default function AttendancePage() {
                 isAdmin={isAdmin}
                 onDateClick={(date, record) => {
                   const ds = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
-                  setDetailModal({ date, record, isHoliday: record?.status === "Holiday" || holidayDates.has(ds) });
+                  const today = new Date(); today.setHours(0,0,0,0);
+                  setDetailModal({ date, record, isHoliday: record?.status === "Holiday" || holidayDates.has(ds), isFuture: date > today });
                 }}
               />
             ) : (
@@ -790,6 +803,7 @@ export default function AttendancePage() {
           record={detailModal.record}
           isAdmin={isAdmin}
           isHoliday={detailModal.isHoliday}
+          isFuture={detailModal.isFuture}
           onClose={() => setDetailModal(null)}
           onEdit={() => { setEditModal(detailModal); setDetailModal(null); }}
         />
