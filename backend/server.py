@@ -608,13 +608,13 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
         is_late = ci_mins > grace_cutoff
         late_minutes = max(0, ci_mins - exp_start_mins) if is_late else 0
 
-        # Status thresholds (Saturday half-day uses different thresholds)
-        if shift_timings.get("total_hours") == 5:
-            full_threshold = 4 * 60 + 50  # 4h50m
-            half_threshold = 2 * 60 + 30  # 2h30m
-        else:
-            full_threshold = 8 * 60 + 50  # 8h50m
-            half_threshold = 3 * 60 + 50  # 3h50m
+        # Status thresholds — dynamic based on shift net hours
+        # Recompute from start/end to handle legacy shifts stored with gross hours
+        gross_mins = calc_total_hours(shift_timings["start_time"], shift_timings["end_time"]) * 60
+        break_mins = float(shift_timings.get("break_duration") or 0)
+        shift_net_mins = max(gross_mins - break_mins, 1)
+        full_threshold = int(shift_net_mins * 0.85)   # 85% → Present
+        half_threshold = int(shift_net_mins * 0.45)   # 45% → Half Day, below → Absent
 
         if total_minutes >= full_threshold:
             status = "Present"
@@ -3125,7 +3125,8 @@ async def create_shift(body: ShiftCreate, request: Request):
     if existing:
         raise HTTPException(400, "A shift with this name already exists")
 
-    total_hours = calc_total_hours(body.start_time, body.end_time)
+    gross_hours = calc_total_hours(body.start_time, body.end_time)
+    total_hours = round(gross_hours - body.break_duration / 60, 2)  # net working hours
     shift = {
         "shift_id": f"shift_{uuid.uuid4().hex[:8]}",
         "shift_name": body.shift_name.strip(),
@@ -3166,7 +3167,8 @@ async def update_shift(shift_id: str, body: ShiftCreate, request: Request):
         if dup:
             raise HTTPException(400, "A shift with this name already exists")
 
-    total_hours = calc_total_hours(body.start_time, body.end_time)
+    gross_hours = calc_total_hours(body.start_time, body.end_time)
+    total_hours = round(gross_hours - body.break_duration / 60, 2)  # net working hours
     update = {
         "shift_name": body.shift_name.strip(),
         "start_time": body.start_time,
