@@ -82,10 +82,15 @@ function DayCell({ date, record, isToday, isFuture, onClick }) {
       {label && (
         <span className={`mt-0.5 text-[9px] md:text-[10px] font-bold leading-tight ${cfg?.text}`}>{label}</span>
       )}
-      {/* Late dot */}
-      {record?.is_late && (
-        <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-400" title="Late" />
-      )}
+      {/* Late / Early-departure indicators */}
+      <div className="absolute top-1 right-1 flex flex-col gap-0.5 items-end">
+        {record?.is_late && (
+          <span className="w-2 h-2 rounded-full bg-red-400" title="Late arrival" />
+        )}
+        {record?.left_early && (
+          <span className="w-2 h-2 rounded-full bg-orange-400" title="Left early" />
+        )}
+      </div>
     </button>
   );
 }
@@ -161,7 +166,12 @@ function DateDetailModal({ date, record, isAdmin, onClose, onEdit }) {
               {record.check_out && (
                 <div className="flex items-center justify-between">
                   <span className="text-[#B3B3B3] text-sm">Check-out</span>
-                  <span className="text-white font-medium">{fmt12(record.check_out)}</span>
+                  <div className="text-right">
+                    <span className="text-white font-medium">{fmt12(record.check_out)}</span>
+                    {record.left_early && (
+                      <p className="text-orange-400 text-xs mt-0.5">Left early by {record.early_departure_minutes} min</p>
+                    )}
+                  </div>
                 </div>
               )}
               {record.total_hours != null && record.total_hours > 0 && (
@@ -331,7 +341,11 @@ function CalendarView({ attendanceMap, currentMonth, isAdmin, onDateClick }) {
         ))}
         <div className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-red-400 inline-block" />
-          <span className="text-[#B3B3B3] text-xs">Late</span>
+          <span className="text-[#B3B3B3] text-xs">Late arrival</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-orange-400 inline-block" />
+          <span className="text-[#B3B3B3] text-xs">Left early</span>
         </div>
       </div>
     </div>
@@ -395,13 +409,21 @@ function TableView({ records, isAdmin, onEdit }) {
                     ) : "—"}
                   </td>
                   <td className="py-3 px-4">
-                    {rec.is_late && (
-                      <span className="inline-flex items-center gap-1 text-red-400 text-xs">
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-                        Late {rec.late_minutes}m
-                      </span>
-                    )}
-                    {rec.notes && <span className="text-[#B3B3B3] text-xs ml-1 italic">{rec.notes}</span>}
+                    <div className="flex flex-col gap-1">
+                      {rec.is_late && (
+                        <span className="inline-flex items-center gap-1 text-red-400 text-xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                          Late {rec.late_minutes}m
+                        </span>
+                      )}
+                      {rec.left_early && (
+                        <span className="inline-flex items-center gap-1 text-orange-400 text-xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                          Left early {rec.early_departure_minutes}m
+                        </span>
+                      )}
+                      {rec.notes && <span className="text-[#B3B3B3] text-xs italic">{rec.notes}</span>}
+                    </div>
                   </td>
                   {isAdmin && (
                     <td className="py-3 px-4">

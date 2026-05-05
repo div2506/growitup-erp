@@ -588,6 +588,7 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
                 "check_out": None,
                 "total_hours": None, "status": "Incomplete",
                 "is_late": is_late, "late_minutes": late_minutes,
+                "left_early": False, "early_departure_minutes": 0,
                 "notes": "Punch-out missing"
             })
             if is_late:
@@ -600,13 +601,21 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
         total_minutes = max(0, (co_dt - ci_dt).total_seconds() / 60 - shift_timings.get("break_duration", 0))
         total_hours = round(total_minutes / 60, 2)
 
-        # Late detection: 10-minute grace period
+        # Late detection: 10-minute grace period on check-in
         exp_h, exp_m = map(int, shift_timings["start_time"].split(":"))
         exp_start_mins = exp_h * 60 + exp_m
         grace_cutoff = exp_start_mins + 10
         ci_mins = ci_dt.hour * 60 + ci_dt.minute
         is_late = ci_mins > grace_cutoff
         late_minutes = max(0, ci_mins - exp_start_mins) if is_late else 0
+
+        # Early departure detection: left before shift end time (10-minute grace)
+        exp_end_h, exp_end_m = map(int, shift_timings["end_time"].split(":"))
+        exp_end_mins = exp_end_h * 60 + exp_end_m
+        co_mins = co_dt.hour * 60 + co_dt.minute
+        early_grace = exp_end_mins - 10  # 10-minute early grace
+        left_early = co_mins < early_grace
+        early_departure_minutes = max(0, exp_end_mins - co_mins) if left_early else 0
 
         # Status thresholds — dynamic based on shift net hours
         # Recompute from start/end to handle legacy shifts stored with gross hours
@@ -628,7 +637,9 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
             "check_in": ci_dt.strftime("%H:%M"),
             "check_out": co_dt.strftime("%H:%M"),
             "total_hours": total_hours, "status": status,
-            "is_late": is_late, "late_minutes": late_minutes, "notes": None
+            "is_late": is_late, "late_minutes": late_minutes,
+            "left_early": left_early, "early_departure_minutes": early_departure_minutes,
+            "notes": None
         })
         if is_late:
             await update_late_tracking_fn(employee_id, date_str, late_minutes)
