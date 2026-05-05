@@ -573,8 +573,12 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
         ci_dt = datetime.fromisoformat(punches[0]["punch_time"])
 
         # ── Half-day leave check ──────────────────────────────────────────────
-        # Check if there's an approved half-day leave on this date.
-        # This adjusts the expected start/end so late/early detection is fair.
+        # Lunch break is fixed company-wide: 13:00 – 14:00.
+        # First Half leave  → employee on leave until lunch → expected from 14:00
+        # Second Half leave → employee leaves at lunch    → expected until 13:00
+        LUNCH_START_MINS = 13 * 60   # 13:00
+        LUNCH_END_MINS   = 14 * 60   # 14:00
+
         half_leave = await db.leave_requests.find_one({
             "employee_id": employee_id, "status": "Approved",
             "leave_type": "Half Day",
@@ -583,22 +587,20 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
 
         half_day_type = half_leave.get("half_day_type") if half_leave else None  # "First Half" | "Second Half"
 
-        # Compute shift midpoint for half-day boundary
         full_start_h, full_start_m = map(int, shift_timings["start_time"].split(":"))
         full_end_h, full_end_m = map(int, shift_timings["end_time"].split(":"))
         full_start_mins = full_start_h * 60 + full_start_m
         full_end_mins = full_end_h * 60 + full_end_m
-        shift_mid_mins = (full_start_mins + full_end_mins) // 2  # midpoint = half-day boundary
 
         # Effective expected start/end adjusted for half-day leave
         if half_day_type == "First Half":
-            # On leave for first half → expected to come in at midpoint, leave at shift end
-            eff_start_mins = shift_mid_mins
+            # On leave for morning → expected to arrive after lunch (14:00)
+            eff_start_mins = LUNCH_END_MINS
             eff_end_mins = full_end_mins
         elif half_day_type == "Second Half":
-            # On leave for second half → expected to come in at shift start, leave at midpoint
+            # On leave for afternoon → expected to leave at lunch (13:00)
             eff_start_mins = full_start_mins
-            eff_end_mins = shift_mid_mins
+            eff_end_mins = LUNCH_START_MINS
         else:
             eff_start_mins = full_start_mins
             eff_end_mins = full_end_mins
@@ -626,10 +628,10 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
 
         co_dt = datetime.fromisoformat(punches[-1]["punch_time"])
 
-        # Total hours minus break (pro-rate break for half-day)
-        break_dur = shift_timings.get("break_duration", 0)
-        if half_day_type:
-            break_dur = break_dur / 2  # half the break on half-day
+        # Total hours minus break.
+        # On half-day leave the lunch break doesn't fall in their working window,
+        # so no break deduction (they work 9-13 or 14-18 straight).
+        break_dur = 0 if half_day_type else float(shift_timings.get("break_duration", 0))
         total_minutes = max(0, (co_dt - ci_dt).total_seconds() / 60 - break_dur)
         total_hours = round(total_minutes / 60, 2)
 
@@ -645,14 +647,17 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
         left_early = co_mins < (eff_end_mins - 10)
         early_departure_minutes = max(0, eff_end_mins - co_mins) if left_early else 0
 
-        # ── Status thresholds (half of shift net hours on half-day leave) ─────
-        gross_mins = full_end_mins - full_start_mins
+        # ── Status thresholds ─────────────────────────────────────────────────
         full_break = float(shift_timings.get("break_duration") or 0)
         if half_day_type:
-            # For half-day leave, expected work is half the shift net hours
-            shift_net_mins = max((gross_mins - full_break) / 2, 1)
-            status = "Half Day" if total_minutes >= shift_net_mins * 0.85 else "Absent"
+            # Expected working time = the portion of shift they're supposed to cover
+            # e.g. First Half leave on 9-6: works 14:00–18:00 = 4h (no break in afternoon)
+            # e.g. Second Half leave on 9-6: works 9:00–13:00 = 4h (no break in morning)
+            expected_mins = max(eff_end_mins - eff_start_mins, 1)
+            # Status: covers ≥85% of their half → "Half Day", else "Absent"
+            status = "Half Day" if total_minutes >= expected_mins * 0.85 else "Absent"
         else:
+            gross_mins = full_end_mins - full_start_mins
             shift_net_mins = max(gross_mins - full_break, 1)
             full_threshold = int(shift_net_mins * 0.85)
             half_threshold = int(shift_net_mins * 0.45)
