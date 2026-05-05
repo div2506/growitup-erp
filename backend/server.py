@@ -97,6 +97,7 @@ class EmployeeCreate(BaseModel):
     shift_id: Optional[str] = None  # Shift assignment
     paid_leave_eligible: Optional[bool] = False  # Whether employee receives monthly paid leave
     wfh_eligible: Optional[bool] = False  # Whether employee can request WFH
+    biometric_employee_code: Optional[str] = None  # EasyTime Pro / ZKTeco device employee code
 
 class TeamCreate(BaseModel):
     team_name: str
@@ -327,8 +328,10 @@ async def calculate_monthly_payroll_fn(employee_id: str, month_str: str) -> dict
 
 
 class AttendanceEntryCreate(BaseModel):
-    employee_id: str
-    timestamp: str  # ISO format: "2026-04-27T09:15:30"
+    employee_id: Optional[str] = None          # Direct HRMS employee ID (e.g. GM002)
+    biometric_employee_code: Optional[str] = None  # EasyTime Pro / ZKTeco device code (e.g. "12")
+    source: Optional[str] = None               # e.g. "easytime_pro", "zkteco"
+    timestamp: str                             # ISO format: "2026-04-27T09:15:30"
 
 
 class DailyAttendanceUpdate(BaseModel):
@@ -1339,6 +1342,14 @@ async def create_employee(body: EmployeeCreate, request: Request):
     if existing:
         raise HTTPException(400, "Work email already exists")
 
+    # Biometric code uniqueness check
+    if body.biometric_employee_code:
+        bio_dup = await db.employees.find_one(
+            {"biometric_employee_code": body.biometric_employee_code}, {"_id": 0, "employee_id": 1}
+        )
+        if bio_dup:
+            raise HTTPException(400, f"Biometric code '{body.biometric_employee_code}' is already assigned to {bio_dup['employee_id']}")
+
     emp_id = await get_next_employee_id()
     now = datetime.now(timezone.utc).isoformat()
     emp_data = body.model_dump()
@@ -1384,6 +1395,15 @@ async def update_employee(emp_id: str, body: EmployeeCreate, request: Request):
     }, {"_id": 0})
     if dup:
         raise HTTPException(400, "Work email already in use by another employee")
+
+    # Biometric code uniqueness check
+    if body.biometric_employee_code:
+        bio_dup = await db.employees.find_one({
+            "biometric_employee_code": body.biometric_employee_code,
+            "employee_id": {"$ne": emp_id}
+        }, {"_id": 0, "employee_id": 1})
+        if bio_dup:
+            raise HTTPException(400, f"Biometric code '{body.biometric_employee_code}' is already assigned to {bio_dup['employee_id']}")
 
     old_email = existing.get("work_email", "")
     new_email = body.work_email
@@ -3884,16 +3904,32 @@ async def get_dashboard_my_requests(request: Request):
         return {"is_admin": False, "requests": requests_list}
 
 
+@api_router.post("/attendance/entries")
 @api_router.post("/attendance/entry")
 async def create_attendance_entry(body: AttendanceEntryCreate, request: Request):
-    """Public biometric endpoint — requires X-API-Key header or ?api_key= query param."""
+    """Public biometric endpoint — requires X-API-Key header or ?api_key= query param.
+    Accepts either employee_id (HRMS) or biometric_employee_code (device code)."""
     api_key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
     if api_key != ATTENDANCE_API_KEY:
         raise HTTPException(401, "Invalid or missing API key")
 
-    emp = await db.employees.find_one({"employee_id": body.employee_id}, {"_id": 0})
-    if not emp:
-        raise HTTPException(400, f"Employee {body.employee_id} not found")
+    if not body.employee_id and not body.biometric_employee_code:
+        raise HTTPException(400, "Provide either employee_id or biometric_employee_code")
+
+    # Resolve employee
+    if body.biometric_employee_code:
+        matches = await db.employees.find(
+            {"biometric_employee_code": body.biometric_employee_code}, {"_id": 0}
+        ).to_list(5)
+        if not matches:
+            raise HTTPException(400, f"No employee found for biometric code {body.biometric_employee_code}")
+        if len(matches) > 1:
+            raise HTTPException(400, f"Multiple employees found for biometric code {body.biometric_employee_code}")
+        emp = matches[0]
+    else:
+        emp = await db.employees.find_one({"employee_id": body.employee_id}, {"_id": 0})
+        if not emp:
+            raise HTTPException(400, f"Employee {body.employee_id} not found")
 
     try:
         punch_dt = datetime.fromisoformat(body.timestamp)
@@ -3902,9 +3938,11 @@ async def create_attendance_entry(body: AttendanceEntryCreate, request: Request)
     except ValueError:
         raise HTTPException(400, "Invalid timestamp. Use ISO format: YYYY-MM-DDTHH:MM:SS")
 
+    resolved_employee_id = emp["employee_id"]
+
     # Deduplicate: skip if this exact punch already exists
     existing = await db.attendance_entries.find_one(
-        {"employee_id": body.employee_id, "punch_time": punch_time_str},
+        {"employee_id": resolved_employee_id, "punch_time": punch_time_str},
         {"_id": 1}
     )
     if existing:
@@ -3913,29 +3951,33 @@ async def create_attendance_entry(body: AttendanceEntryCreate, request: Request)
     now = datetime.now(timezone.utc).isoformat()
     entry = {
         "entry_id": f"ae_{uuid.uuid4().hex[:12]}",
-        "employee_id": body.employee_id,
+        "employee_id": resolved_employee_id,
         "punch_time": punch_time_str,
         "punch_date": punch_date,
-        "created_at": now
+        "created_at": now,
     }
+    if body.source:
+        entry["source"] = body.source
+    if body.biometric_employee_code:
+        entry["biometric_employee_code"] = body.biometric_employee_code
     await db.attendance_entries.insert_one(entry)
 
     # Check if previous day has an "Incomplete" record (forgot to punch out)
     prev_date_obj = datetime.strptime(punch_date, "%Y-%m-%d") - timedelta(days=1)
     prev_date_str = prev_date_obj.strftime("%Y-%m-%d")
     prev_record = await db.daily_attendance.find_one(
-        {"employee_id": body.employee_id, "date": prev_date_str, "status": "Incomplete"},
+        {"employee_id": resolved_employee_id, "date": prev_date_str, "status": "Incomplete"},
         {"_id": 0}
     )
     if prev_record:
         # Previous day had only 1 punch — still only 1 punch, mark as "Forgot to Punch Out"
         await db.daily_attendance.update_one(
-            {"employee_id": body.employee_id, "date": prev_date_str},
+            {"employee_id": resolved_employee_id, "date": prev_date_str},
             {"$set": {"status": "Forgot Punch Out", "notes": "Employee forgot to punch out"}}
         )
 
     # Process today's attendance
-    await process_daily_attendance_fn(body.employee_id, punch_date)
+    await process_daily_attendance_fn(resolved_employee_id, punch_date)
     return {"success": True, "message": "Attendance entry recorded", "entry_id": entry["entry_id"]}
 
 

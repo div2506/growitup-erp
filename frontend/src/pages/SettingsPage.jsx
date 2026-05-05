@@ -747,7 +747,11 @@ function AttendanceIntegrationTab() {
 
   const baseUrl = process.env.REACT_APP_BACKEND_URL || "";
   const endpointUrl = `${baseUrl}/api/attendance/entries`;
-  const exampleBody = JSON.stringify(
+  const exampleBodyBiometric = JSON.stringify(
+    { source: "easytime_pro", biometric_employee_code: "12", timestamp: "2026-05-04T09:15:30" },
+    null, 2
+  );
+  const exampleBodyDirect = JSON.stringify(
     { employee_id: "GM002", timestamp: "2026-05-04T09:15:30" },
     null, 2
   );
@@ -760,7 +764,7 @@ function AttendanceIntegrationTab() {
     null, 2
   );
   const errorResponse = JSON.stringify(
-    { detail: "Employee GM999 not found" },
+    { detail: "No employee found for biometric code 12" },
     null, 2
   );
 
@@ -861,17 +865,24 @@ X-API-Key: <your-api-key>`}
           </div>
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <p className="text-[#B3B3B3] text-xs">Request Body (JSON)</p>
-              <button
-                data-testid="copy-att-body-btn"
-                onClick={() => copy(exampleBody, "Request body")}
-                className="flex items-center gap-1.5 px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-xs text-white transition-colors"
-              >
-                <Copy size={11} /> Copy JSON
+              <p className="text-[#B3B3B3] text-xs">Option A — Biometric device code <span className="text-blue-400 font-medium">(recommended for EasyTime Pro / ZKTeco)</span></p>
+              <button data-testid="copy-att-body-btn" onClick={() => copy(exampleBodyBiometric, "Request body")} className="flex items-center gap-1.5 px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-xs text-white transition-colors">
+                <Copy size={11} /> Copy
               </button>
             </div>
             <pre className="bg-[#191919] border border-white/10 rounded-lg p-3 text-white text-sm font-mono whitespace-pre overflow-x-auto" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-{exampleBody}
+{exampleBodyBiometric}
+            </pre>
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[#B3B3B3] text-xs">Option B — Direct HRMS employee ID</p>
+              <button onClick={() => copy(exampleBodyDirect, "Request body")} className="flex items-center gap-1.5 px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-xs text-white transition-colors">
+                <Copy size={11} /> Copy
+              </button>
+            </div>
+            <pre className="bg-[#191919] border border-white/10 rounded-lg p-3 text-white text-sm font-mono whitespace-pre overflow-x-auto" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+{exampleBodyDirect}
             </pre>
           </div>
         </div>
@@ -885,11 +896,27 @@ X-API-Key: <your-api-key>`}
         <div className="bg-[#2F2F2F] rounded-xl border border-white/10 divide-y divide-white/10">
           <div className="p-4">
             <div className="flex items-center gap-2 mb-1">
+              <code className="text-white font-mono text-sm" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>biometric_employee_code</code>
+              <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/5 text-[#B3B3B3] border border-white/10">string</span>
+              <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/30">Option A</span>
+            </div>
+            <p className="text-[#B3B3B3] text-sm">The employee&apos;s code in the biometric device (e.g. <code className="bg-white/5 px-1 rounded text-white text-xs font-mono">12</code>). Must match the <strong className="text-white">Biometric Employee Code</strong> set in the employee profile.</p>
+          </div>
+          <div className="p-4">
+            <div className="flex items-center gap-2 mb-1">
               <code className="text-white font-mono text-sm" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>employee_id</code>
               <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/5 text-[#B3B3B3] border border-white/10">string</span>
-              <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/30">required</span>
+              <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/5 text-[#B3B3B3] border border-white/10">Option B</span>
             </div>
-            <p className="text-[#B3B3B3] text-sm">The employee&apos;s ID (e.g., <code className="bg-white/5 px-1 rounded text-white text-xs font-mono">GM001</code>, <code className="bg-white/5 px-1 rounded text-white text-xs font-mono">GM002</code>).</p>
+            <p className="text-[#B3B3B3] text-sm">Direct HRMS employee ID (e.g., <code className="bg-white/5 px-1 rounded text-white text-xs font-mono">GM002</code>). Use only if the biometric device is configured with HRMS IDs.</p>
+          </div>
+          <div className="p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <code className="text-white font-mono text-sm" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>source</code>
+              <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/5 text-[#B3B3B3] border border-white/10">string</span>
+              <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/5 text-[#B3B3B3] border border-white/10">optional</span>
+            </div>
+            <p className="text-[#B3B3B3] text-sm">Identifier for the punch source, e.g. <code className="bg-white/5 px-1 rounded text-white text-xs font-mono">easytime_pro</code> or <code className="bg-white/5 px-1 rounded text-white text-xs font-mono">zkteco</code>. Stored for audit purposes.</p>
           </div>
           <div className="p-4">
             <div className="flex items-center gap-2 mb-1">
