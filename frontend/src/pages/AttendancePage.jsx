@@ -28,7 +28,7 @@ const STATUS_CONFIG = {
   Incomplete:        { label: "INC",  bg: "bg-orange-500/20", text: "text-orange-400", border: "border-orange-500/30", dot: "bg-orange-400" },
   "Forgot Punch Out":{ label: "FPO",  bg: "bg-orange-500/20", text: "text-orange-400", border: "border-orange-500/30", dot: "bg-orange-400" },
 };
-const VALID_STATUSES = ["Present", "Half Day", "Absent", "Leave", "WFH", "Holiday", "Incomplete", "Forgot Punch Out"];
+const VALID_STATUSES = ["Present", "Half Day", "Absent", "Leave", "WFH", "Incomplete", "Forgot Punch Out"];
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -122,7 +122,7 @@ function SummaryCards({ summary, lateTracking }) {
 // ─────────────────────────────────────────────
 // Date Detail Modal
 // ─────────────────────────────────────────────
-function DateDetailModal({ date, record, isAdmin, onClose, onEdit }) {
+function DateDetailModal({ date, record, isAdmin, isHoliday, onClose, onEdit }) {
   if (!date) return null;
   const dateLabel = date.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const cfg = record ? STATUS_CONFIG[record.status] : null;
@@ -192,7 +192,7 @@ function DateDetailModal({ date, record, isAdmin, onClose, onEdit }) {
                   <p className="text-white text-sm">{record.notes}</p>
                 </div>
               )}
-              {isAdmin && record.status === "Holiday" ? (
+              {isAdmin && isHoliday ? (
                 <div className="w-full flex items-center justify-center gap-2 py-2.5 bg-white/5 border border-white/10 rounded-lg text-[#555] text-sm cursor-not-allowed select-none">
                   <span>🔒</span> Holiday — cannot edit attendance
                 </div>
@@ -561,6 +561,7 @@ export default function AttendancePage() {
   const [summary, setSummary] = useState({ present:0,half_day:0,absent:0,leave:0,wfh:0,holiday:0,late_count:0,total_hours:0 });
   const [lateTracking, setLateTracking] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [holidayDates, setHolidayDates] = useState(new Set()); // "YYYY-MM-DD" strings
   const [allEmployees, setAllEmployees] = useState([]);
   const allEmployeesRef = useRef([]);
 
@@ -576,13 +577,16 @@ export default function AttendancePage() {
     if (!empId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const [dailyRes, summaryRes] = await Promise.all([
+      const year = monthKey.split("-")[0];
+      const [dailyRes, summaryRes, holidayRes] = await Promise.all([
         axios.get(`${API}/attendance/daily?employee_id=${empId}&month=${monthKey}`, { withCredentials: true }),
         axios.get(`${API}/attendance/summary?employee_id=${empId}&month=${monthKey}`, { withCredentials: true }),
+        axios.get(`${API}/holidays?year=${year}`, { withCredentials: true }),
       ]);
       setAttendanceRecords(dailyRes.data);
       setSummary(summaryRes.data.summary || {});
       setLateTracking(summaryRes.data.late_tracking || null);
+      setHolidayDates(new Set((holidayRes.data || []).map(h => h.date)));
     } catch { toast.error("Failed to load attendance"); }
     finally { setLoading(false); }
   }, [targetEmployee, monthKey]);
@@ -760,13 +764,19 @@ export default function AttendancePage() {
                 attendanceMap={attendanceMap}
                 currentMonth={currentMonth}
                 isAdmin={isAdmin}
-                onDateClick={(date, record) => setDetailModal({ date, record })}
+                onDateClick={(date, record) => {
+                  const ds = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+                  setDetailModal({ date, record, isHoliday: record?.status === "Holiday" || holidayDates.has(ds) });
+                }}
               />
             ) : (
               <TableView
                 records={attendanceRecords}
                 isAdmin={isAdmin}
-                onEdit={(date, record) => setEditModal({ date, record })}
+                onEdit={(date, record) => {
+                  const ds = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+                  setEditModal({ date, record, isHoliday: record?.status === "Holiday" || holidayDates.has(ds) });
+                }}
               />
             )}
           </div>
@@ -779,13 +789,14 @@ export default function AttendancePage() {
           date={detailModal.date}
           record={detailModal.record}
           isAdmin={isAdmin}
+          isHoliday={detailModal.isHoliday}
           onClose={() => setDetailModal(null)}
           onEdit={() => { setEditModal(detailModal); setDetailModal(null); }}
         />
       )}
 
-      {/* Edit Attendance Modal */}
-      {editModal && (
+      {/* Edit Attendance Modal — never open on holidays */}
+      {editModal && !editModal.isHoliday && (
         <EditAttendanceModal
           date={editModal.date}
           record={editModal.record}
