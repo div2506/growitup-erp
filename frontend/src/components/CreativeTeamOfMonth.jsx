@@ -202,7 +202,7 @@ function ManagerPerfModal({ onClose, onSuccess, selectedMonth, managers, editing
           {/* Scores — three compact inputs */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="bg-[#191919] border border-white/10 rounded-lg p-3 space-y-1.5">
-              <Label className="text-[#B3B3B3] text-xs">Client Performance (0-100) *</Label>
+              <Label className="text-[#B3B3B3] text-xs">Client Performance *</Label>
               <Input
                 data-testid="mgr-perf-cp-input"
                 type="number" min="0" max="100" step="0.01"
@@ -211,10 +211,13 @@ function ManagerPerfModal({ onClose, onSuccess, selectedMonth, managers, editing
                 placeholder="Score"
                 className="bg-[#2F2F2F] border-white/10 text-white"
               />
-              <p className="text-[#B3B3B3] text-[10px]">Weight: 45%</p>
+              <div className="flex items-center justify-between">
+                <p className="text-[#B3B3B3] text-[10px]">Weight: 45%</p>
+                <p className="text-[#B3B3B3] text-[10px]">0–100</p>
+              </div>
             </div>
             <div className="bg-[#191919] border border-white/10 rounded-lg p-3 space-y-1.5">
-              <Label className="text-[#B3B3B3] text-xs">Client Feedback (0-100) *</Label>
+              <Label className="text-[#B3B3B3] text-xs">Client Feedback *</Label>
               <Input
                 data-testid="mgr-perf-cf-input"
                 type="number" min="0" max="100" step="0.01"
@@ -223,10 +226,13 @@ function ManagerPerfModal({ onClose, onSuccess, selectedMonth, managers, editing
                 placeholder="Score"
                 className="bg-[#2F2F2F] border-white/10 text-white"
               />
-              <p className="text-[#B3B3B3] text-[10px]">Weight: 35%</p>
+              <div className="flex items-center justify-between">
+                <p className="text-[#B3B3B3] text-[10px]">Weight: 35%</p>
+                <p className="text-[#B3B3B3] text-[10px]">0–100</p>
+              </div>
             </div>
             <div className="bg-[#191919] border border-white/10 rounded-lg p-3 space-y-1.5">
-              <Label className="text-[#B3B3B3] text-xs">Creative Task (0-100) *</Label>
+              <Label className="text-[#B3B3B3] text-xs">Creative Task *</Label>
               <Input
                 data-testid="mgr-perf-ct-input"
                 type="number" min="0" max="100" step="0.01"
@@ -235,7 +241,10 @@ function ManagerPerfModal({ onClose, onSuccess, selectedMonth, managers, editing
                 placeholder="Score"
                 className="bg-[#2F2F2F] border-white/10 text-white"
               />
-              <p className="text-[#B3B3B3] text-[10px]">Weight: 20%</p>
+              <div className="flex items-center justify-between">
+                <p className="text-[#B3B3B3] text-[10px]">Weight: 20%</p>
+                <p className="text-[#B3B3B3] text-[10px]">0–100</p>
+              </div>
             </div>
           </div>
 

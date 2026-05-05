@@ -1745,27 +1745,51 @@ function HolidaysTab() {
 
 // ================== MAIN SETTINGS PAGE ==================
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState("departments");
-  const { myEmployee } = useAuth();
-  const isAdmin = myEmployee?.department_name?.toLowerCase() === "admin";
+  const { user, myEmployee } = useAuth();
+  const isAdmin = user?.is_admin || myEmployee?.department_name?.toLowerCase() === "admin";
+
+  const [activeGroup, setActiveGroup] = useState("general");
+  const [activeSub, setActiveSub] = useState({
+    general: "departments",
+    integration: "notion",
+    "data-import": "data-import",
+  });
 
   useEffect(() => {
-    // Auto-run seed-v2 to update is_system flags on existing data
     axios.post(`${API}/seed-v2`, {}, { withCredentials: true }).catch(() => {});
   }, []);
 
-  const tabs = [
-    { val: "departments", label: "Departments", icon: Building2 },
-    { val: "job-positions", label: "Job Positions", icon: Briefcase },
-    { val: "teams", label: "Teams", icon: Users },
-    { val: "notion", label: "Notion Integration", icon: Database },
-    ...(isAdmin ? [
-      { val: "shifts", label: "Shifts", icon: Clock },
-      { val: "holidays", label: "Holidays", icon: CalendarDays },
-      { val: "attendance-integration", label: "Attendance Integration", icon: Fingerprint },
-      { val: "data-import", label: "Data Import", icon: Upload },
-    ] : []),
+  const groups = [
+    { val: "general", label: "General" },
+    { val: "integration", label: "Integration" },
+    ...(isAdmin ? [{ val: "data-import", label: "Data Import" }] : []),
   ];
+
+  const subItems = {
+    general: [
+      { val: "departments", label: "Departments", icon: Building2 },
+      { val: "job-positions", label: "Job Positions", icon: Briefcase },
+      { val: "teams", label: "Teams", icon: Users },
+      ...(isAdmin ? [
+        { val: "shifts", label: "Shifts", icon: Clock },
+        { val: "holidays", label: "Holidays", icon: CalendarDays },
+      ] : []),
+    ],
+    integration: [
+      { val: "notion", label: "Notion Integration", icon: Database },
+      ...(isAdmin ? [{ val: "attendance-integration", label: "Attendance Integration", icon: Fingerprint }] : []),
+    ],
+    "data-import": [
+      { val: "data-import", label: "Performance Data", icon: Upload },
+    ],
+  };
+
+  const currentSub = activeSub[activeGroup];
+
+  const handleGroupChange = (g) => setActiveGroup(g);
+  const handleSubChange = (val) => setActiveSub(prev => ({ ...prev, [activeGroup]: val }));
+
+  const currentItems = subItems[activeGroup] || [];
 
   return (
     <div className="p-4 md:p-8">
@@ -1774,31 +1798,58 @@ export default function SettingsPage() {
         <p className="text-[#B3B3B3] text-sm mt-0.5">Manage departments, positions, teams, and integrations</p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <div className="overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0 mb-5 md:mb-6">
-          <TabsList className="bg-[#191919] border border-white/10 p-1 rounded-lg h-auto flex gap-1 w-fit">
-          {tabs.map(({ val, label, icon: Icon }) => (
-            <TabsTrigger key={val} value={val} data-testid={`settings-tab-${val}`}
-              className="data-[state=active]:bg-[#2F2F2F] data-[state=active]:text-white text-[#B3B3B3] rounded-md px-3 sm:px-4 py-2 text-xs sm:text-sm flex items-center gap-2 transition-all whitespace-nowrap">
-              <Icon size={15} />{label}
-            </TabsTrigger>
-          ))}
-          </TabsList>
+      {/* Top group tabs */}
+      <div className="flex gap-1 mb-6 bg-[#191919] border border-white/10 p-1 rounded-lg w-fit">
+        {groups.map(({ val, label }) => (
+          <button
+            key={val}
+            onClick={() => handleGroupChange(val)}
+            className={`px-5 py-2 text-sm font-medium rounded-md transition-colors ${
+              activeGroup === val ? "bg-[#2F2F2F] text-white" : "text-[#B3B3B3] hover:text-white"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Sidebar + content layout */}
+      <div className="flex gap-6 items-start">
+        {/* Left sidebar */}
+        <div className="w-48 shrink-0">
+          <nav className="flex flex-col gap-0.5">
+            {currentItems.map(({ val, label, icon: Icon }) => (
+              <button
+                key={val}
+                onClick={() => handleSubChange(val)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left ${
+                  currentSub === val
+                    ? "bg-[#2F2F2F] text-white font-medium"
+                    : "text-[#B3B3B3] hover:text-white hover:bg-white/5"
+                }`}
+              >
+                <Icon size={15} className="shrink-0" />
+                {label}
+              </button>
+            ))}
+          </nav>
         </div>
 
-        <TabsContent value="departments"><DepartmentsTab /></TabsContent>
-        <TabsContent value="job-positions"><JobPositionsTab /></TabsContent>
-        <TabsContent value="teams"><TeamsTab /></TabsContent>
-        <TabsContent value="notion"><NotionIntegrationTab /></TabsContent>
-        {isAdmin && (
-          <>
-            <TabsContent value="shifts"><ShiftsTab /></TabsContent>
-            <TabsContent value="holidays"><HolidaysTab /></TabsContent>
-            <TabsContent value="attendance-integration"><AttendanceIntegrationTab /></TabsContent>
-            <TabsContent value="data-import"><DataImportTab /></TabsContent>
-          </>
-        )}
-      </Tabs>
+        {/* Divider */}
+        <div className="w-px self-stretch bg-white/10 shrink-0" />
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          {currentSub === "departments" && <DepartmentsTab />}
+          {currentSub === "job-positions" && <JobPositionsTab />}
+          {currentSub === "teams" && <TeamsTab />}
+          {currentSub === "notion" && <NotionIntegrationTab />}
+          {isAdmin && currentSub === "shifts" && <ShiftsTab />}
+          {isAdmin && currentSub === "holidays" && <HolidaysTab />}
+          {isAdmin && currentSub === "attendance-integration" && <AttendanceIntegrationTab />}
+          {isAdmin && currentSub === "data-import" && <DataImportTab />}
+        </div>
+      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import {
-  CheckCircle, XCircle, Hourglass, Ban, AlertCircle, FileText, Search, Filter, X
+  CheckCircle, XCircle, Hourglass, Ban, AlertCircle, FileText, Search, Filter, X, ChevronDown, ChevronUp
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -51,6 +51,183 @@ function Avatar({ employee, size = 36 }) {
   return (
     <div className="rounded-full bg-white/10 flex items-center justify-center text-white text-xs font-bold shrink-0" style={{ width: size, height: size }}>
       {initials}
+    </div>
+  );
+}
+
+const ACCENT = { Approved: "#4ade80", Rejected: "#f87171", Cancelled: "#555", Pending: "#fbbf24" };
+const thCls = "px-4 py-3 text-left text-xs font-semibold text-[#B3B3B3] uppercase tracking-wider whitespace-nowrap";
+const tdCls = "px-4 py-3.5 text-sm align-middle";
+
+function LeaveRequestRow({ req, onReview }) {
+  const [open, setOpen] = useState(false);
+  const accent = ACCENT[req.status] ?? ACCENT.Pending;
+  const totalDays = req.total_days ?? ((req.paid_days ?? 0) + (req.regular_days ?? 0));
+  const dateLabel = req.leave_type === "Half Day"
+    ? `${fmtDate(req.from_date)} · ${req.half_day_type}`
+    : req.from_date === req.to_date
+      ? fmtDate(req.from_date)
+      : `${fmtDate(req.from_date)} – ${fmtDate(req.to_date)}`;
+
+  return (
+    <>
+      <tr
+        data-testid={`leave-request-row-${req.request_id}`}
+        onClick={() => setOpen(o => !o)}
+        className="cursor-pointer hover:bg-white/5 transition-colors border-b border-white/5 last:border-0"
+        style={{ borderLeft: `3px solid ${accent}` }}
+      >
+        {/* Employee */}
+        <td className={tdCls}>
+          <div className="flex items-center gap-2.5">
+            <Avatar employee={req.employee} size={32} />
+            <div className="min-w-0">
+              <p className="text-white font-medium text-sm truncate">
+                {req.employee?.first_name} {req.employee?.last_name}
+              </p>
+              <p className="text-[#666] text-xs">{req.employee?.employee_id}</p>
+            </div>
+          </div>
+        </td>
+
+        {/* Dept */}
+        <td className={tdCls}>
+          <span className="text-[#B3B3B3] text-xs bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
+            {req.employee?.department_name || "—"}
+          </span>
+        </td>
+
+        {/* Date */}
+        <td className={tdCls}>
+          <span className="text-white">{dateLabel}</span>
+        </td>
+
+        {/* Days */}
+        <td className={tdCls}>
+          <div className="flex items-center gap-1.5">
+            <span className="text-white">{totalDays}</span>
+            {req.paid_days > 0 && (
+              <span className="text-[10px] bg-green-400/10 text-green-400 border border-green-400/20 px-1.5 py-0.5 rounded-full">{req.paid_days}P</span>
+            )}
+            {req.regular_days > 0 && (
+              <span className="text-[10px] bg-white/5 text-[#B3B3B3] border border-white/10 px-1.5 py-0.5 rounded-full">{req.regular_days}U</span>
+            )}
+          </div>
+        </td>
+
+        {/* Balance */}
+        <td className={tdCls}>
+          <span className="text-[#B3B3B3] text-xs">
+            {req.employee_balance?.paid_leave_balance ?? "—"} days
+          </span>
+        </td>
+
+        {/* Status */}
+        <td className={tdCls}>
+          <StatusBadge status={req.status} />
+        </td>
+
+        {/* Actions */}
+        <td className={`${tdCls} text-right`} onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-end gap-2">
+            {req.status === "Pending" && (
+              <>
+                <button
+                  data-testid={`reject-btn-${req.request_id}`}
+                  onClick={() => onReview(req, "Rejected")}
+                  className="p-1.5 rounded-lg text-red-400 border border-red-400/30 hover:bg-red-400/10 transition-colors">
+                  <XCircle size={15} />
+                </button>
+                <button
+                  data-testid={`approve-btn-${req.request_id}`}
+                  onClick={() => onReview(req, "Approved")}
+                  className="p-1.5 rounded-lg text-green-400 border border-green-400/30 hover:bg-green-400/10 transition-colors">
+                  <CheckCircle size={15} />
+                </button>
+              </>
+            )}
+            {open ? <ChevronUp size={14} className="text-[#666]" /> : <ChevronDown size={14} className="text-[#666]" />}
+          </div>
+        </td>
+      </tr>
+
+      {/* Expanded detail */}
+      {open && (
+        <tr className="bg-[#252525]" style={{ borderLeft: `3px solid ${accent}` }}>
+          <td colSpan={7} className="px-5 py-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-3 mb-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-[#666] mb-1">Leave Type</p>
+                <p className="text-white text-sm">{req.leave_type === "Half Day" ? `Half Day · ${req.half_day_type}` : "Full Day"}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-[#666] mb-1">Date Range</p>
+                <p className="text-white text-sm">{dateLabel}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-[#666] mb-1">Duration</p>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-white text-sm">{totalDays} day{totalDays !== 1 ? "s" : ""}</span>
+                  {req.paid_days > 0 && <span className="text-[10px] bg-green-400/10 text-green-400 border border-green-400/20 px-1.5 py-0.5 rounded-full">{req.paid_days} paid</span>}
+                  {req.regular_days > 0 && <span className="text-[10px] bg-white/5 text-[#B3B3B3] border border-white/10 px-1.5 py-0.5 rounded-full">{req.regular_days} unpaid</span>}
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-[#666] mb-1">Leave Balance</p>
+                <p className="text-white text-sm">{req.employee_balance?.paid_leave_balance ?? "—"} paid days remaining</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-[#666] mb-1">Requested At</p>
+                <p className="text-[#B3B3B3] text-sm">{fmtDateTime(req.requested_at)}</p>
+              </div>
+              <div className="col-span-2 sm:col-span-3">
+                <p className="text-[10px] uppercase tracking-wider text-[#666] mb-1">Reason</p>
+                <p className="text-[#B3B3B3] text-sm">{req.reason || "—"}</p>
+              </div>
+            </div>
+
+            {req.admin_notes && (
+              <div className={`flex items-start gap-2 rounded-lg px-3 py-2 border ${req.status === "Rejected" ? "bg-red-400/10 border-red-400/20" : "bg-green-400/10 border-green-400/20"}`}>
+                {req.status === "Rejected"
+                  ? <AlertCircle size={13} className="text-red-400 mt-0.5 shrink-0" />
+                  : <CheckCircle size={13} className="text-green-400 mt-0.5 shrink-0" />}
+                <div>
+                  <p className={`text-[10px] uppercase tracking-wider mb-0.5 ${req.status === "Rejected" ? "text-red-400/70" : "text-green-400/70"}`}>Admin Note</p>
+                  <p className={`text-sm ${req.status === "Rejected" ? "text-red-400" : "text-green-400"}`}>{req.admin_notes}</p>
+                </div>
+              </div>
+            )}
+            {(req.status === "Approved" || req.status === "Rejected") && req.reviewer_name && (
+              <p className="text-[#555] text-xs mt-2">Reviewed by {req.reviewer_name} · {fmtDateTime(req.reviewed_at)}</p>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function LeaveRequestTable({ requests, onReview }) {
+  return (
+    <div className="rounded-xl border border-white/10 overflow-hidden overflow-x-auto">
+      <table className="w-full min-w-[760px] bg-[#2F2F2F]">
+        <thead className="bg-[#191919] border-b border-white/10">
+          <tr>
+            <th className={thCls}>Employee</th>
+            <th className={thCls}>Department</th>
+            <th className={thCls}>Date</th>
+            <th className={thCls}>Days</th>
+            <th className={thCls}>Balance</th>
+            <th className={thCls}>Status</th>
+            <th className={`${thCls} text-right`}>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {requests.map(req => (
+            <LeaveRequestRow key={req.request_id} req={req} onReview={onReview} />
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -271,103 +448,10 @@ export default function LeaveRequestsPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {filtered.map(req => (
-            <div key={req.request_id} data-testid={`leave-request-row-${req.request_id}`}
-              className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4">
-              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                {/* Left: employee + request */}
-                <div className="flex gap-3 flex-1 min-w-0">
-                  <Avatar employee={req.employee} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className="text-white font-medium text-sm truncate">
-                        {req.employee?.first_name} {req.employee?.last_name}
-                      </span>
-                      <span className="text-[#666] text-xs">{req.employee?.employee_id}</span>
-                      {req.employee?.department_name && (
-                        <span className="text-[#B3B3B3] text-xs bg-white/5 px-2 py-0.5 rounded">{req.employee.department_name}</span>
-                      )}
-                      <StatusBadge status={req.status} />
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 text-sm mb-2">
-                      <span className="text-white">
-                        {req.leave_type === "Half Day"
-                          ? `${fmtDate(req.from_date)} (${req.half_day_type})`
-                          : req.from_date === req.to_date
-                            ? fmtDate(req.from_date)
-                            : `${fmtDate(req.from_date)} – ${fmtDate(req.to_date)}`}
-                      </span>
-                      <span className="text-[#B3B3B3] text-xs">
-                        {req.total_days} day{req.total_days !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-1.5 mb-2">
-                      {req.paid_days > 0 && (
-                        <span className="text-xs bg-green-400/10 text-green-400 border border-green-400/20 px-2 py-0.5 rounded">
-                          {req.paid_days} Paid
-                        </span>
-                      )}
-                      {req.regular_days > 0 && (
-                        <span className="text-xs bg-amber-400/10 text-amber-400 border border-amber-400/20 px-2 py-0.5 rounded">
-                          {req.regular_days} Regular (Unpaid)
-                        </span>
-                      )}
-                      {req.employee_balance && (
-                        <span className="text-xs bg-white/5 text-[#B3B3B3] border border-white/10 px-2 py-0.5 rounded">
-                          Balance: {req.employee_balance.paid_leave_balance || 0} paid
-                        </span>
-                      )}
-                    </div>
-
-                    <p className="text-[#B3B3B3] text-sm line-clamp-3">{req.reason}</p>
-
-                    {req.status === "Rejected" && req.admin_notes && (
-                      <div className="mt-2 flex items-start gap-1.5 bg-red-400/10 border border-red-400/20 rounded px-2.5 py-1.5">
-                        <AlertCircle size={12} className="text-red-400 mt-0.5 shrink-0" />
-                        <p className="text-red-400 text-xs">{req.admin_notes}</p>
-                      </div>
-                    )}
-                    {req.status === "Approved" && req.admin_notes && (
-                      <div className="mt-2 flex items-start gap-1.5 bg-green-400/10 border border-green-400/20 rounded px-2.5 py-1.5">
-                        <CheckCircle size={12} className="text-green-400 mt-0.5 shrink-0" />
-                        <p className="text-green-400 text-xs">{req.admin_notes}</p>
-                      </div>
-                    )}
-                    {(req.status === "Approved" || req.status === "Rejected") && req.reviewer_name && (
-                      <p className="text-[#666] text-xs mt-1">
-                        Reviewed by {req.reviewer_name} • {fmtDateTime(req.reviewed_at)}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Right: actions */}
-                <div className="flex md:flex-col items-start md:items-end gap-2 shrink-0">
-                  <span className="text-[#666] text-xs">Req: {fmtDateTime(req.requested_at)}</span>
-                  {req.status === "Pending" && (
-                    <div className="flex gap-2">
-                      <button
-                        data-testid={`reject-btn-${req.request_id}`}
-                        onClick={() => setReviewTarget({ request: req, action: "Rejected" })}
-                        className="px-3 py-1.5 text-xs text-red-400 border border-red-400/30 hover:bg-red-400/10 rounded-lg transition-colors inline-flex items-center gap-1">
-                        <XCircle size={12} /> Reject
-                      </button>
-                      <button
-                        data-testid={`approve-btn-${req.request_id}`}
-                        onClick={() => setReviewTarget({ request: req, action: "Approved" })}
-                        className="px-3 py-1.5 text-xs bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors inline-flex items-center gap-1">
-                        <CheckCircle size={12} /> Approve
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+        <LeaveRequestTable
+          requests={filtered}
+          onReview={(req, action) => setReviewTarget({ request: req, action })}
+        />
       )}
 
       {reviewTarget && (

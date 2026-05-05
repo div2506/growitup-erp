@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import {
-  Plus, X, ChevronDown, AlertCircle, CheckCircle, XCircle,
+  Plus, X, ChevronDown, ChevronUp, AlertCircle, CheckCircle, XCircle,
   Hourglass, Ban, Clock, Calendar, FileText
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -255,6 +255,173 @@ function CancelConfirmDialog({ request, onConfirm, onClose }) {
 // ─────────────────────────────────────────────
 // My Leave Requests List
 // ─────────────────────────────────────────────
+const ACCENT = {
+  Approved:  "#4ade80",
+  Rejected:  "#f87171",
+  Cancelled: "#555",
+  Pending:   "#fbbf24",
+};
+
+const thCls = "px-4 py-3 text-left text-xs font-semibold text-[#B3B3B3] uppercase tracking-wider select-none whitespace-nowrap";
+const tdCls = "px-4 py-3.5 text-sm align-middle";
+
+function LeaveRow({ req, canCancel, onCancel }) {
+  const [open, setOpen] = useState(false);
+  const totalDays = req.total_days ?? ((req.paid_days ?? 0) + (req.regular_days ?? 0));
+  const accent = ACCENT[req.status] ?? ACCENT.Pending;
+
+  return (
+    <>
+      <tr
+        onClick={() => setOpen(o => !o)}
+        className="cursor-pointer hover:bg-white/5 transition-colors border-b border-white/5 last:border-0"
+        style={{ borderLeft: `3px solid ${accent}` }}
+      >
+        {/* Leave Type */}
+        <td className={tdCls}>
+          <span className="text-white font-medium">
+            {req.leave_type === "Half Day" ? `Half Day` : "Full Day"}
+          </span>
+          {req.leave_type === "Half Day" && req.half_day_type && (
+            <span className="ml-1.5 text-[11px] text-[#B3B3B3]">({req.half_day_type})</span>
+          )}
+        </td>
+
+        {/* Start Date */}
+        <td className={tdCls}>
+          <span className="text-white">{fmtDate(req.from_date)}</span>
+        </td>
+
+        {/* End Date */}
+        <td className={tdCls}>
+          <span className="text-white">{fmtDate(req.to_date)}</span>
+        </td>
+
+        {/* Days */}
+        <td className={tdCls}>
+          <div className="flex items-center gap-1.5">
+            <span className="text-white">{totalDays}</span>
+            {req.paid_days > 0 && (
+              <span className="text-[10px] bg-green-400/10 text-green-400 border border-green-400/20 px-1.5 py-0.5 rounded-full">{req.paid_days}P</span>
+            )}
+            {req.regular_days > 0 && (
+              <span className="text-[10px] bg-white/5 text-[#B3B3B3] border border-white/10 px-1.5 py-0.5 rounded-full">{req.regular_days}U</span>
+            )}
+          </div>
+        </td>
+
+        {/* Status */}
+        <td className={tdCls}>
+          <StatusBadge status={req.status} />
+        </td>
+
+        {/* Action */}
+        <td className={`${tdCls} text-right`} onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-end gap-2">
+            {canCancel(req) && (
+              <button onClick={() => onCancel(req)}
+                className="px-2.5 py-1 text-xs text-red-400 border border-red-400/30 hover:bg-red-400/10 rounded-lg transition-colors font-medium">
+                Cancel
+              </button>
+            )}
+            {open
+              ? <ChevronUp size={14} className="text-[#666]" />
+              : <ChevronDown size={14} className="text-[#666]" />}
+          </div>
+        </td>
+      </tr>
+
+      {/* Expanded row */}
+      {open && (
+        <tr className="bg-[#252525]" style={{ borderLeft: `3px solid ${accent}` }}>
+          <td colSpan={6} className="px-5 py-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-4 mb-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-[#666] mb-1">Leave Type</p>
+                <p className="text-white text-sm font-medium">
+                  {req.leave_type === "Half Day" ? `Half Day${req.half_day_type ? ` · ${req.half_day_type}` : ""}` : "Full Day"}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-[#666] mb-1">Duration</p>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-white text-sm font-medium">{totalDays} day{totalDays !== 1 ? "s" : ""}</span>
+                  {req.paid_days > 0 && (
+                    <span className="text-[10px] bg-green-400/10 text-green-400 border border-green-400/20 px-1.5 py-0.5 rounded-full">{req.paid_days} paid</span>
+                  )}
+                  {req.regular_days > 0 && (
+                    <span className="text-[10px] bg-white/5 text-[#B3B3B3] border border-white/10 px-1.5 py-0.5 rounded-full">{req.regular_days} unpaid</span>
+                  )}
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-[#666] mb-1">Date Range</p>
+                <p className="text-white text-sm">
+                  {req.from_date === req.to_date
+                    ? fmtDate(req.from_date)
+                    : `${fmtDate(req.from_date)} – ${fmtDate(req.to_date)}`}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-[#666] mb-1">Applied On</p>
+                <p className="text-[#B3B3B3] text-sm">
+                  {req.requested_at
+                    ? new Date(req.requested_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+                    : "—"}
+                </p>
+              </div>
+              <div className="col-span-2 sm:col-span-4">
+                <p className="text-[10px] uppercase tracking-wider text-[#666] mb-1">Reason</p>
+                <p className="text-[#B3B3B3] text-sm">{req.reason || "—"}</p>
+              </div>
+            </div>
+
+            {req.status === "Rejected" && req.admin_notes && (
+              <div className="flex items-start gap-1.5 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
+                <AlertCircle size={12} className="text-red-400 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-red-400/70 mb-0.5">Admin Note</p>
+                  <p className="text-red-400 text-sm">{req.admin_notes}</p>
+                </div>
+              </div>
+            )}
+            {req.status === "Approved" && req.reviewer_name && (
+              <div className="flex items-center gap-1.5 bg-green-400/10 border border-green-400/20 rounded-lg px-3 py-2">
+                <CheckCircle size={12} className="text-green-400 shrink-0" />
+                <p className="text-green-400 text-sm">Approved by <span className="font-medium">{req.reviewer_name}</span></p>
+              </div>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function LeaveList({ requests, canCancel, onCancel }) {
+  return (
+    <div className="rounded-xl border border-white/10 overflow-hidden overflow-x-auto">
+      <table className="w-full min-w-[600px] bg-[#2F2F2F]">
+        <thead className="bg-[#191919] border-b border-white/10">
+          <tr>
+            <th className={thCls}>Leave Type</th>
+            <th className={thCls}>Start Date</th>
+            <th className={thCls}>End Date</th>
+            <th className={thCls}>Days</th>
+            <th className={thCls}>Status</th>
+            <th className={`${thCls} text-right`}>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {requests.map(req => (
+            <LeaveRow key={req.request_id} req={req} canCancel={canCancel} onCancel={onCancel} />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function MyLeaveRequests({ requests, loading, onCancel }) {
   const [filterStatus, setFilterStatus] = useState("All");
   const [cancelTarget, setCancelTarget] = useState(null);
@@ -287,70 +454,16 @@ function MyLeaveRequests({ requests, loading, onCancel }) {
       </div>
 
       {loading ? (
-        <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-20 bg-[#2F2F2F] rounded-xl animate-pulse border border-white/10" />)}</div>
+        <div className="rounded-xl border border-white/10 overflow-hidden divide-y divide-white/5">
+          {[1,2,3].map(i => <div key={i} className="h-12 bg-[#2F2F2F] animate-pulse" />)}
+        </div>
       ) : filtered.length === 0 ? (
         <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-10 text-center">
           <FileText size={28} className="text-[#B3B3B3] mx-auto mb-2" />
           <p className="text-[#B3B3B3]">No {filterStatus !== "All" ? filterStatus.toLowerCase() : ""} leave requests</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {filtered.map(req => (
-            <div key={req.request_id} className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4">
-              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                <div className="flex-1">
-                  <div className="flex flex-wrap items-center gap-2 mb-2">
-                    <StatusBadge status={req.status} />
-                    <span className="text-white text-sm font-medium">
-                      {req.leave_type === "Half Day"
-                        ? `${fmtDate(req.from_date)} (${req.half_day_type})`
-                        : req.from_date === req.to_date
-                          ? fmtDate(req.from_date)
-                          : `${fmtDate(req.from_date)} – ${fmtDate(req.to_date)}`}
-                    </span>
-                    <span className="text-[#B3B3B3] text-xs">{req.total_days} day{req.total_days !== 1 ? "s" : ""}</span>
-                  </div>
-
-                  {/* Leave breakdown */}
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {req.paid_days > 0 && (
-                      <span className="text-xs bg-green-400/10 text-green-400 border border-green-400/20 px-2 py-0.5 rounded">
-                        {req.paid_days} Paid
-                      </span>
-                    )}
-                    {req.regular_days > 0 && (
-                      <span className="text-xs bg-amber-400/10 text-amber-400 border border-amber-400/20 px-2 py-0.5 rounded">
-                        {req.regular_days} Regular (Unpaid)
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="text-[#B3B3B3] text-sm line-clamp-2">{req.reason}</p>
-
-                  {req.status === "Rejected" && req.admin_notes && (
-                    <div className="mt-2 flex items-start gap-1.5 bg-red-400/10 border border-red-400/20 rounded px-2.5 py-1.5">
-                      <AlertCircle size={12} className="text-red-400 mt-0.5 shrink-0" />
-                      <p className="text-red-400 text-xs">{req.admin_notes}</p>
-                    </div>
-                  )}
-                  {req.status === "Approved" && req.reviewer_name && (
-                    <p className="text-green-400 text-xs mt-1">Approved by {req.reviewer_name}</p>
-                  )}
-                </div>
-
-                <div className="flex sm:flex-col items-center sm:items-end gap-2 shrink-0">
-                  <span className="text-[#666] text-xs">{new Date(req.requested_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
-                  {canCancel(req) && (
-                    <button onClick={() => setCancelTarget(req)}
-                      className="px-2.5 py-1.5 text-xs text-red-400 border border-red-400/30 hover:bg-red-400/10 rounded-lg transition-colors">
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+        <LeaveList requests={filtered} canCancel={canCancel} onCancel={setCancelTarget} />
       )}
 
       {cancelTarget && (

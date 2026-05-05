@@ -276,42 +276,31 @@ export default function DashboardPage() {
         </SectionCard>
       </div>
 
-      {/* Birthday section — full width, celebratory */}
-      <div
-        data-testid="dashboard-birthdays-section"
-        className="relative overflow-hidden rounded-2xl border border-fuchsia-400/20 p-5 md:p-7 bg-gradient-to-br from-[#2A1538] via-[#1F1A2E] to-[#2A1F0F]"
-      >
-        {/* Decorative orbs */}
-        <div className="absolute -top-10 -left-10 w-40 h-40 rounded-full bg-fuchsia-500/10 blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-12 -right-8 w-48 h-48 rounded-full bg-amber-400/10 blur-3xl pointer-events-none" />
-        <div className="absolute top-4 right-6 opacity-40 pointer-events-none">
-          <Sparkles size={18} className="text-fuchsia-300" />
-        </div>
+      {/* Birthday section — only shown when there are birthdays today */}
+      {birthdays.length > 0 && (
+        <div
+          data-testid="dashboard-birthdays-section"
+          className="relative overflow-hidden rounded-2xl border border-fuchsia-400/20 p-5 md:p-7 bg-gradient-to-br from-[#2A1538] via-[#1F1A2E] to-[#2A1F0F]"
+        >
+          <div className="absolute -top-10 -left-10 w-40 h-40 rounded-full bg-fuchsia-500/10 blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-12 -right-8 w-48 h-48 rounded-full bg-amber-400/10 blur-3xl pointer-events-none" />
+          <div className="absolute top-4 right-6 opacity-40 pointer-events-none">
+            <Sparkles size={18} className="text-fuchsia-300" />
+          </div>
 
-        <div className="relative flex flex-col items-center mb-4 md:mb-5">
-          <div className="flex items-center gap-2">
-            <Cake size={22} className="text-fuchsia-300" />
-            <h2 className="text-lg md:text-xl font-bold text-white tracking-tight" style={{ fontFamily: "Manrope, sans-serif" }}>
-              Birthdays Today
-            </h2>
-            {birthdays.length > 0 && (
+          <div className="relative flex flex-col items-center mb-4 md:mb-5">
+            <div className="flex items-center gap-2">
+              <Cake size={22} className="text-fuchsia-300" />
+              <h2 className="text-lg md:text-xl font-bold text-white tracking-tight" style={{ fontFamily: "Manrope, sans-serif" }}>
+                Birthdays Today
+              </h2>
               <span className="text-[11px] font-semibold bg-white/10 text-white px-2 py-0.5 rounded-full border border-white/10 tabular-nums">
                 {birthdays.length}
               </span>
-            )}
-          </div>
-          {birthdays.length > 0 && (
+            </div>
             <p className="text-[#D9D9D9] text-xs mt-1">Send some love to the team 🎉</p>
-          )}
-        </div>
-
-        {birthdays.length === 0 ? (
-          <div className="relative flex flex-col items-center py-6 text-center">
-            <div className="text-4xl mb-2 opacity-80">🎉</div>
-            <p className="text-white/90 text-sm font-medium">No birthdays today</p>
-            <p className="text-[#B3B3B3] text-xs mt-1">We&apos;ll celebrate again soon!</p>
           </div>
-        ) : (
+
           <div className="relative flex gap-3 md:gap-4 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar">
             {birthdays.map(emp => (
               <BirthdayCard
@@ -321,8 +310,8 @@ export default function DashboardPage() {
               />
             ))}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

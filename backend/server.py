@@ -5,6 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import uuid
 import re
+import asyncio
 import requests as http_requests
 from pathlib import Path
 from pydantic import BaseModel
@@ -35,6 +36,10 @@ api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# In-memory session cache: token → (user_dict, expires_at)
+_session_cache: dict = {}
+_SESSION_CACHE_TTL = 60  # seconds before re-validating against DB
 
 
 # ===================== MODELS =====================
@@ -203,34 +208,49 @@ async def calculate_monthly_payroll_fn(employee_id: str, month_str: str) -> dict
     basic_salary = float(emp.get("basic_salary") or 0)
     day_rate = basic_salary / days_in_month if days_in_month else 0
 
-    # ---------- 1. Overtime Earnings ----------
-    ot_records = await db.overtime_requests.find({
-        "employee_id": employee_id, "status": "Approved",
-        "date": {"$gte": month_first, "$lte": last_day}
-    }, {"_id": 0}).to_list(200)
+    # ---------- Fetch all data in parallel ----------
+    date_filter = {"$gte": month_first, "$lte": last_day}
+    (
+        ot_records,
+        leave_records,
+        absent_records,
+        late_tracking,
+        half_day_records,
+        all_att,
+    ) = await asyncio.gather(
+        db.overtime_requests.find(
+            {"employee_id": employee_id, "status": "Approved", "date": date_filter}, {"_id": 0}
+        ).to_list(200),
+        db.leave_requests.find(
+            {"employee_id": employee_id, "status": "Approved",
+             "$or": [{"from_date": date_filter}, {"to_date": date_filter}]},
+            {"_id": 0}
+        ).to_list(200),
+        db.daily_attendance.find(
+            {"employee_id": employee_id, "status": "Absent", "date": date_filter}, {"_id": 0}
+        ).sort("date", 1).to_list(200),
+        db.monthly_late_tracking.find_one(
+            {"employee_id": employee_id, "month": month_first}, {"_id": 0}
+        ),
+        db.daily_attendance.find(
+            {"employee_id": employee_id, "status": "Half Day", "date": date_filter}, {"_id": 0}
+        ).to_list(200),
+        db.daily_attendance.find(
+            {"employee_id": employee_id, "date": date_filter}, {"_id": 0}
+        ).to_list(500),
+    )
+
+    # ---------- 1. Overtime ----------
     overtime_pay = round(sum(r.get("overtime_pay", 0) for r in ot_records), 2)
     overtime_hours = round(sum(r.get("total_hours", 0) for r in ot_records), 2)
     gross_earnings = round(basic_salary + overtime_pay, 2)
 
-    # ---------- 2. Regular Leave Deductions (approved leave with regular_days > 0) ----------
-    leave_records = await db.leave_requests.find({
-        "employee_id": employee_id, "status": "Approved",
-        "$or": [
-            {"from_date": {"$gte": month_first, "$lte": last_day}},
-            {"to_date": {"$gte": month_first, "$lte": last_day}}
-        ]
-    }, {"_id": 0}).to_list(200)
-
+    # ---------- 2. Regular Leave Deductions ----------
     regular_leave_days = round(sum(r.get("regular_days", 0) for r in leave_records), 2)
     paid_leave_days = round(sum(r.get("paid_days", 0) for r in leave_records), 2)
     regular_leave_deduction = round(day_rate * regular_leave_days, 2)
 
     # ---------- 3. Unapproved Absence Deductions ----------
-    absent_records = await db.daily_attendance.find({
-        "employee_id": employee_id, "status": "Absent",
-        "date": {"$gte": month_first, "$lte": last_day}
-    }, {"_id": 0}).sort("date", 1).to_list(200)
-
     absence_list = []
     total_absence_deduction = 0.0
     for ar in absent_records:
@@ -242,9 +262,6 @@ async def calculate_monthly_payroll_fn(employee_id: str, month_str: str) -> dict
     total_absence_deduction = round(total_absence_deduction, 2)
 
     # ---------- 4. Late Penalties ----------
-    late_tracking = await db.monthly_late_tracking.find_one(
-        {"employee_id": employee_id, "month": month_first}, {"_id": 0}
-    )
     late_count = late_tracking.get("late_count", 0) if late_tracking else 0
     late_penalty_list = []
     total_late_deduction = 0.0
@@ -253,7 +270,6 @@ async def calculate_monthly_payroll_fn(employee_id: str, month_str: str) -> dict
             ptype = p.get("type", "")
             amount = float(p.get("amount", 0))
             if ptype == "leave_or_salary_deduction":
-                # 4th late: 1 day salary deduction (if no paid leave available)
                 total_late_deduction += amount
                 late_penalty_list.append({"date": p.get("date", ""), "type": "4th Late Arrival", "description": "1 day salary", "amount": round(amount, 2)})
             elif ptype == "salary_deduction_1_67pct":
@@ -262,18 +278,10 @@ async def calculate_monthly_payroll_fn(employee_id: str, month_str: str) -> dict
     total_late_deduction = round(total_late_deduction, 2)
 
     # ---------- 5. Half-Day Deductions ----------
-    half_day_records = await db.daily_attendance.find({
-        "employee_id": employee_id, "status": "Half Day",
-        "date": {"$gte": month_first, "$lte": last_day}
-    }, {"_id": 0}).to_list(200)
     half_day_count = len(half_day_records)
     half_day_deduction = round(day_rate * 0.5 * half_day_count, 2)
 
-    # ---------- 6. Attendance Summary ----------
-    all_att = await db.daily_attendance.find({
-        "employee_id": employee_id,
-        "date": {"$gte": month_first, "$lte": last_day}
-    }, {"_id": 0}).to_list(500)
+    # ---------- 6. Attendance Summary (already fetched above) ----------
 
     att_summary = {"present": 0, "half_day": 0, "absent": 0, "leave": 0, "wfh": 0, "holiday": 0, "late_count": 0}
     for a in all_att:
@@ -341,7 +349,21 @@ async def get_current_user(request: Request):
     if not session_token:
         raise HTTPException(401, "Not authenticated")
 
-    session = await db.user_sessions.find_one({"session_token": session_token}, {"_id": 0})
+    now = datetime.now(timezone.utc)
+
+    # Check in-memory cache first
+    cached = _session_cache.get(session_token)
+    if cached:
+        user, session_expires, cache_ts = cached
+        if now.timestamp() - cache_ts < _SESSION_CACHE_TTL:
+            if session_expires < now:
+                _session_cache.pop(session_token, None)
+                raise HTTPException(401, "Session expired")
+            return user
+
+    # Cache miss — hit DB (session + user in parallel)
+    session_task = db.user_sessions.find_one({"session_token": session_token}, {"_id": 0})
+    session = await session_task
     if not session:
         raise HTTPException(401, "Invalid session")
 
@@ -350,19 +372,25 @@ async def get_current_user(request: Request):
         expires_at = datetime.fromisoformat(expires_at)
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at < datetime.now(timezone.utc):
+    if expires_at < now:
         raise HTTPException(401, "Session expired")
 
     user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
     if not user:
         raise HTTPException(401, "User not found")
+
+    # Store in cache
+    _session_cache[session_token] = (user, expires_at, now.timestamp())
     return user
 
 
 async def get_next_employee_id():
-    """Returns the next available GM### id, filling gaps in the sequence first.
-    e.g. existing [GM001, GM002, GM003, GM005, GM007] → returns GM004; then GM006; then GM008."""
-    employees = await db.employees.find({}, {"employee_id": 1, "_id": 0}).to_list(10000)
+    """Returns the next available GM### id, filling gaps in the sequence first."""
+    # Only fetch employee_id field, use projection — no full doc scan
+    employees = await db.employees.find(
+        {"employee_id": {"$regex": "^GM"}},
+        {"employee_id": 1, "_id": 0}
+    ).to_list(None)
     nums = set()
     for emp in employees:
         eid = emp.get("employee_id", "")
@@ -374,11 +402,9 @@ async def get_next_employee_id():
     if not nums:
         return "GM001"
     max_num = max(nums)
-    # Find first missing positive integer up to max_num
     for i in range(1, max_num + 1):
         if i not in nums:
             return f"GM{str(i).zfill(3)}"
-    # No gaps — continue sequence
     return f"GM{str(max_num + 1).zfill(3)}"
 
 
@@ -1050,6 +1076,7 @@ async def logout(request: Request, response: Response):
     session_token = request.cookies.get("session_token")
     if session_token:
         await db.user_sessions.delete_many({"session_token": session_token})
+        _session_cache.pop(session_token, None)
     response.delete_cookie(key="session_token", path="/", samesite="none", secure=True)
     return {"message": "Logged out"}
 
@@ -3585,23 +3612,30 @@ async def get_dashboard_today(request: Request):
             "department_name": emp.get("department_name"),
         }
 
-    # On leave today — also pull half-day info from the leave_requests row covering today
+    # On leave today — batch-fetch all leave_requests covering today in one query
+    leave_emp_ids = [r["employee_id"] for r in att_rows if r.get("status") == "Leave"]
+    leave_req_map: dict = {}
+    if leave_emp_ids:
+        lr_docs = await db.leave_requests.find(
+            {
+                "employee_id": {"$in": leave_emp_ids},
+                "status": "Approved",
+                "from_date": {"$lte": today_str},
+                "to_date": {"$gte": today_str},
+            },
+            {"_id": 0, "employee_id": 1, "leave_type": 1, "half_day_type": 1},
+        ).to_list(len(leave_emp_ids))
+        for lr in lr_docs:
+            leave_req_map[lr["employee_id"]] = lr
+
     leave_list = []
     for r in att_rows:
         if r.get("status") != "Leave":
             continue
         base = enrich(r)
-        lr = await db.leave_requests.find_one(
-            {
-                "employee_id": r["employee_id"],
-                "status": "Approved",
-                "from_date": {"$lte": today_str},
-                "to_date": {"$gte": today_str},
-            },
-            {"_id": 0, "leave_type": 1, "half_day_type": 1},
-        )
-        base["leave_type"] = (lr or {}).get("leave_type") or "Full Day"
-        base["half_day_type"] = (lr or {}).get("half_day_type")
+        lr = leave_req_map.get(r["employee_id"]) or {}
+        base["leave_type"] = lr.get("leave_type") or "Full Day"
+        base["half_day_type"] = lr.get("half_day_type")
         leave_list.append(base)
 
     # WFH today
@@ -3842,23 +3876,40 @@ async def get_all_employees_attendance_summary(
             pass
 
     employees = await db.employees.find({"status": "Active"}, {"_id": 0}).to_list(1000)
+    emp_map = {e["employee_id"]: e for e in employees}
+
+    # Single aggregation instead of N per-employee queries
+    att_query: dict = {}
+    if date_query:
+        att_query["date"] = date_query
+    pipeline = [
+        {"$match": att_query},
+        {"$group": {
+            "_id": "$employee_id",
+            "present": {"$sum": {"$cond": [{"$eq": ["$status", "Present"]}, 1, 0]}},
+            "half_day": {"$sum": {"$cond": [{"$eq": ["$status", "Half Day"]}, 1, 0]}},
+            "absent": {"$sum": {"$cond": [{"$eq": ["$status", "Absent"]}, 1, 0]}},
+            "late_count": {"$sum": {"$cond": ["$is_late", 1, 0]}},
+            "total_hours": {"$sum": {"$ifNull": ["$total_hours", 0]}},
+        }},
+    ]
+    agg_rows = await db.daily_attendance.aggregate(pipeline).to_list(None)
+    agg_map = {row["_id"]: row for row in agg_rows}
+
     result = []
     for emp in employees:
-        q: dict = {"employee_id": emp["employee_id"]}
-        if date_query:
-            q["date"] = date_query
-        recs = await db.daily_attendance.find(q, {"_id": 0}).to_list(1000)
+        agg = agg_map.get(emp["employee_id"], {})
         result.append({
             "employee_id": emp["employee_id"],
             "first_name": emp["first_name"],
             "last_name": emp["last_name"],
             "department_name": emp.get("department_name"),
             "profile_picture": emp.get("profile_picture"),
-            "present": sum(1 for r in recs if r.get("status") == "Present"),
-            "half_day": sum(1 for r in recs if r.get("status") == "Half Day"),
-            "absent": sum(1 for r in recs if r.get("status") == "Absent"),
-            "late_count": sum(1 for r in recs if r.get("is_late")),
-            "total_hours": round(sum(r.get("total_hours") or 0 for r in recs), 2),
+            "present": agg.get("present", 0),
+            "half_day": agg.get("half_day", 0),
+            "absent": agg.get("absent", 0),
+            "late_count": agg.get("late_count", 0),
+            "total_hours": round(agg.get("total_hours", 0), 2),
         })
     return result
 
@@ -4707,8 +4758,53 @@ async def _scheduled_yearly_reset():
         logging.error(f"[Scheduler] Yearly reset failed: {exc}")
 
 
+async def _create_indexes():
+    """Create MongoDB indexes for fast lookups. Safe to call on every startup (idempotent)."""
+    await asyncio.gather(
+        # Auth — hit on every single API request
+        db.user_sessions.create_index("session_token", unique=True, background=True),
+        db.user_sessions.create_index("expires_at", background=True),
+        db.users.create_index("user_id", unique=True, background=True),
+        db.users.create_index("email", background=True),
+
+        # Employees
+        db.employees.create_index("employee_id", unique=True, background=True),
+        db.employees.create_index("work_email", background=True),
+        db.employees.create_index("status", background=True),
+        db.employees.create_index("department_id", background=True),
+        db.employees.create_index("department_name", background=True),
+
+        # Attendance — most queried collection
+        db.daily_attendance.create_index([("employee_id", 1), ("date", -1)], background=True),
+        db.daily_attendance.create_index("date", background=True),
+
+        # Leave
+        db.leave_requests.create_index([("employee_id", 1), ("status", 1)], background=True),
+        db.leave_requests.create_index("status", background=True),
+
+        # Overtime
+        db.overtime_requests.create_index([("employee_id", 1), ("status", 1)], background=True),
+
+        # WFH & late tracking (month-keyed lookups)
+        db.wfh_tracking.create_index([("employee_id", 1), ("month_key", 1)], unique=True, background=True),
+        db.monthly_late_tracking.create_index([("employee_id", 1), ("month_key", 1)], unique=True, background=True),
+
+        # Performance
+        db.performance.create_index("employee_id", background=True),
+        db.performance.create_index("notion_database_id", background=True),
+
+        # Payroll
+        db.payroll.create_index([("employee_id", 1), ("month", -1)], background=True),
+
+        # Leave balances
+        db.leave_balances.create_index("employee_id", unique=True, background=True),
+    )
+    logger.info("[Startup] MongoDB indexes created/verified.")
+
+
 @app.on_event("startup")
 async def _start_scheduler():
+    await _create_indexes()
     # Monthly: run at 00:05 on day 1 of every month
     scheduler.add_job(
         _scheduled_monthly_credit,
