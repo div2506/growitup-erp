@@ -274,9 +274,12 @@ async def calculate_monthly_payroll_fn(employee_id: str, month_str: str) -> dict
         for p in late_tracking.get("penalties_applied", []):
             ptype = p.get("type", "")
             amount = float(p.get("amount", 0))
-            if ptype in ("leave_or_salary_deduction", "salary_deduction_1_67pct"):
+            if ptype == "leave_or_salary_deduction":
                 total_late_deduction += amount
-                late_penalty_list.append({"date": p.get("date", ""), "type": f"{p.get('late_number', 4)}th+ Late Arrival", "description": "1.67% salary", "amount": round(amount, 2)})
+                late_penalty_list.append({"date": p.get("date", ""), "type": "4th Late Arrival", "description": "1 day salary", "amount": round(amount, 2)})
+            elif ptype == "salary_deduction_1_67pct":
+                total_late_deduction += amount
+                late_penalty_list.append({"date": p.get("date", ""), "type": f"{p.get('late_number', 5)}th+ Late Arrival", "description": "1.67% salary", "amount": round(amount, 2)})
     total_late_deduction = round(total_late_deduction, 2)
 
     # ---------- 5. Half-Day Deductions ----------
@@ -783,12 +786,21 @@ async def update_late_tracking_fn(employee_id: str, date_str: str, late_minutes:
         if new_count >= 4:
             emp = await db.employees.find_one({"employee_id": employee_id}, {"_id": 0})
             if emp:
-                penalty = round(emp.get("basic_salary", 0) * 0.0167, 2)
-                penalties.append({
-                    "date": date_str, "late_number": new_count,
-                    "type": "salary_deduction_1_67pct", "amount": penalty, "percentage": 1.67,
-                    "description": f"{new_count}th late: 1.67% salary deduction = {penalty}"
-                })
+                days_in_month = cal_module.monthrange(date_obj.year, date_obj.month)[1]
+                if new_count == 4:
+                    one_day_salary = round(emp.get("basic_salary", 0) / days_in_month, 2)
+                    penalties.append({
+                        "date": date_str, "late_number": new_count,
+                        "type": "leave_or_salary_deduction", "amount": one_day_salary,
+                        "description": f"4th late: 1 paid leave OR {one_day_salary} salary deduction"
+                    })
+                else:
+                    penalty = round(emp.get("basic_salary", 0) * 0.0167, 2)
+                    penalties.append({
+                        "date": date_str, "late_number": new_count,
+                        "type": "salary_deduction_1_67pct", "amount": penalty, "percentage": 1.67,
+                        "description": f"{new_count}th late: 1.67% salary deduction = {penalty}"
+                    })
 
         await db.monthly_late_tracking.update_one(
             {"employee_id": employee_id, "month": month_str},
@@ -4747,8 +4759,8 @@ async def update_daily_attendance(attendance_id: str, body: DailyAttendanceUpdat
     if body.status not in valid:
         raise HTTPException(400, f"Invalid status. Must be one of: {', '.join(valid)}")
 
-    # Fetch employee for biometric_employee_code
-    emp = await db.employees.find_one({"employee_id": existing["employee_id"]}, {"_id": 0, "biometric_employee_code": 1})
+    # Fetch employee for biometric_employee_code + basic_salary
+    emp = await db.employees.find_one({"employee_id": existing["employee_id"]}, {"_id": 0})
 
     update: dict = {
         "status": body.status,
@@ -4763,6 +4775,50 @@ async def update_daily_attendance(attendance_id: str, body: DailyAttendanceUpdat
         update["check_in"] = body.check_in
     if body.check_out is not None:
         update["check_out"] = body.check_out
+
+    # ── Recalculate derived time fields when check_in/check_out are present ──
+    final_check_in  = update.get("check_in")  or existing.get("check_in")
+    final_check_out = update.get("check_out") or existing.get("check_out")
+    timed_statuses  = {"Present", "Half Day", "Incomplete", "Forgot Punch Out", "Absent"}
+
+    if body.status in timed_statuses and final_check_in:
+        try:
+            date_str = existing.get("date")
+            employee_id = existing["employee_id"]
+            shift_timings = await get_shift_timings_for_date(employee_id, date_str)
+
+            sh, sm = map(int, shift_timings["start_time"].split(":"))
+            eh, em = map(int, shift_timings["end_time"].split(":"))
+            eff_start_mins = sh * 60 + sm
+            eff_end_mins   = eh * 60 + em
+            grace_cutoff   = eff_start_mins + 10
+
+            ci_h, ci_m = map(int, final_check_in.split(":"))
+            ci_mins = ci_h * 60 + ci_m
+            is_late      = ci_mins > grace_cutoff
+            late_minutes = max(0, ci_mins - eff_start_mins) if is_late else 0
+
+            update["is_late"]      = is_late
+            update["late_minutes"] = late_minutes
+
+            if final_check_out:
+                co_h, co_m = map(int, final_check_out.split(":"))
+                co_mins = co_h * 60 + co_m
+                left_early              = co_mins < eff_end_mins
+                early_departure_minutes = max(0, eff_end_mins - co_mins) if left_early else 0
+                update["left_early"]              = left_early
+                update["early_departure_minutes"] = early_departure_minutes
+
+                # Recalculate total_hours (gross minus break)
+                break_dur = float(shift_timings.get("break_duration") or 0)
+                total_minutes = max(0, (co_mins - ci_mins) - break_dur)
+                update["total_hours"] = round(total_minutes / 60, 2)
+            else:
+                update["left_early"]              = False
+                update["early_departure_minutes"] = 0
+                update["total_hours"]             = None
+        except Exception as e:
+            logger.warning(f"[update_daily_attendance] Recalc failed: {e}")
 
     await db.daily_attendance.update_one({"attendance_id": attendance_id}, {"$set": update})
     return {**existing, **update}
