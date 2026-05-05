@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Clock, Calendar, RefreshCw, X, ChevronDown, AlertCircle, CheckCircle, XCircle, Hourglass } from "lucide-react";
+import { Clock, Calendar, CalendarClock, RefreshCw, X, ChevronDown, AlertCircle, CheckCircle, XCircle, Hourglass } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -225,8 +225,10 @@ export default function ShiftsPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2 mb-2">
                     <StatusBadge status={req.status} />
-                    <span className="text-[#B3B3B3] text-xs">
+                    <span className="flex items-center gap-1 text-[#B3B3B3] text-xs">
+                      <CalendarClock size={11} />
                       {formatDate(req.from_date)} → {formatDate(req.to_date)}
+                      <span className="text-[#555]">· reverts after end date</span>
                     </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-3 mb-2">
@@ -301,6 +303,10 @@ export default function ShiftsPage() {
             </div>
 
             {/* Date Range */}
+            <div className="flex items-start gap-2 bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2.5">
+              <CalendarClock size={14} className="text-blue-400 mt-0.5 shrink-0" />
+              <p className="text-blue-300 text-xs">This is a <strong>temporary</strong> shift change. Your original shift will automatically apply again after the end date.</p>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className={labelCls}>From Date *</Label>

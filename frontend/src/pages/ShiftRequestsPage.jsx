@@ -283,6 +283,14 @@ export default function ShiftRequestsPage() {
                   <p className="text-[#B3B3B3] text-xs mb-0.5">Requested Shift</p>
                   <p className="text-blue-400 text-sm font-medium">{r.requested_shift_name || r.requested_shift?.shift_name || "—"}</p>
                 </div>
+                <div className="bg-[#191919] rounded-lg border border-white/10 px-3 py-2.5 sm:col-span-2">
+                  <p className="text-[#B3B3B3] text-xs mb-1">Temporary Period — reverts to original shift after end date</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-white text-sm font-medium">{fmtDate(r.from_date)}</span>
+                    <span className="text-[#555] text-xs">→</span>
+                    <span className="text-white text-sm font-medium">{fmtDate(r.to_date)}</span>
+                  </div>
+                </div>
               </div>
 
               {/* Reason */}
