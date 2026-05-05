@@ -3956,8 +3956,7 @@ async def create_attendance_entry(body: AttendanceEntryCreate, request: Request)
         "punch_date": punch_date,
         "created_at": now,
     }
-    if body.source:
-        entry["source"] = body.source
+    entry["source"] = body.source or "biometric"
     if body.biometric_employee_code:
         entry["biometric_employee_code"] = body.biometric_employee_code
     await db.attendance_entries.insert_one(entry)
