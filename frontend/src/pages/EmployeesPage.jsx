@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { MoreVertical, Plus, Search, User } from "lucide-react";
 import { toast } from "sonner";
@@ -306,6 +306,9 @@ export default function EmployeesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editEmployee, setEditEmployee] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteCheck, setDeleteCheck] = useState(null); // { can_delete, blockers, will_delete }
+  const [deleteChecking, setDeleteChecking] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [viewEmployee, setViewEmployee] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -357,16 +360,38 @@ export default function EmployeesPage() {
     }
   };
 
-  const handleDelete = async (emp) => {
+  const openDeleteDialog = async (emp) => {
+    setDeleteTarget(emp);
+    setDeleteCheck(null);
+    setDeleteChecking(true);
     try {
-      await axios.delete(`${API}/employees/${emp.employee_id}`, { withCredentials: true });
-      toast.success(`${emp.first_name} ${emp.last_name} deleted`);
-      setEmployees(prev => prev.filter(e => e.employee_id !== emp.employee_id));
+      const { data } = await axios.get(`${API}/employees/${emp.employee_id}/delete-check`, { withCredentials: true });
+      setDeleteCheck(data);
+    } catch (err) {
+      toast.error("Could not check employee dependencies");
+      setDeleteTarget(null);
+    } finally {
+      setDeleteChecking(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
+    try {
+      await axios.delete(`${API}/employees/${deleteTarget.employee_id}`, { withCredentials: true });
+      toast.success(`${deleteTarget.first_name} ${deleteTarget.last_name} deleted`);
+      setEmployees(prev => prev.filter(e => e.employee_id !== deleteTarget.employee_id));
+      setDeleteTarget(null);
+      setDeleteCheck(null);
     } catch (err) {
       toast.error(err.response?.data?.detail || "Failed to delete");
+    } finally {
+      setDeleteLoading(false);
     }
-    setDeleteTarget(null);
   };
+
+  const closeDeleteDialog = () => { setDeleteTarget(null); setDeleteCheck(null); };
 
   const getPositionDisplay = (emp) => {
     if (emp.level) return `${emp.job_position_name} (${emp.level})`;
@@ -485,7 +510,7 @@ export default function EmployeesPage() {
                         <DropdownMenuItem
                           data-testid="delete-employee-menu"
                           className="text-red-400 hover:bg-white/10 focus:bg-white/10 cursor-pointer"
-                          onClick={() => setDeleteTarget(emp)}
+                          onClick={() => openDeleteDialog(emp)}
                         >
                           Delete Profile
                         </DropdownMenuItem>
@@ -553,13 +578,100 @@ export default function EmployeesPage() {
         />
       )}
 
-      <DeleteConfirm
-        open={!!deleteTarget}
-        title="Delete Employee"
-        description={deleteTarget ? `Are you sure you want to delete ${deleteTarget.first_name} ${deleteTarget.last_name}? This action cannot be undone.` : ""}
-        onConfirm={() => handleDelete(deleteTarget)}
-        onCancel={() => setDeleteTarget(null)}
-      />
+      {/* Delete dialog — blocker check + cascade confirmation */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#1E1E1E] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/10">
+              <h2 className="text-white font-semibold text-base" style={{ fontFamily: "Manrope, sans-serif" }}>
+                Delete {deleteTarget.first_name} {deleteTarget.last_name}
+              </h2>
+              <button onClick={closeDeleteDialog} className="text-[#B3B3B3] hover:text-white transition-colors text-xl leading-none">×</button>
+            </div>
+
+            <div className="px-6 py-5">
+              {/* Loading state */}
+              {deleteChecking && (
+                <div className="flex flex-col items-center justify-center py-8 gap-3">
+                  <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                  <p className="text-[#B3B3B3] text-sm">Checking dependencies…</p>
+                </div>
+              )}
+
+              {/* Blockers — cannot delete */}
+              {!deleteChecking && deleteCheck && !deleteCheck.can_delete && (
+                <div>
+                  <div className="flex items-start gap-3 mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                    <span className="text-red-400 text-lg mt-0.5">⚠</span>
+                    <p className="text-red-300 text-sm">
+                      This employee cannot be deleted until the following dependencies are resolved.
+                    </p>
+                  </div>
+                  <div className="space-y-3">
+                    {(deleteCheck.blockers || []).map((b, i) => (
+                      <div key={i} className="bg-[#2F2F2F] border border-white/10 rounded-xl p-4">
+                        <p className="text-white font-semibold text-sm mb-0.5">{b.title}</p>
+                        <p className="text-[#B3B3B3] text-xs mb-2">{b.description}</p>
+                        <p className="text-amber-400 text-xs font-medium mb-2">→ {b.action}</p>
+                        {b.items && b.items.length > 0 && (
+                          <ul className="space-y-1">
+                            {b.items.map((item, j) => (
+                              <li key={j} className="text-[#B3B3B3] text-xs bg-white/5 rounded px-2 py-1">• {item}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-5 flex justify-end">
+                    <button onClick={closeDeleteDialog} className="px-4 py-2 bg-white/10 border border-white/10 text-white text-sm rounded-lg hover:bg-white/15 transition-colors">
+                      Close
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Can delete — show what will be removed */}
+              {!deleteChecking && deleteCheck && deleteCheck.can_delete && (
+                <div>
+                  <p className="text-[#B3B3B3] text-sm mb-4">
+                    This will permanently delete the employee and all associated data. This action <span className="text-white font-semibold">cannot be undone</span>.
+                  </p>
+                  {deleteCheck.will_delete && Object.keys(deleteCheck.will_delete).length > 0 && (
+                    <div className="bg-[#2F2F2F] border border-white/10 rounded-xl p-4 mb-5">
+                      <p className="text-white text-xs font-semibold mb-2 uppercase tracking-wider">Records that will be deleted</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {Object.entries(deleteCheck.will_delete).map(([key, count]) => (
+                          count > 0 && (
+                            <div key={key} className="flex items-center justify-between bg-white/5 rounded px-2.5 py-1.5">
+                              <span className="text-[#B3B3B3] text-xs capitalize">{key.replace(/_/g, " ")}</span>
+                              <span className="text-red-400 text-xs font-bold">{count}</span>
+                            </div>
+                          )
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-end gap-3">
+                    <button onClick={closeDeleteDialog} disabled={deleteLoading} className="px-4 py-2 bg-white/10 border border-white/10 text-white text-sm rounded-lg hover:bg-white/15 transition-colors disabled:opacity-50">
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleDelete}
+                      disabled={deleteLoading}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {deleteLoading && <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                      Delete Permanently
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
