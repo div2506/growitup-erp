@@ -746,13 +746,17 @@ function AttendanceIntegrationTab() {
   }, []);
 
   const baseUrl = process.env.REACT_APP_BACKEND_URL || "";
-  const endpointUrl = `${baseUrl}/api/attendance/entry`;
+  const endpointUrl = `${baseUrl}/api/attendance/entries`;
   const exampleBody = JSON.stringify(
     { employee_id: "GM002", timestamp: "2026-05-04T09:15:30" },
     null, 2
   );
   const successResponse = JSON.stringify(
     { success: true, message: "Attendance entry recorded", entry_id: "ae_abc123def456" },
+    null, 2
+  );
+  const skippedResponse = JSON.stringify(
+    { success: true, message: "Punch already recorded", skipped: true },
     null, 2
   );
   const errorResponse = JSON.stringify(
@@ -902,6 +906,31 @@ X-API-Key: <your-api-key>`}
 
       <hr className="border-white/10" />
 
+      {/* How punches are processed */}
+      <section data-testid="att-int-behaviour">
+        <h4 className="text-[#B3B3B3] text-xs uppercase tracking-wider font-semibold mb-2">How punches are processed</h4>
+        <div className="bg-[#2F2F2F] rounded-xl border border-white/10 divide-y divide-white/10">
+          <div className="p-4 flex items-start gap-3">
+            <span className="mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/30 shrink-0">1 punch</span>
+            <p className="text-[#B3B3B3] text-sm">Stored as <code className="bg-white/5 px-1 rounded text-white text-xs font-mono">check_in</code>. Check-out is left empty. Status is set to <strong className="text-white">Incomplete</strong> until the next punch arrives.</p>
+          </div>
+          <div className="p-4 flex items-start gap-3">
+            <span className="mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold bg-green-500/10 text-green-400 border border-green-500/30 shrink-0">2+ punches</span>
+            <p className="text-[#B3B3B3] text-sm">First punch = <code className="bg-white/5 px-1 rounded text-white text-xs font-mono">check_in</code>, last punch = <code className="bg-white/5 px-1 rounded text-white text-xs font-mono">check_out</code>. Total hours calculated and status set to <strong className="text-white">Present / Half Day / Absent</strong> based on hours worked.</p>
+          </div>
+          <div className="p-4 flex items-start gap-3">
+            <span className="mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold bg-orange-500/10 text-orange-400 border border-orange-500/30 shrink-0">Forgot punch-out</span>
+            <p className="text-[#B3B3B3] text-sm">When the next day&apos;s first punch arrives, if yesterday still has only 1 punch, it is automatically marked as <strong className="text-white">Forgot Punch Out</strong>. Admin can manually edit the check-out time to correct it.</p>
+          </div>
+          <div className="p-4 flex items-start gap-3">
+            <span className="mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold bg-white/5 text-[#B3B3B3] border border-white/10 shrink-0">Duplicate</span>
+            <p className="text-[#B3B3B3] text-sm">If the same <code className="bg-white/5 px-1 rounded text-white text-xs font-mono">employee_id + timestamp</code> is sent again, it is silently skipped. Safe to re-send bulk data.</p>
+          </div>
+        </div>
+      </section>
+
+      <hr className="border-white/10" />
+
       {/* Response */}
       <section data-testid="att-int-response">
         <h4 className="text-[#B3B3B3] text-xs uppercase tracking-wider font-semibold mb-2">Response</h4>
@@ -909,10 +938,19 @@ X-API-Key: <your-api-key>`}
           <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-green-500/10 text-green-400 border border-green-500/30">200 OK</span>
-              <span className="text-[#B3B3B3] text-xs">Success</span>
+              <span className="text-[#B3B3B3] text-xs">Punch recorded</span>
             </div>
             <pre className="bg-[#191919] border border-white/10 rounded-lg p-3 text-white text-sm font-mono whitespace-pre overflow-x-auto" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
 {successResponse}
+            </pre>
+          </div>
+          <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-green-500/10 text-green-400 border border-green-500/30">200 OK</span>
+              <span className="text-[#B3B3B3] text-xs">Duplicate — already recorded, skipped</span>
+            </div>
+            <pre className="bg-[#191919] border border-white/10 rounded-lg p-3 text-white text-sm font-mono whitespace-pre overflow-x-auto" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+{skippedResponse}
             </pre>
           </div>
           <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4">

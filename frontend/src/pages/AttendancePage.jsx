@@ -19,14 +19,16 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 // Constants & helpers
 // ─────────────────────────────────────────────
 const STATUS_CONFIG = {
-  Present:   { label: "P",       bg: "bg-green-500/20",  text: "text-green-400",  border: "border-green-500/30",  dot: "bg-green-400"  },
-  "Half Day":{ label: "HD",      bg: "bg-amber-500/20",  text: "text-amber-400",  border: "border-amber-500/30",  dot: "bg-amber-400"  },
-  Absent:    { label: "A",       bg: "bg-red-500/20",    text: "text-red-400",    border: "border-red-500/30",    dot: "bg-red-400"    },
-  Leave:     { label: "L",       bg: "bg-blue-500/20",   text: "text-blue-400",   border: "border-blue-500/30",   dot: "bg-blue-400"   },
-  WFH:       { label: "WFH",     bg: "bg-purple-500/20", text: "text-purple-400", border: "border-purple-500/30", dot: "bg-purple-400" },
-  Holiday:   { label: "HOL",     bg: "bg-white/5",       text: "text-[#B3B3B3]",  border: "border-white/10",      dot: "bg-[#B3B3B3]"  },
+  Present:           { label: "P",    bg: "bg-green-500/20",  text: "text-green-400",  border: "border-green-500/30",  dot: "bg-green-400"  },
+  "Half Day":        { label: "HD",   bg: "bg-amber-500/20",  text: "text-amber-400",  border: "border-amber-500/30",  dot: "bg-amber-400"  },
+  Absent:            { label: "A",    bg: "bg-red-500/20",    text: "text-red-400",    border: "border-red-500/30",    dot: "bg-red-400"    },
+  Leave:             { label: "L",    bg: "bg-blue-500/20",   text: "text-blue-400",   border: "border-blue-500/30",   dot: "bg-blue-400"   },
+  WFH:               { label: "WFH",  bg: "bg-purple-500/20", text: "text-purple-400", border: "border-purple-500/30", dot: "bg-purple-400" },
+  Holiday:           { label: "HOL",  bg: "bg-white/5",       text: "text-[#B3B3B3]",  border: "border-white/10",      dot: "bg-[#B3B3B3]"  },
+  Incomplete:        { label: "INC",  bg: "bg-orange-500/20", text: "text-orange-400", border: "border-orange-500/30", dot: "bg-orange-400" },
+  "Forgot Punch Out":{ label: "FPO",  bg: "bg-orange-500/20", text: "text-orange-400", border: "border-orange-500/30", dot: "bg-orange-400" },
 };
-const VALID_STATUSES = ["Present", "Half Day", "Absent", "Leave", "WFH", "Holiday"];
+const VALID_STATUSES = ["Present", "Half Day", "Absent", "Leave", "WFH", "Holiday", "Incomplete", "Forgot Punch Out"];
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -248,7 +250,7 @@ function EditAttendanceModal({ date, record, employeeId, onClose, onSaved }) {
               </SelectContent>
             </Select>
           </div>
-          {["Present", "Half Day"].includes(form.status) && (
+          {["Present", "Half Day", "Incomplete", "Forgot Punch Out"].includes(form.status) && (
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className={labelCls}>Check-in</Label>
@@ -258,6 +260,12 @@ function EditAttendanceModal({ date, record, employeeId, onClose, onSaved }) {
                 <Label className={labelCls}>Check-out</Label>
                 <Input type="time" value={form.check_out} onChange={e => setForm(f => ({ ...f, check_out: e.target.value }))} className={inputCls} />
               </div>
+            </div>
+          )}
+          {["Incomplete", "Forgot Punch Out"].includes(form.status) && (
+            <div className="flex items-start gap-2 bg-orange-500/10 border border-orange-500/20 rounded-lg px-3 py-2.5">
+              <span className="text-orange-400 text-xs mt-0.5">⚠</span>
+              <p className="text-orange-400 text-xs">Employee forgot to punch out. Please set the correct check-out time and update status to <strong>Present</strong> or <strong>Half Day</strong>.</p>
             </div>
           )}
           <div className="space-y-1">

@@ -558,6 +558,29 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
             })
 
         ci_dt = datetime.fromisoformat(punches[0]["punch_time"])
+
+        # Only 1 punch → check_in recorded, check_out pending
+        if len(punches) == 1:
+            # Late detection for check_in
+            exp_h, exp_m = map(int, shift_timings["start_time"].split(":"))
+            exp_start_mins = exp_h * 60 + exp_m
+            grace_cutoff = exp_start_mins + 10
+            ci_mins = ci_dt.hour * 60 + ci_dt.minute
+            is_late = ci_mins > grace_cutoff
+            late_minutes = max(0, ci_mins - exp_start_mins) if is_late else 0
+
+            result = await upsert_daily_attendance(employee_id, date_str, {
+                "shift_id": shift["shift_id"],
+                "check_in": ci_dt.strftime("%H:%M"),
+                "check_out": None,
+                "total_hours": None, "status": "Incomplete",
+                "is_late": is_late, "late_minutes": late_minutes,
+                "notes": "Punch-out missing"
+            })
+            if is_late:
+                await update_late_tracking_fn(employee_id, date_str, late_minutes)
+            return result
+
         co_dt = datetime.fromisoformat(punches[-1]["punch_time"])
 
         # Total hours minus break
@@ -3839,6 +3862,14 @@ async def create_attendance_entry(body: AttendanceEntryCreate, request: Request)
     except ValueError:
         raise HTTPException(400, "Invalid timestamp. Use ISO format: YYYY-MM-DDTHH:MM:SS")
 
+    # Deduplicate: skip if this exact punch already exists
+    existing = await db.attendance_entries.find_one(
+        {"employee_id": body.employee_id, "punch_time": punch_time_str},
+        {"_id": 1}
+    )
+    if existing:
+        return {"success": True, "message": "Punch already recorded", "skipped": True}
+
     now = datetime.now(timezone.utc).isoformat()
     entry = {
         "entry_id": f"ae_{uuid.uuid4().hex[:12]}",
@@ -3848,7 +3879,22 @@ async def create_attendance_entry(body: AttendanceEntryCreate, request: Request)
         "created_at": now
     }
     await db.attendance_entries.insert_one(entry)
-    # Process in real-time
+
+    # Check if previous day has an "Incomplete" record (forgot to punch out)
+    prev_date_obj = datetime.strptime(punch_date, "%Y-%m-%d") - timedelta(days=1)
+    prev_date_str = prev_date_obj.strftime("%Y-%m-%d")
+    prev_record = await db.daily_attendance.find_one(
+        {"employee_id": body.employee_id, "date": prev_date_str, "status": "Incomplete"},
+        {"_id": 0}
+    )
+    if prev_record:
+        # Previous day had only 1 punch — still only 1 punch, mark as "Forgot to Punch Out"
+        await db.daily_attendance.update_one(
+            {"employee_id": body.employee_id, "date": prev_date_str},
+            {"$set": {"status": "Forgot Punch Out", "notes": "Employee forgot to punch out"}}
+        )
+
+    # Process today's attendance
     await process_daily_attendance_fn(body.employee_id, punch_date)
     return {"success": True, "message": "Attendance entry recorded", "entry_id": entry["entry_id"]}
 
@@ -4060,7 +4106,7 @@ async def update_daily_attendance(attendance_id: str, body: DailyAttendanceUpdat
     if not existing:
         raise HTTPException(404, "Attendance record not found")
 
-    valid = ["Present", "Half Day", "Absent", "Leave", "WFH", "Holiday"]
+    valid = ["Present", "Half Day", "Absent", "Leave", "WFH", "Holiday", "Incomplete", "Forgot Punch Out"]
     if body.status not in valid:
         raise HTTPException(400, f"Invalid status. Must be one of: {', '.join(valid)}")
 
