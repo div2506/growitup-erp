@@ -467,21 +467,13 @@ export default function CreativeTeamOfMonth() {
       </div>
 
       {/* Reward Banner */}
-      <div className="mb-5 sm:mb-6 p-5 sm:p-8 bg-gradient-to-br from-[#2F2F2F] via-[#2F2F2F] to-[#252525] border border-white/10 rounded-xl text-center relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-full opacity-5">
-          <div className="absolute top-4 left-4 w-12 sm:w-16 h-12 sm:h-16 border-2 border-yellow-500 rounded-full"></div>
-          <div className="absolute bottom-4 right-4 w-16 sm:w-20 h-16 sm:h-20 border-2 border-yellow-500 rounded-full"></div>
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-24 sm:w-32 h-24 sm:h-32 border-2 border-yellow-500 rounded-full"></div>
-        </div>
-        <p className="text-[#B3B3B3] text-xs sm:text-sm uppercase tracking-wider mb-3 sm:mb-4 relative z-10">Reward (This year)</p>
-        <div className="flex items-center justify-center relative z-10">
-          <div className="relative">
-            <div className="absolute inset-0 bg-yellow-500/20 blur-2xl rounded-full"></div>
-            <Trophy size={72} className="sm:hidden text-yellow-500 drop-shadow-[0_0_15px_rgba(234,179,8,0.5)] relative" strokeWidth={1.5} />
-            <Trophy size={96} className="hidden sm:block text-yellow-500 drop-shadow-[0_0_15px_rgba(234,179,8,0.5)] relative" strokeWidth={1.5} />
-          </div>
-        </div>
-        <p className="text-white/60 text-xs mt-3 sm:mt-4 relative z-10">Top performing team of the year</p>
+      <div className="mb-5 sm:mb-6 rounded-xl overflow-hidden border border-white/10">
+        <img
+          src="/reward-banner.jpg"
+          alt="This is what winning looks like"
+          className="w-full object-cover"
+          style={{ maxHeight: "200px", objectPosition: "center" }}
+        />
       </div>
 
       {/* Leaderboard */}
