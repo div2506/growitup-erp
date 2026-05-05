@@ -30,25 +30,33 @@ export function AuthProvider({ children }) {
     setEmployeeLoading(true);
     try {
       const response = await authFetch(`${API}/auth/me`);
+
       if (!response.ok) {
-        // Only clear session on auth errors (401/403), not on server/network errors
         if (response.status === 401 || response.status === 403) {
+          // Genuine auth failure — clear session and log out
           localStorage.removeItem("session_token");
-          setUser(null); setMyEmployee(null);
+          setUser(null);
+          setMyEmployee(null);
         }
-        // For 5xx or other errors, keep existing user state (don't log out)
-        setLoading(false); setEmployeeLoading(false);
+        // 5xx / network-level errors: keep existing user state, don't log out
+        setLoading(false);
+        setEmployeeLoading(false);
         return;
       }
-      let userData;
-      try { userData = await response.json(); } catch { userData = null; }
-      if (!userData || !userData.user_id) {
-        // Malformed response — don't log out, just skip update
-        setLoading(false); setEmployeeLoading(false);
+
+      const userData = await response.json();
+      // /auth/me now always returns a proper user object on 200, never null
+      if (!userData?.user_id) {
+        // Unexpected — keep existing state rather than logging out
+        setLoading(false);
+        setEmployeeLoading(false);
         return;
       }
+
       setUser(userData);
       setLoading(false);
+
+      // Fetch employee profile in parallel-ish (non-blocking for auth)
       try {
         const empRes = await authFetch(`${API}/me/employee`);
         if (empRes.ok) {
@@ -62,8 +70,8 @@ export function AuthProvider({ children }) {
         // Network error fetching employee — keep existing employee state
       }
     } catch {
-      // Network error — do NOT log out, keep existing user state
-      // This prevents logout on temporary connectivity issues
+      // Network / connection error on /auth/me — do NOT log out
+      // User stays logged in; next successful request will re-verify
     } finally {
       setLoading(false);
       setEmployeeLoading(false);

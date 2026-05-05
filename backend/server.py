@@ -1171,28 +1171,15 @@ async def google_login(body: GoogleAuth, response: Response):
 
 @api_router.get("/auth/me")
 async def get_me(request: Request):
-    session_token = request.cookies.get("session_token")
-    if not session_token:
-        auth = request.headers.get("Authorization", "")
-        if auth.startswith("Bearer "):
-            session_token = auth[7:]
-    if not session_token:
-        return None
-
-    session = await db.user_sessions.find_one({"session_token": session_token}, {"_id": 0})
-    if not session:
-        return None
-
-    expires_at = session["expires_at"]
-    if isinstance(expires_at, str):
-        expires_at = datetime.fromisoformat(expires_at)
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at < datetime.now(timezone.utc):
-        return None
-
-    user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
-    return user or None
+    """Returns current user. Uses session cache — fast on repeated calls.
+    Returns 401 (not null/200) so the frontend can distinguish expired vs. network error."""
+    try:
+        user = await get_current_user(request)
+    except HTTPException:
+        raise HTTPException(401, "Not authenticated")
+    if not user:
+        raise HTTPException(401, "Not authenticated")
+    return user
 
 
 @api_router.post("/auth/logout")
