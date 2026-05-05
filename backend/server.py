@@ -1630,10 +1630,25 @@ async def self_update_employee(emp_id: str, body: SelfEditBody, request: Request
 @api_router.get("/me/employee")
 async def get_my_employee(request: Request):
     user = await get_current_user(request)
-    email = user.get("email", "")
-    emp = await db.employees.find_one(
-        {"work_email": {"$regex": f"^{email}$", "$options": "i"}}, {"_id": 0}
-    )
+    email = user.get("email", "").lower()
+    # Use exact lowercase match so the work_email index is used
+    emp = await db.employees.find_one({"work_email": email}, {"_id": 0})
+    if not emp:
+        # Fallback: case-insensitive for legacy mixed-case emails
+        emp = await db.employees.find_one(
+            {"work_email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}}, {"_id": 0}
+        )
+    return emp or {}
+
+
+async def _resolve_my_emp(user: dict) -> dict:
+    """Fast employee lookup by email — uses index, avoids regex when possible."""
+    email = user.get("email", "").lower()
+    emp = await db.employees.find_one({"work_email": email}, {"_id": 0})
+    if not emp:
+        emp = await db.employees.find_one(
+            {"work_email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}}, {"_id": 0}
+        )
     return emp or {}
 
 
@@ -4219,9 +4234,7 @@ async def get_daily_attendance(
 ):
     """Get all daily attendance records for employee in a month."""
     user = await get_current_user(request)
-    my_emp = await db.employees.find_one(
-        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
-    )
+    my_emp = await _resolve_my_emp(user)
     is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
 
     if not employee_id:
@@ -4241,17 +4254,18 @@ async def get_daily_attendance(
         except ValueError:
             pass
 
-    records = await db.daily_attendance.find(query, {"_id": 0}).sort("date", 1).to_list(1000)
+    # Fetch records + all shifts in parallel
+    records, all_shifts = await asyncio.gather(
+        db.daily_attendance.find(query, {"_id": 0}).sort("date", 1).to_list(1000),
+        db.shifts.find({}, {"_id": 0}).to_list(200),
+    )
 
-    # Enrich with shift name
-    shift_cache: dict = {}
+    # Build shift lookup map — O(1) per record instead of N DB queries
+    shift_map = {s["shift_id"]: s for s in all_shifts}
     for rec in records:
         sid = rec.get("shift_id")
         if sid:
-            if sid not in shift_cache:
-                s = await db.shifts.find_one({"shift_id": sid}, {"_id": 0})
-                shift_cache[sid] = s
-            rec["shift"] = shift_cache.get(sid)
+            rec["shift"] = shift_map.get(sid)
     return records
 
 
@@ -4263,9 +4277,7 @@ async def get_attendance_summary(
 ):
     """Get attendance summary (counts by status + late tracking) for a month."""
     user = await get_current_user(request)
-    my_emp = await db.employees.find_one(
-        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
-    )
+    my_emp = await _resolve_my_emp(user)
     is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
 
     if not employee_id:
@@ -5242,7 +5254,7 @@ async def _create_indexes():
 
         # Employees
         db.employees.create_index("employee_id", unique=True, background=True),
-        db.employees.create_index("work_email", background=True),
+        db.employees.create_index([("work_email", 1)], background=True),
         db.employees.create_index("status", background=True),
         db.employees.create_index("department_id", background=True),
         db.employees.create_index("department_name", background=True),
@@ -5271,6 +5283,32 @@ async def _create_indexes():
 
         # Leave balances
         db.leave_balances.create_index("employee_id", unique=True, background=True),
+
+        # Attendance entries (raw punches) — dedup queries hit employee_id + punch_date
+        db.attendance_entries.create_index([("employee_id", 1), ("punch_date", 1)], background=True),
+        db.attendance_entries.create_index("punch_date", background=True),
+
+        # Biometric logs — filtered by date + status
+        db.biometric_logs.create_index([("called_at", -1)], background=True),
+        db.biometric_logs.create_index([("resolved_employee_id", 1), ("called_at", -1)], background=True),
+        db.biometric_logs.create_index("status", background=True),
+
+        # WFH requests — filtered by employee + status
+        db.wfh_requests.create_index([("employee_id", 1), ("status", 1)], background=True),
+        db.wfh_requests.create_index("status", background=True),
+
+        # Shift change requests — filtered by employee + status
+        db.shift_change_requests.create_index([("employee_id", 1), ("status", 1)], background=True),
+        db.shift_change_requests.create_index("status", background=True),
+
+        # Employee shifts — lookup by employee
+        db.employee_shifts.create_index("employee_id", unique=True, background=True),
+
+        # Teams — lookup by team_id
+        db.teams.create_index("team_id", unique=True, background=True),
+
+        # Employees — biometric code lookups (attendance API)
+        db.employees.create_index("biometric_employee_code", sparse=True, background=True),
     )
     logger.info("[Startup] MongoDB indexes created/verified.")
 

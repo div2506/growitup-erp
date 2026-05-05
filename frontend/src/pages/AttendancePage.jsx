@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import {
@@ -521,20 +521,16 @@ export default function AttendancePage() {
   const isAdmin = user?.is_admin || myEmployee?.department_name === "Admin";
 
   const [currentMonth, setCurrentMonth] = useState(() => monthStart(new Date()));
-  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  // Initialize directly from myEmployee — ProtectedRoute guarantees myEmployee is ready
+  const [selectedEmployee, setSelectedEmployee] = useState(() => myEmployee?.employee_id || null);
 
-  // Auto-select own attendance once myEmployee is available
-  useEffect(() => {
-    if (myEmployee?.employee_id && !selectedEmployee) {
-      setSelectedEmployee(myEmployee.employee_id);
-    }
-  }, [myEmployee?.employee_id]);
   const [viewMode, setViewMode] = useState("calendar");  // "calendar" | "table" | "all"
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [summary, setSummary] = useState({ present:0,half_day:0,absent:0,leave:0,wfh:0,holiday:0,late_count:0,total_hours:0 });
   const [lateTracking, setLateTracking] = useState(null);
   const [loading, setLoading] = useState(true);
   const [allEmployees, setAllEmployees] = useState([]);
+  const allEmployeesRef = useRef([]);
 
   // Modal state
   const [detailModal, setDetailModal] = useState(null);  // { date, record }
@@ -543,13 +539,11 @@ export default function AttendancePage() {
   const targetEmployee = selectedEmployee || myEmployee?.employee_id || null;
   const monthKey = fmtMonthKey(currentMonth);
 
-  const fetchAttendance = useCallback(async () => {
-    if (!targetEmployee && !isAdmin) return;
+  const fetchAttendance = useCallback(async (empIdOverride) => {
+    const empId = empIdOverride || targetEmployee || allEmployeesRef.current[0]?.employee_id || null;
+    if (!empId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const empId = targetEmployee || (isAdmin ? allEmployees[0]?.employee_id : null);
-      if (!empId) { setLoading(false); return; }
-
       const [dailyRes, summaryRes] = await Promise.all([
         axios.get(`${API}/attendance/daily?employee_id=${empId}&month=${monthKey}`, { withCredentials: true }),
         axios.get(`${API}/attendance/summary?employee_id=${empId}&month=${monthKey}`, { withCredentials: true }),
@@ -559,23 +553,32 @@ export default function AttendancePage() {
       setLateTracking(summaryRes.data.late_tracking || null);
     } catch { toast.error("Failed to load attendance"); }
     finally { setLoading(false); }
-  }, [targetEmployee, monthKey, isAdmin, allEmployees]);
+  }, [targetEmployee, monthKey]);
 
+  // Load employees list (admin only) and attendance in parallel — single effect, no double-fetch
   useEffect(() => {
     if (isAdmin) {
-      axios.get(`${API}/employees`, { withCredentials: true })
+      // Fetch employees + attendance in parallel
+      const empFetch = axios.get(`${API}/employees`, { withCredentials: true })
         .then(res => {
+          allEmployeesRef.current = res.data;
           setAllEmployees(res.data);
-          // Super admin has no myEmployee — default to first employee in list
-          if (!myEmployee?.employee_id && res.data.length > 0) {
-            setSelectedEmployee(prev => prev || res.data[0].employee_id);
+          // Super admin (no myEmployee): select first employee if nothing selected yet
+          if (!myEmployee?.employee_id && !selectedEmployee && res.data.length > 0) {
+            setSelectedEmployee(res.data[0].employee_id);
+            // fetchAttendance will re-run via targetEmployee change
           }
         })
         .catch(() => {});
+      // Attendance fetch runs immediately with whatever targetEmployee we have
+      fetchAttendance();
+      return;
     }
-  }, [isAdmin, myEmployee?.employee_id]);
-
-  useEffect(() => { fetchAttendance(); }, [fetchAttendance]);
+    // Non-admin: just fetch attendance directly
+    fetchAttendance();
+  // Only re-run when month or selected employee changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetEmployee, monthKey, isAdmin]);
 
   // Map records by date for calendar
   const attendanceMap = attendanceRecords.reduce((acc, rec) => {
