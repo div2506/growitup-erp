@@ -572,16 +572,45 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
 
         ci_dt = datetime.fromisoformat(punches[0]["punch_time"])
 
-        # Only 1 punch → check_in recorded, check_out pending
+        # ── Half-day leave check ──────────────────────────────────────────────
+        # Check if there's an approved half-day leave on this date.
+        # This adjusts the expected start/end so late/early detection is fair.
+        half_leave = await db.leave_requests.find_one({
+            "employee_id": employee_id, "status": "Approved",
+            "leave_type": "Half Day",
+            "from_date": {"$lte": date_str}, "to_date": {"$gte": date_str}
+        }, {"_id": 0})
+
+        half_day_type = half_leave.get("half_day_type") if half_leave else None  # "First Half" | "Second Half"
+
+        # Compute shift midpoint for half-day boundary
+        full_start_h, full_start_m = map(int, shift_timings["start_time"].split(":"))
+        full_end_h, full_end_m = map(int, shift_timings["end_time"].split(":"))
+        full_start_mins = full_start_h * 60 + full_start_m
+        full_end_mins = full_end_h * 60 + full_end_m
+        shift_mid_mins = (full_start_mins + full_end_mins) // 2  # midpoint = half-day boundary
+
+        # Effective expected start/end adjusted for half-day leave
+        if half_day_type == "First Half":
+            # On leave for first half → expected to come in at midpoint, leave at shift end
+            eff_start_mins = shift_mid_mins
+            eff_end_mins = full_end_mins
+        elif half_day_type == "Second Half":
+            # On leave for second half → expected to come in at shift start, leave at midpoint
+            eff_start_mins = full_start_mins
+            eff_end_mins = shift_mid_mins
+        else:
+            eff_start_mins = full_start_mins
+            eff_end_mins = full_end_mins
+
+        # ── Single punch → Incomplete ─────────────────────────────────────────
         if len(punches) == 1:
-            # Late detection for check_in
-            exp_h, exp_m = map(int, shift_timings["start_time"].split(":"))
-            exp_start_mins = exp_h * 60 + exp_m
-            grace_cutoff = exp_start_mins + 10
+            grace_cutoff = eff_start_mins + 10
             ci_mins = ci_dt.hour * 60 + ci_dt.minute
             is_late = ci_mins > grace_cutoff
-            late_minutes = max(0, ci_mins - exp_start_mins) if is_late else 0
+            late_minutes = max(0, ci_mins - eff_start_mins) if is_late else 0
 
+            half_note = f" ({half_day_type} leave)" if half_day_type else ""
             result = await upsert_daily_attendance(employee_id, date_str, {
                 "shift_id": shift["shift_id"],
                 "check_in": ci_dt.strftime("%H:%M"),
@@ -589,7 +618,7 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
                 "total_hours": None, "status": "Incomplete",
                 "is_late": is_late, "late_minutes": late_minutes,
                 "left_early": False, "early_departure_minutes": 0,
-                "notes": "Punch-out missing"
+                "notes": f"Punch-out missing{half_note}"
             })
             if is_late:
                 await update_late_tracking_fn(employee_id, date_str, late_minutes)
@@ -597,41 +626,44 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
 
         co_dt = datetime.fromisoformat(punches[-1]["punch_time"])
 
-        # Total hours minus break
-        total_minutes = max(0, (co_dt - ci_dt).total_seconds() / 60 - shift_timings.get("break_duration", 0))
+        # Total hours minus break (pro-rate break for half-day)
+        break_dur = shift_timings.get("break_duration", 0)
+        if half_day_type:
+            break_dur = break_dur / 2  # half the break on half-day
+        total_minutes = max(0, (co_dt - ci_dt).total_seconds() / 60 - break_dur)
         total_hours = round(total_minutes / 60, 2)
 
-        # Late detection: 10-minute grace period on check-in
-        exp_h, exp_m = map(int, shift_timings["start_time"].split(":"))
-        exp_start_mins = exp_h * 60 + exp_m
-        grace_cutoff = exp_start_mins + 10
+        # ── Late detection (uses effective start, ignores if on half-day leave) ──
+        grace_cutoff = eff_start_mins + 10
         ci_mins = ci_dt.hour * 60 + ci_dt.minute
+        # If on First Half leave, arriving before shift mid is never late
         is_late = ci_mins > grace_cutoff
-        late_minutes = max(0, ci_mins - exp_start_mins) if is_late else 0
+        late_minutes = max(0, ci_mins - eff_start_mins) if is_late else 0
 
-        # Early departure detection: left before shift end time (10-minute grace)
-        exp_end_h, exp_end_m = map(int, shift_timings["end_time"].split(":"))
-        exp_end_mins = exp_end_h * 60 + exp_end_m
+        # ── Early departure detection (uses effective end) ────────────────────
         co_mins = co_dt.hour * 60 + co_dt.minute
-        early_grace = exp_end_mins - 10  # 10-minute early grace
-        left_early = co_mins < early_grace
-        early_departure_minutes = max(0, exp_end_mins - co_mins) if left_early else 0
+        left_early = co_mins < (eff_end_mins - 10)
+        early_departure_minutes = max(0, eff_end_mins - co_mins) if left_early else 0
 
-        # Status thresholds — dynamic based on shift net hours
-        # Recompute from start/end to handle legacy shifts stored with gross hours
-        gross_mins = calc_total_hours(shift_timings["start_time"], shift_timings["end_time"]) * 60
-        break_mins = float(shift_timings.get("break_duration") or 0)
-        shift_net_mins = max(gross_mins - break_mins, 1)
-        full_threshold = int(shift_net_mins * 0.85)   # 85% → Present
-        half_threshold = int(shift_net_mins * 0.45)   # 45% → Half Day, below → Absent
-
-        if total_minutes >= full_threshold:
-            status = "Present"
-        elif total_minutes >= half_threshold:
-            status = "Half Day"
+        # ── Status thresholds (half of shift net hours on half-day leave) ─────
+        gross_mins = full_end_mins - full_start_mins
+        full_break = float(shift_timings.get("break_duration") or 0)
+        if half_day_type:
+            # For half-day leave, expected work is half the shift net hours
+            shift_net_mins = max((gross_mins - full_break) / 2, 1)
+            status = "Half Day" if total_minutes >= shift_net_mins * 0.85 else "Absent"
         else:
-            status = "Absent"
+            shift_net_mins = max(gross_mins - full_break, 1)
+            full_threshold = int(shift_net_mins * 0.85)
+            half_threshold = int(shift_net_mins * 0.45)
+            if total_minutes >= full_threshold:
+                status = "Present"
+            elif total_minutes >= half_threshold:
+                status = "Half Day"
+            else:
+                status = "Absent"
 
+        half_note = f"Half Day leave ({half_day_type})" if half_day_type else None
         result = await upsert_daily_attendance(employee_id, date_str, {
             "shift_id": shift["shift_id"],
             "check_in": ci_dt.strftime("%H:%M"),
@@ -639,7 +671,7 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
             "total_hours": total_hours, "status": status,
             "is_late": is_late, "late_minutes": late_minutes,
             "left_early": left_early, "early_departure_minutes": early_departure_minutes,
-            "notes": None
+            "notes": half_note
         })
         if is_late:
             await update_late_tracking_fn(employee_id, date_str, late_minutes)
