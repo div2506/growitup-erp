@@ -167,7 +167,7 @@ function PartialApprovalModal({ request, onClose, onDone }) {
     const end = new Date(request.to_date + "T00:00:00");
     const cur = new Date(start);
     while (cur <= end) {
-      if (cur.getDay() !== 0) allDates.push(cur.toISOString().split("T")[0]);
+      if (cur.getDay() !== 0) allDates.push(`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,"0")}-${String(cur.getDate()).padStart(2,"0")}`);
       cur.setDate(cur.getDate() + 1);
     }
   }

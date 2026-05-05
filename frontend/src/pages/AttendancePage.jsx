@@ -40,7 +40,7 @@ function fmt12(t) {
   const hr = h % 12 || 12;
   return `${hr}:${mStr} ${ampm}`;
 }
-function todayStr() { return new Date().toISOString().split("T")[0]; }
+function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 function monthStart(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 function fmtMonthKey(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`; }
 
@@ -230,7 +230,7 @@ function EditAttendanceModal({ date, record, employeeId, onClose, onSaved }) {
       } else {
         await axios.post(`${API}/attendance/manual`, {
           employee_id: employeeId,
-          date: date?.toISOString().split("T")[0],
+          date: date ? `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}` : undefined,
           ...form
         }, { withCredentials: true });
       }

@@ -33,7 +33,7 @@ function StatusBadge({ status }) {
   );
 }
 
-function today() { return new Date().toISOString().split("T")[0]; }
+function today() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 function fmtDate(d) {
   if (!d) return "—";
   return new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
@@ -427,7 +427,7 @@ function MyLeaveRequests({ requests, loading, onCancel }) {
   const [cancelTarget, setCancelTarget] = useState(null);
 
   const filtered = filterStatus === "All" ? requests : requests.filter(r => r.status === filterStatus);
-  const today = new Date().toISOString().split("T")[0];
+  const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
 
   const handleCancel = async (req) => {
     try {

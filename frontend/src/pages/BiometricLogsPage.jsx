@@ -161,7 +161,7 @@ export default function BiometricLogsPage() {
   const [calls, setCalls] = useState([]);
   const [summary, setSummary] = useState({ recorded: 0, duplicate: 0, skipped: 0, error: 0, total: 0 });
   const [loading, setLoading] = useState(true);
-  const [filterDate, setFilterDate] = useState(new Date().toISOString().split("T")[0]);
+  const [filterDate, setFilterDate] = useState((() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })());
 
   const load = useCallback(async () => {
     setLoading(true);
