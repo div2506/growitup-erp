@@ -4535,28 +4535,15 @@ async def get_biometric_calls(
 
 
 @api_router.get("/attendance/biometric-calls/{call_id}")
-async def get_biometric_call_detail(call_id: str, request: Request, date: Optional[str] = None):
-    """Admin only: fetch all individual log entries for a specific call_id.
-    Pass ?date=YYYY-MM-DD for legacy entries that have no call_id."""
+async def get_biometric_call_detail(call_id: str, request: Request):
+    """Admin only: fetch all individual log entries for a specific call_id."""
     user = await get_current_user(request)
     my_emp = await _resolve_my_emp(user)
     is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
     if not is_admin:
         raise HTTPException(403, "Admin access required")
 
-    # Legacy entries (before call_id was introduced) have no call_id field.
-    # The aggregation groups them under null; the frontend sends "null" as the path param.
-    if call_id in ("null", "undefined", ""):
-        query: dict = {"$or": [{"call_id": None}, {"call_id": {"$exists": False}}]}
-        if date:
-            query = {"$and": [
-                query,
-                {"$or": [{"punch_date": date}, {"called_at": {"$regex": f"^{date}"}}]}
-            ]}
-        logs = await db.biometric_logs.find(query, {"_id": 0}).sort("called_at", 1).to_list(5000)
-    else:
-        logs = await db.biometric_logs.find({"call_id": call_id}, {"_id": 0}).sort("called_at", 1).to_list(5000)
-
+    logs = await db.biometric_logs.find({"call_id": call_id}, {"_id": 0}).sort("called_at", 1).to_list(5000)
     return {"logs": logs}
 
 

@@ -36,7 +36,7 @@ function fmt12(t) {
 }
 
 // ── Call-level row with expandable detail ─────────────────────────────────────
-function CallRow({ call, filterDate }) {
+function CallRow({ call }) {
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -51,10 +51,7 @@ function CallRow({ call, filterDate }) {
     if (!expanded && !detail) {
       setLoading(true);
       try {
-        // call_id may be null for legacy entries — pass date so backend can filter them
-        const callId = call.call_id ?? "null";
-        const params = callId === "null" && filterDate ? { date: filterDate } : {};
-        const { data } = await axios.get(`${API}/attendance/biometric-calls/${callId}`, { params, withCredentials: true });
+        const { data } = await axios.get(`${API}/attendance/biometric-calls/${call.call_id}`, { withCredentials: true });
         setDetail(data.logs || []);
       } catch {
         setDetail([]);
@@ -258,7 +255,7 @@ export default function BiometricLogsPage() {
               </thead>
               <tbody>
                 {calls.map(call => (
-                  <CallRow key={call.call_id ?? "legacy"} call={call} filterDate={filterDate} />
+                  <CallRow key={call.call_id} call={call} />
                 ))}
               </tbody>
             </table>
