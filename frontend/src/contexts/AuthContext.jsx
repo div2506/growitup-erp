@@ -31,7 +31,12 @@ export function AuthProvider({ children }) {
     try {
       const response = await authFetch(`${API}/auth/me`);
       if (!response.ok) {
-        setUser(null); setMyEmployee(null);
+        // Only clear session on auth errors (401/403), not on server/network errors
+        if (response.status === 401 || response.status === 403) {
+          localStorage.removeItem("session_token");
+          setUser(null); setMyEmployee(null);
+        }
+        // For 5xx or other errors, keep existing user state (don't log out)
         setLoading(false); setEmployeeLoading(false);
         return;
       }
@@ -53,12 +58,13 @@ export function AuthProvider({ children }) {
           setMyEmployee(null);
         }
       } catch {
-        setMyEmployee(null);
+        // Network error fetching employee — keep existing employee state
       }
     } catch {
-      setUser(null); setMyEmployee(null);
-      setLoading(false);
+      // Network error — do NOT log out, keep existing user state
+      // This prevents logout on temporary connectivity issues
     } finally {
+      setLoading(false);
       setEmployeeLoading(false);
     }
   }, []);

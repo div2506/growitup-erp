@@ -1083,7 +1083,7 @@ async def google_login(body: GoogleAuth, response: Response):
         })
 
     session_token = str(uuid.uuid4())
-    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=30)
     # Allow multiple concurrent sessions (one per device) — do NOT delete existing sessions.
     # Previously delete_many wiped all sessions on every login, causing other devices to go 401.
     # Clean up only expired sessions for this user to keep the DB tidy.
@@ -1099,7 +1099,7 @@ async def google_login(body: GoogleAuth, response: Response):
 
     response.set_cookie(
         key="session_token", value=session_token,
-        httponly=True, secure=True, samesite="none", path="/", max_age=604800
+        httponly=True, secure=True, samesite="none", path="/", max_age=2592000  # 30 days
     )
 
     return {"user": {
