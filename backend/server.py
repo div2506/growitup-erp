@@ -885,12 +885,21 @@ async def mark_leave_in_attendance(leave_request: dict):
         while current <= end:
             if current.weekday() != 6:  # Skip Sundays
                 date_str = current.strftime("%Y-%m-%d")
-                shift = await get_active_shift_for_date_async(emp_id, current)
-                shift_id = shift["shift_id"] if shift else None
+                shift_raw = await get_active_shift_for_date_async(emp_id, current)
+                shift_timings = get_shift_timings_for_date(shift_raw, current)
+                # Skip Saturdays that are fully off for this shift
+                if shift_timings.get("_saturday_off"):
+                    current += timedelta(days=1)
+                    continue
+                shift_id = shift_raw["shift_id"] if shift_raw else None
+                # Half-day Saturday → mark with a clarifying note
+                sat_half = (current.weekday() == 5 and
+                            shift_timings.get("end_time") != shift_raw.get("end_time"))
+                day_note = (f"{note} (Half Day Saturday)" if sat_half else note)
                 await upsert_daily_attendance(emp_id, date_str, {
                     "shift_id": shift_id, "status": "Leave",
                     "check_in": None, "check_out": None,
-                    "total_hours": None, "is_late": False, "late_minutes": 0, "notes": note
+                    "total_hours": None, "is_late": False, "late_minutes": 0, "notes": day_note
                 })
             current += timedelta(days=1)
     except Exception as e:
@@ -3589,10 +3598,36 @@ async def get_leave_balance(request: Request, employee_id: Optional[str] = None)
 
 @api_router.get("/leave/working-days")
 async def get_working_days_endpoint(request: Request, from_date: str, to_date: str):
-    """Calculate working days (excluding Sundays and company holidays) between two dates."""
-    await get_current_user(request)
+    """Calculate working days (excluding Sundays and company holidays) between two dates.
+    Half-day Saturdays count as 0.5; fully-off Saturdays count as 0."""
+    user = await get_current_user(request)
     holiday_dates = await get_holidays_in_range_db(from_date, to_date)
-    days = calc_working_days_between(from_date, to_date, exclude_dates=holiday_dates)
+    days = float(calc_working_days_between(from_date, to_date, exclude_dates=holiday_dates))
+
+    # Adjust for the requesting employee's shift Saturday rules
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    if my_emp:
+        try:
+            from_dt = datetime.strptime(from_date, "%Y-%m-%d")
+            to_dt   = datetime.strptime(to_date, "%Y-%m-%d")
+            cur = from_dt
+            while cur <= to_dt:
+                if cur.weekday() == 5:
+                    ds = cur.strftime("%Y-%m-%d")
+                    if ds not in holiday_dates:
+                        sr = await get_active_shift_for_date_async(my_emp["employee_id"], cur)
+                        st = get_shift_timings_for_date(sr, cur)
+                        if st.get("_saturday_off"):
+                            days -= 1
+                        elif st.get("end_time") != sr.get("end_time"):
+                            days -= 0.5
+                cur += timedelta(days=1)
+            days = max(0.0, round(days, 2))
+        except Exception:
+            pass
+
     return {"from_date": from_date, "to_date": to_date, "working_days": days, "holidays_excluded": len(holiday_dates)}
 
 
@@ -3706,6 +3741,21 @@ async def create_leave_request(body: LeaveRequestCreate, request: Request):
     total_days = float(calc_working_days_between(body.from_date, body.to_date, exclude_dates=holiday_dates))
     if body.leave_type == "Half Day":
         total_days = 0.5
+    else:
+        # Adjust for Saturdays that are half-day or fully off per the employee's shift rule
+        cur = from_dt
+        while cur <= to_dt:
+            if cur.weekday() == 5:  # Saturday
+                ds = cur.strftime("%Y-%m-%d")
+                if ds not in holiday_dates:
+                    sat_shift_raw = await get_active_shift_for_date_async(my_emp["employee_id"], cur)
+                    sat_timings   = get_shift_timings_for_date(sat_shift_raw, cur)
+                    if sat_timings.get("_saturday_off"):
+                        total_days -= 1       # fully off — don't deduct leave
+                    elif sat_timings.get("end_time") != sat_shift_raw.get("end_time"):
+                        total_days -= 0.5     # half-day shift → counts as 0.5 leave day
+            cur += timedelta(days=1)
+        total_days = max(0.0, round(total_days, 2))
     if total_days == 0:
         raise HTTPException(400, "No working days in selected range (all Sundays/holidays)")
 
@@ -4785,7 +4835,9 @@ async def update_daily_attendance(attendance_id: str, body: DailyAttendanceUpdat
         try:
             date_str = existing.get("date")
             employee_id = existing["employee_id"]
-            shift_timings = await get_shift_timings_for_date(employee_id, date_str)
+            date_obj_r = datetime.strptime(date_str, "%Y-%m-%d")
+            _shift_raw = await get_active_shift_for_date_async(employee_id, date_obj_r)
+            shift_timings = get_shift_timings_for_date(_shift_raw, date_obj_r)
 
             sh, sm = map(int, shift_timings["start_time"].split(":"))
             eh, em = map(int, shift_timings["end_time"].split(":"))
