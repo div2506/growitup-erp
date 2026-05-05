@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import {
   Calendar, Table2, ChevronLeft, ChevronRight, Users,
   Clock, AlertCircle, CheckCircle, XCircle, Pencil, X,
-  TrendingDown, Hourglass, CloudOff, Home, Timer
+  TrendingDown, Hourglass, CloudOff, Home, Timer, IndianRupee
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -481,6 +481,76 @@ function TableView({ records, isAdmin, onEdit }) {
 }
 
 // ─────────────────────────────────────────────
+// Late Penalty Alert (compact + collapsible)
+// ─────────────────────────────────────────────
+function LatePenaltyAlert({ lateTracking }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasPenalty = lateTracking.late_count >= 4;
+  const penalties = lateTracking.penalties_applied || [];
+  const totalDeduction = penalties.reduce((s, p) => s + (p.amount || 0), 0);
+
+  const borderCls  = hasPenalty ? "border-red-500/20"    : "border-orange-500/20";
+  const bgCls      = hasPenalty ? "bg-red-500/10"        : "bg-orange-500/10";
+  const textCls    = hasPenalty ? "text-red-400"         : "text-orange-400";
+  const mutedCls   = hasPenalty ? "text-red-400/60"      : "text-orange-400/60";
+  const pillBg     = hasPenalty ? "bg-red-500/20"        : "bg-orange-500/20";
+
+  return (
+    <div className={`mb-5 rounded-xl border ${bgCls} ${borderCls}`}>
+      {/* Header row — always visible */}
+      <div className="flex items-center gap-3 px-4 py-3">
+        <AlertCircle size={16} className={`${textCls} shrink-0`} />
+        <div className="flex-1 min-w-0">
+          <span className={`text-sm font-medium ${textCls}`}>
+            {hasPenalty
+              ? `⚠️ ${lateTracking.late_count} late arrivals this month — Penalty applied`
+              : `⚠️ ${lateTracking.late_count} late arrivals — Next late will trigger a penalty`}
+          </span>
+        </div>
+        {/* Summary pills */}
+        <div className="flex items-center gap-2 shrink-0">
+          {penalties.length > 0 && (
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pillBg} ${textCls}`}>
+              {penalties.length} penalty{penalties.length !== 1 ? "s" : ""}
+            </span>
+          )}
+          {totalDeduction > 0 && (
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pillBg} ${textCls}`}>
+              ₹{totalDeduction.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+            </span>
+          )}
+          {penalties.length > 0 && (
+            <button
+              onClick={() => setExpanded(e => !e)}
+              className={`text-xs ${mutedCls} hover:${textCls} flex items-center gap-1 transition-colors`}
+            >
+              {expanded ? "Hide" : "Details"}
+              <ChevronRight size={12} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Collapsible breakdown */}
+      {expanded && penalties.length > 0 && (
+        <div className={`border-t ${borderCls} px-4 py-3`}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+            {penalties.map((p, i) => (
+              <div key={i} className={`flex items-center justify-between gap-2 text-xs px-2.5 py-1.5 rounded-lg ${pillBg}`}>
+                <span className={mutedCls}>{p.description?.split(":")[0]}</span>
+                <span className={`${textCls} font-medium`}>
+                  {p.amount ? `₹${Number(p.amount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : p.description?.split(": ")[1] || ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // All Employees Summary (Admin bulk view)
 // ─────────────────────────────────────────────
 function AllEmployeesSummary({ month, onSelectEmployee }) {
@@ -750,23 +820,7 @@ export default function AttendancePage() {
 
           {/* Late Penalty Alert */}
           {lateTracking && lateTracking.late_count >= 3 && (
-            <div className={`mb-5 flex items-start gap-3 rounded-xl border p-4 ${lateTracking.late_count >= 4 ? "bg-red-500/10 border-red-500/20" : "bg-orange-500/10 border-orange-500/20"}`}>
-              <AlertCircle size={18} className={lateTracking.late_count >= 4 ? "text-red-400 shrink-0" : "text-orange-400 shrink-0"} />
-              <div>
-                <p className={`text-sm font-medium ${lateTracking.late_count >= 4 ? "text-red-400" : "text-orange-400"}`}>
-                  {lateTracking.late_count >= 4
-                    ? `⚠️ ${lateTracking.late_count} late arrivals this month — Penalty applied`
-                    : `⚠️ ${lateTracking.late_count} late arrivals — Next will trigger a penalty`}
-                </p>
-                {lateTracking.penalties_applied?.length > 0 && (
-                  <ul className="mt-1 space-y-0.5">
-                    {lateTracking.penalties_applied.map((p, i) => (
-                      <li key={i} className="text-xs text-[#B3B3B3]">• {p.description}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
+            <LatePenaltyAlert lateTracking={lateTracking} />
           )}
 
           {/* Calendar / Table */}
