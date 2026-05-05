@@ -64,69 +64,64 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
   const [allEmployees, setAllEmployees] = useState([]);
   const [allTeams, setAllTeams] = useState([]);
   const [allShifts, setAllShifts] = useState([]);
+  const [formLoading, setFormLoading] = useState(false);
 
   const selectedJobPos = jobPositions.find(jp => jp.position_id === form.job_position_id);
   const showLevel = selectedJobPos?.has_levels === true;
 
-  // Load initial data
+  // Load ALL data in one shot — reference data + employee-specific data together
   useEffect(() => {
     const load = async () => {
+      setFormLoading(true);
       try {
-        const [statesRes, deptsRes, empsRes, teamsRes, shiftsRes] = await Promise.all([
+        const baseRequests = [
           axios.get(`${API}/states`, { withCredentials: true }),
           axios.get(`${API}/departments`, { withCredentials: true }),
           axios.get(`${API}/employees`, { withCredentials: true }),
           axios.get(`${API}/teams`, { withCredentials: true }),
           axios.get(`${API}/shifts`, { withCredentials: true }),
-        ]);
+        ];
+
+        // If editing, fetch employee-specific data in the same Promise.all
+        const empRequests = employee?.employee_id ? [
+          axios.get(`${API}/employee-shifts/${employee.employee_id}`, { withCredentials: true }).catch(() => null),
+          axios.get(`${API}/leave/balance?employee_id=${employee.employee_id}`, { withCredentials: true }).catch(() => null),
+        ] : [null, null];
+
+        const [statesRes, deptsRes, empsRes, teamsRes, shiftsRes, shiftRes, balanceRes] =
+          await Promise.all([...baseRequests, ...empRequests]);
+
         setStates(statesRes.data);
         setDepartments(deptsRes.data);
         setAllEmployees(empsRes.data);
         setAllTeams(teamsRes.data);
         setAllShifts(shiftsRes.data);
+
+        if (employee) {
+          setForm({
+            ...EMPTY_FORM,
+            ...employee,
+            basic_salary: employee.basic_salary?.toString() || "",
+            level: employee.level || "",
+            reporting_manager_id: employee.reporting_manager_id || "",
+            reporting_manager_name: employee.reporting_manager_name || "",
+            profile_picture: employee.profile_picture || null,
+            teams: employee.teams || [],
+            shift_id: shiftRes?.data?.shift_id || employee.shift_id || "",
+            paid_leave_eligible: !!balanceRes?.data?.paid_leave_eligible,
+          });
+        } else {
+          setForm(EMPTY_FORM);
+        }
       } catch {
         toast.error("Failed to load form data");
+      } finally {
+        setFormLoading(false);
       }
     };
-    load();
-  }, []);
-
-  // Pre-fill if editing
-  useEffect(() => {
-    if (employee) {
-      setForm({
-        ...EMPTY_FORM,
-        ...employee,
-        basic_salary: employee.basic_salary?.toString() || "",
-        level: employee.level || "",
-        reporting_manager_id: employee.reporting_manager_id || "",
-        reporting_manager_name: employee.reporting_manager_name || "",
-        profile_picture: employee.profile_picture || null,
-        teams: employee.teams || [],
-        shift_id: employee.shift_id || "",
-        paid_leave_eligible: false, // will be overridden by balance fetch below
-      });
-      // Load employee's current shift if editing
-      if (employee.employee_id) {
-        axios.get(`${API}/employee-shifts/${employee.employee_id}`, { withCredentials: true })
-          .then(res => {
-            if (res.data?.shift_id) {
-              setForm(prev => ({ ...prev, shift_id: res.data.shift_id }));
-            }
-          })
-          .catch(() => {});
-        // Load paid leave eligibility from leave_balance
-        axios.get(`${API}/leave/balance?employee_id=${employee.employee_id}`, { withCredentials: true })
-          .then(res => {
-            setForm(prev => ({ ...prev, paid_leave_eligible: !!res.data?.paid_leave_eligible }));
-          })
-          .catch(() => {});
-      }
-    } else {
-      setForm(EMPTY_FORM);
-    }
     setTab("personal");
     setErrors({});
+    load();
   }, [employee]);
 
   // Load cities when state changes
@@ -289,6 +284,12 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
           </DialogTitle>
         </DialogHeader>
 
+        {formLoading ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 py-16">
+            <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+            <p className="text-[#B3B3B3] text-sm">Loading employee data…</p>
+          </div>
+        ) : (
         <Tabs value={tab} onValueChange={setTab} className="flex flex-col flex-1 overflow-hidden">
           <div className="px-4 sm:px-6 pt-4 shrink-0">
             <TabsList className="bg-[#191919] border border-white/10 w-full p-1 grid grid-cols-3 h-auto rounded-lg">
@@ -671,6 +672,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
           </TabsContent>
           </div>
         </Tabs>
+        )}
       </DialogContent>
     </Dialog>
   );
