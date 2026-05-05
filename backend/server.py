@@ -644,7 +644,7 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
 
         # ── Early departure detection (uses effective end) ────────────────────
         co_mins = co_dt.hour * 60 + co_dt.minute
-        left_early = co_mins < (eff_end_mins - 10)
+        left_early = co_mins < eff_end_mins
         early_departure_minutes = max(0, eff_end_mins - co_mins) if left_early else 0
 
         # ── Status thresholds ─────────────────────────────────────────────────
