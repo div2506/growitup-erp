@@ -4098,8 +4098,11 @@ async def create_attendance_entry(body: AttendanceEntryCreate, request: Request)
         raise HTTPException(401, "Invalid or missing API key")
 
     now = datetime.now(timezone.utc).isoformat()
+    call_id = f"call_{uuid.uuid4().hex[:16]}"  # groups all logs from this single API call
     log_base = {
         "log_id": f"bl_{uuid.uuid4().hex[:12]}",
+        "call_id": call_id,
+        "call_type": "single",
         "source": body.source or "biometric",
         "biometric_employee_code": body.biometric_employee_code or None,
         "employee_id_input": body.employee_id or None,
@@ -4245,6 +4248,7 @@ async def create_attendance_bulk(body: AttendanceBulkCreate, request: Request):
 
     now = datetime.now(timezone.utc).isoformat()
     default_source = body.source or "biometric"
+    call_id = f"call_{uuid.uuid4().hex[:16]}"  # single ID for this entire bulk call
 
     results = []
     new_entries = []
@@ -4255,6 +4259,8 @@ async def create_attendance_bulk(body: AttendanceBulkCreate, request: Request):
         row_source = row.source or default_source
         log_base = {
             "log_id": f"bl_{uuid.uuid4().hex[:12]}",
+            "call_id": call_id,
+            "call_type": "bulk",
             "source": row_source,
             "biometric_employee_code": row.biometric_employee_code or None,
             "employee_id_input": row.employee_id or None,
@@ -4388,6 +4394,72 @@ async def get_biometric_logs(
             summary[s] += 1
 
     return {"logs": logs, "summary": summary}
+
+
+@api_router.get("/attendance/biometric-calls")
+async def get_biometric_calls(
+    request: Request,
+    date: Optional[str] = None,
+    limit: int = 100,
+):
+    """Admin only: fetch one row per API call (grouped by call_id) with summary counts.
+    Returns calls sorted by time desc. Each call has recorded/duplicate/skipped/error counts."""
+    user = await get_current_user(request)
+    my_emp = await _resolve_my_emp(user)
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Admin access required")
+
+    match = {}
+    if date:
+        match["$or"] = [
+            {"punch_date": date},
+            {"called_at": {"$regex": f"^{date}"}},
+        ]
+
+    pipeline = [
+        {"$match": match},
+        {"$group": {
+            "_id": "$call_id",
+            "call_id":    {"$first": "$call_id"},
+            "call_type":  {"$first": "$call_type"},
+            "source":     {"$first": "$source"},
+            "called_at":  {"$first": "$called_at"},
+            "total":      {"$sum": 1},
+            "recorded":   {"$sum": {"$cond": [{"$eq": ["$status", "recorded"]},  1, 0]}},
+            "duplicate":  {"$sum": {"$cond": [{"$eq": ["$status", "duplicate"]}, 1, 0]}},
+            "skipped":    {"$sum": {"$cond": [{"$eq": ["$status", "skipped"]},   1, 0]}},
+            "error":      {"$sum": {"$cond": [{"$eq": ["$status", "error"]},     1, 0]}},
+        }},
+        {"$sort": {"called_at": -1}},
+        {"$limit": limit},
+        {"$project": {"_id": 0}},
+    ]
+
+    calls = await db.biometric_logs.aggregate(pipeline).to_list(limit)
+
+    # Overall summary for the filtered date
+    all_logs = await db.biometric_logs.find(match, {"_id": 0, "status": 1}).to_list(50000)
+    summary = {"recorded": 0, "duplicate": 0, "skipped": 0, "error": 0, "total": len(all_logs)}
+    for l in all_logs:
+        s = l.get("status", "")
+        if s in summary:
+            summary[s] += 1
+
+    return {"calls": calls, "summary": summary}
+
+
+@api_router.get("/attendance/biometric-calls/{call_id}")
+async def get_biometric_call_detail(call_id: str, request: Request):
+    """Admin only: fetch all individual log entries for a specific call_id."""
+    user = await get_current_user(request)
+    my_emp = await _resolve_my_emp(user)
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Admin access required")
+
+    logs = await db.biometric_logs.find({"call_id": call_id}, {"_id": 0}).sort("called_at", 1).to_list(5000)
+    return {"logs": logs}
 
 
 @api_router.post("/attendance/process")
