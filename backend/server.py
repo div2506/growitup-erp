@@ -347,58 +347,92 @@ class DailyAttendanceUpdate(BaseModel):
 
 # ===================== HELPERS =====================
 
-async def get_current_user(request: Request):
-    session_token = request.cookies.get("session_token")
-    if not session_token:
-        auth = request.headers.get("Authorization", "")
-        if auth.startswith("Bearer "):
-            session_token = auth[7:]
-    if not session_token:
-        raise HTTPException(401, "Not authenticated")
-
-    now = datetime.now(timezone.utc)
-
+async def _validate_session_token(token: str, now) -> Optional[dict]:
+    """Validate a single session token against cache then DB.
+    Returns the user dict on success, None on failure (avoids raising so callers can try fallbacks).
+    """
     # Check in-memory cache first
-    cached = _session_cache.get(session_token)
+    cached = _session_cache.get(token)
     if cached:
         user, session_expires, cache_ts = cached
         if now.timestamp() - cache_ts < _SESSION_CACHE_TTL:
             if session_expires < now:
-                _session_cache.pop(session_token, None)
-                raise HTTPException(401, "Session expired")
+                _session_cache.pop(token, None)
+                return None  # expired
             return user
+        # Cache stale — fall through to DB
 
-    # Cache miss — hit DB (session + user in parallel)
-    session_task = db.user_sessions.find_one({"session_token": session_token}, {"_id": 0})
-    session = await session_task
+    # Cache miss / stale — hit DB
+    try:
+        session = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
+    except Exception:
+        return None  # DB error — don't crash, let caller try fallback or return 503
+
     if not session:
-        raise HTTPException(401, "Invalid session")
+        return None
 
-    expires_at = session["expires_at"]
+    expires_at = session.get("expires_at")
+    if not expires_at:
+        return None
     if isinstance(expires_at, str):
-        expires_at = datetime.fromisoformat(expires_at)
-    if expires_at.tzinfo is None:
+        try:
+            expires_at = datetime.fromisoformat(expires_at)
+        except ValueError:
+            return None
+    if isinstance(expires_at, datetime) and expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at < now:
-        raise HTTPException(401, "Session expired")
+    if not isinstance(expires_at, datetime) or expires_at < now:
+        return None  # expired
 
-    user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
+    try:
+        user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
+    except Exception:
+        return None
+
     if not user:
-        raise HTTPException(401, "User not found")
+        return None
 
     # Sliding session: renew if within 7 days of expiry (fire-and-forget)
     days_left = (expires_at - now).total_seconds() / 86400
     if days_left < 7:
         new_expiry = now + timedelta(days=30)
         asyncio.create_task(db.user_sessions.update_one(
-            {"session_token": session_token},
-            {"$set": {"expires_at": new_expiry}}
+            {"session_token": token},
+            {"$set": {"expires_at": new_expiry.isoformat()}}
         ))
         expires_at = new_expiry
 
-    # Store in cache
-    _session_cache[session_token] = (user, expires_at, now.timestamp())
+    _session_cache[token] = (user, expires_at, now.timestamp())
     return user
+
+
+async def get_current_user(request: Request):
+    """Authenticate the request. Tries cookie token first, then Bearer header token.
+    Both are tried independently so a stale cookie never blocks a valid Bearer token."""
+    cookie_token = request.cookies.get("session_token") or None
+    bearer_token = None
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        bearer_token = auth_header[7:].strip() or None
+
+    if not cookie_token and not bearer_token:
+        raise HTTPException(401, "Not authenticated")
+
+    now = datetime.now(timezone.utc)
+
+    # Try each token; use whichever resolves first (cookie preferred, then Bearer)
+    tokens_to_try = []
+    if cookie_token:
+        tokens_to_try.append(cookie_token)
+    if bearer_token and bearer_token != cookie_token:
+        tokens_to_try.append(bearer_token)
+
+    for token in tokens_to_try:
+        user = await _validate_session_token(token, now)
+        if user:
+            return user
+
+    raise HTTPException(401, "Session expired or invalid")
 
 
 async def get_next_employee_id():

@@ -29,11 +29,18 @@ export function AuthProvider({ children }) {
     setLoading(true);
     setEmployeeLoading(true);
     try {
-      const response = await authFetch(`${API}/auth/me`);
+      let response = await authFetch(`${API}/auth/me`);
+
+      // On 401, wait 1.5s and retry once before logging out.
+      // This handles transient issues (cache expiry race, brief network hiccup).
+      if (response.status === 401 || response.status === 403) {
+        await new Promise(r => setTimeout(r, 1500));
+        response = await authFetch(`${API}/auth/me`);
+      }
 
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
-          // Genuine auth failure — clear session and log out
+          // Genuine auth failure after retry — clear session and log out
           localStorage.removeItem("session_token");
           setUser(null);
           setMyEmployee(null);

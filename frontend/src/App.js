@@ -34,9 +34,17 @@ axios.interceptors.request.use((config) => {
 });
 
 // Global 401 handler: when any request returns 401, verify with /auth/me before logging out.
-// This prevents false logouts from transient server errors on data endpoints.
+// This prevents false logouts from transient server errors or cache-expiry races.
 let _verifyingSession = false;
 const API_BASE = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+async function _checkSessionAlive() {
+  const token = localStorage.getItem("session_token");
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const res = await fetch(`${API_BASE}/auth/me`, { credentials: "include", headers });
+  return res.status; // caller checks
+}
+
 axios.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -46,15 +54,20 @@ axios.interceptors.response.use(
     if (status === 401 && !requestUrl.includes("/auth/me") && !_verifyingSession) {
       _verifyingSession = true;
       try {
-        const token = localStorage.getItem("session_token");
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const res = await fetch(`${API_BASE}/auth/me`, { credentials: "include", headers });
-        if (res.status === 401 || res.status === 403) {
-          // Session is genuinely dead — clear and redirect to login
-          localStorage.removeItem("session_token");
-          window.location.href = "/login";
+        // Wait briefly — cache-expiry races can cause transient 401s
+        await new Promise(r => setTimeout(r, 800));
+        const firstCheck = await _checkSessionAlive();
+        if (firstCheck === 401 || firstCheck === 403) {
+          // Retry once more after a short delay before giving up
+          await new Promise(r => setTimeout(r, 1200));
+          const secondCheck = await _checkSessionAlive();
+          if (secondCheck === 401 || secondCheck === 403) {
+            // Session is genuinely dead — clear and redirect
+            localStorage.removeItem("session_token");
+            window.location.href = "/login";
+          }
         }
-        // If /auth/me is OK (2xx/5xx), session is fine — transient 401 on data endpoint, do nothing
+        // Any 2xx or 5xx → session is alive, transient issue on the data endpoint
       } catch {
         // Network error during verify — keep user logged in
       } finally {
