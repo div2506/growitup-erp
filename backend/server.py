@@ -126,6 +126,10 @@ class ShiftCreate(BaseModel):
     end_time: str     # "18:00"
     break_duration: int  # minutes: 0, 30, 60, 90, 120
     is_system_default: bool = False
+    # Saturday rule: "none" | "1st_3rd_half_day" | "all_half_day" | "all_off"
+    saturday_rule: Optional[str] = "none"
+    saturday_start_time: Optional[str] = None  # e.g. "09:00" for half-day
+    saturday_end_time: Optional[str] = None    # e.g. "13:00" for half-day
 
 
 class ShiftChangeRequestCreate(BaseModel):
@@ -472,9 +476,39 @@ def is_1st_or_3rd_saturday(date_obj) -> bool:
 
 
 def get_shift_timings_for_date(shift: dict, date_obj) -> dict:
-    """Get actual shift timings for a date (handles Saturday half-day)."""
-    if shift.get("shift_name") == "Regular 9-6" and is_1st_or_3rd_saturday(date_obj):
-        return {**shift, "start_time": "08:00", "end_time": "13:00", "total_hours": 5, "break_duration": 0}
+    """Get actual shift timings for a date, applying the shift's Saturday rule.
+
+    Returns the shift dict, possibly with overridden start/end times for half-day Saturdays,
+    or with `_saturday_off: True` when the Saturday is a day off.
+    """
+    if date_obj.weekday() != 5:  # Not Saturday — return as-is
+        return shift
+
+    rule = shift.get("saturday_rule") or "none"
+
+    # Legacy: system-default shift had hardcoded 1st/3rd Saturday half-day rule
+    if rule == "none" and shift.get("is_system_default"):
+        rule = "1st_3rd_half_day"
+
+    # All Saturdays off → mark as holiday
+    if rule == "all_off":
+        return {**shift, "_saturday_off": True}
+
+    # 1st & 3rd Saturday half-day → check which Saturday this is
+    if rule == "1st_3rd_half_day" and is_1st_or_3rd_saturday(date_obj):
+        sat_start = shift.get("saturday_start_time") or shift.get("start_time") or "09:00"
+        sat_end   = shift.get("saturday_end_time")   or "13:00"
+        net_hours = round(calc_total_hours(sat_start, sat_end), 2)
+        return {**shift, "start_time": sat_start, "end_time": sat_end, "total_hours": net_hours, "break_duration": 0}
+
+    # All Saturdays half-day
+    if rule == "all_half_day":
+        sat_start = shift.get("saturday_start_time") or shift.get("start_time") or "09:00"
+        sat_end   = shift.get("saturday_end_time")   or "13:00"
+        net_hours = round(calc_total_hours(sat_start, sat_end), 2)
+        return {**shift, "start_time": sat_start, "end_time": sat_end, "total_hours": net_hours, "break_duration": 0}
+
+    # rule == "none" or 1st_3rd_half_day on 2nd/4th/5th Saturday → normal working Saturday
     return shift
 
 
@@ -545,6 +579,13 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
             return await upsert_daily_attendance(employee_id, date_str, {
                 "shift_id": shift["shift_id"], "check_in": None, "check_out": None,
                 "total_hours": None, "status": "Holiday", "is_late": False, "late_minutes": 0, "notes": "Sunday"
+            })
+
+        # Saturday off per shift rule → Holiday
+        if shift_timings.get("_saturday_off"):
+            return await upsert_daily_attendance(employee_id, date_str, {
+                "shift_id": shift["shift_id"], "check_in": None, "check_out": None,
+                "total_hours": None, "status": "Holiday", "is_late": False, "late_minutes": 0, "notes": "Saturday Off"
             })
 
         # Get raw punches sorted ascending
@@ -3170,6 +3211,9 @@ async def create_shift(body: ShiftCreate, request: Request):
         "break_duration": body.break_duration,
         "total_hours": total_hours,
         "is_system_default": body.is_system_default,
+        "saturday_rule": body.saturday_rule or "none",
+        "saturday_start_time": body.saturday_start_time or None,
+        "saturday_end_time": body.saturday_end_time or None,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat()
     }
@@ -3210,6 +3254,9 @@ async def update_shift(shift_id: str, body: ShiftCreate, request: Request):
         "end_time": body.end_time,
         "break_duration": body.break_duration,
         "total_hours": total_hours,
+        "saturday_rule": body.saturday_rule or "none",
+        "saturday_start_time": body.saturday_start_time or None,
+        "saturday_end_time": body.saturday_end_time or None,
         "updated_at": datetime.now(timezone.utc).isoformat()
     }
     await db.shifts.update_one({"shift_id": shift_id}, {"$set": update})

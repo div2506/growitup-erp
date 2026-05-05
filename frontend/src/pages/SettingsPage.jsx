@@ -1124,12 +1124,28 @@ function calcHours(start, end) {
   return ((endM - startM) / 60).toFixed(2);
 }
 
+const SATURDAY_RULES = [
+  { value: "none",            label: "Normal Working Day" },
+  { value: "1st_3rd_half_day", label: "1st & 3rd Saturday Half Day" },
+  { value: "all_half_day",    label: "All Saturdays Half Day" },
+  { value: "all_off",         label: "All Saturdays Off" },
+];
+
+function saturdayRuleLabel(rule) {
+  return SATURDAY_RULES.find(r => r.value === rule)?.label || "Normal Working Day";
+}
+
+const EMPTY_SHIFT_FORM = {
+  shift_name: "", start_time: "09:00", end_time: "18:00", break_duration: 60,
+  saturday_rule: "none", saturday_start_time: "09:00", saturday_end_time: "13:00",
+};
+
 function ShiftsTab() {
   const [shifts, setShifts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editShift, setEditShift] = useState(null);
-  const [form, setForm] = useState({ shift_name: "", start_time: "09:00", end_time: "18:00", break_duration: 60 });
+  const [form, setForm] = useState(EMPTY_SHIFT_FORM);
   const [formErrors, setFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -1147,13 +1163,21 @@ function ShiftsTab() {
 
   const openAdd = () => {
     setEditShift(null);
-    setForm({ shift_name: "", start_time: "09:00", end_time: "18:00", break_duration: 60 });
+    setForm(EMPTY_SHIFT_FORM);
     setFormErrors({});
     setShowModal(true);
   };
   const openEdit = (s) => {
     setEditShift(s);
-    setForm({ shift_name: s.shift_name, start_time: s.start_time, end_time: s.end_time, break_duration: s.break_duration });
+    setForm({
+      shift_name: s.shift_name,
+      start_time: s.start_time,
+      end_time: s.end_time,
+      break_duration: s.break_duration,
+      saturday_rule: s.saturday_rule || "none",
+      saturday_start_time: s.saturday_start_time || "09:00",
+      saturday_end_time: s.saturday_end_time || "13:00",
+    });
     setFormErrors({});
     setShowModal(true);
   };
@@ -1164,6 +1188,9 @@ function ShiftsTab() {
     if (!form.start_time) e.start_time = "Start time is required";
     if (!form.end_time) e.end_time = "End time is required";
     if (form.start_time && form.end_time && form.start_time === form.end_time) e.end_time = "End time must differ from start time";
+    const needsSatTimes = form.saturday_rule === "1st_3rd_half_day" || form.saturday_rule === "all_half_day";
+    if (needsSatTimes && form.saturday_start_time && form.saturday_end_time && form.saturday_start_time >= form.saturday_end_time)
+      e.saturday_end_time = "Saturday end time must be after start time";
     setFormErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -1171,13 +1198,20 @@ function ShiftsTab() {
   const handleSave = async () => {
     if (!validate()) return;
     setSaving(true);
+    // Only send saturday times when the rule needs them
+    const needsSatTimes = form.saturday_rule === "1st_3rd_half_day" || form.saturday_rule === "all_half_day";
+    const payload = {
+      ...form,
+      saturday_start_time: needsSatTimes ? form.saturday_start_time : null,
+      saturday_end_time:   needsSatTimes ? form.saturday_end_time   : null,
+    };
     try {
       if (editShift) {
-        const { data } = await axios.put(`${API}/shifts/${editShift.shift_id}`, form, { withCredentials: true });
+        const { data } = await axios.put(`${API}/shifts/${editShift.shift_id}`, payload, { withCredentials: true });
         setShifts(prev => prev.map(s => s.shift_id === data.shift_id ? { ...s, ...data } : s));
         toast.success("Shift updated");
       } else {
-        const { data } = await axios.post(`${API}/shifts`, form, { withCredentials: true });
+        const { data } = await axios.post(`${API}/shifts`, payload, { withCredentials: true });
         setShifts(prev => [...prev, { ...data, employee_count: 0 }]);
         toast.success("Shift created");
       }
@@ -1197,6 +1231,8 @@ function ShiftsTab() {
   };
 
   const totalHours = calcHours(form.start_time, form.end_time);
+  const satTotalHours = calcHours(form.saturday_start_time, form.saturday_end_time);
+  const showSatTimes = form.saturday_rule === "1st_3rd_half_day" || form.saturday_rule === "all_half_day";
 
   return (
     <div>
@@ -1212,48 +1248,61 @@ function ShiftsTab() {
         <div className="space-y-2">{[1, 2].map(i => <div key={i} className="h-16 bg-[#2F2F2F] rounded-xl animate-pulse border border-white/10" />)}</div>
       ) : (
         <div className="rounded-xl border border-white/10 overflow-hidden overflow-x-auto">
-          <table className="w-full min-w-[600px]">
+          <table className="w-full min-w-[700px]">
             <thead className="bg-[#191919] border-b border-white/10">
               <tr>
                 <th className="text-left py-3 px-5 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Shift Name</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Timing</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Hours</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Break</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Saturday Rule</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Employees</th>
                 <th className="py-3 px-4 w-24" />
               </tr>
             </thead>
             <tbody>
-              {shifts.map((shift, i) => (
-                <tr key={shift.shift_id} className={`border-b border-white/5 hover:bg-white/5 transition-colors ${i % 2 === 0 ? "bg-[#2F2F2F]" : "bg-[#2F2F2F]/60"}`}>
-                  <td className="py-3 px-5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-white text-sm font-medium">{shift.shift_name}</span>
-                      {shift.is_system_default && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                          <Lock size={9} /> Default
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-sm text-[#B3B3B3]">{formatTime(shift.start_time)} – {formatTime(shift.end_time)}</td>
-                  <td className="py-3 px-4 text-sm text-white">{shift.total_hours}h</td>
-                  <td className="py-3 px-4 text-sm text-[#B3B3B3]">{shift.break_duration} min</td>
-                  <td className="py-3 px-4 text-sm text-[#B3B3B3]">{shift.employee_count || 0}</td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => openEdit(shift)} className="p-1.5 text-[#B3B3B3] hover:text-white hover:bg-white/10 rounded-lg transition-colors">
-                        <Pencil size={14} />
-                      </button>
-                      {!shift.is_system_default && (
-                        <button onClick={() => setDeleteTarget(shift)} className="p-1.5 text-[#B3B3B3] hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors">
-                          <Trash2 size={14} />
+              {shifts.map((shift, i) => {
+                const satRule = shift.saturday_rule || "none";
+                const satRuleColor = satRule === "all_off" ? "text-red-400 bg-red-500/10 border-red-500/20"
+                  : satRule === "all_half_day" ? "text-amber-400 bg-amber-500/10 border-amber-500/20"
+                  : satRule === "1st_3rd_half_day" ? "text-blue-400 bg-blue-500/10 border-blue-500/20"
+                  : "text-[#B3B3B3] bg-white/5 border-white/10";
+                return (
+                  <tr key={shift.shift_id} className={`border-b border-white/5 hover:bg-white/5 transition-colors ${i % 2 === 0 ? "bg-[#2F2F2F]" : "bg-[#2F2F2F]/60"}`}>
+                    <td className="py-3 px-5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-white text-sm font-medium">{shift.shift_name}</span>
+                        {shift.is_system_default && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                            <Lock size={9} /> Default
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-sm text-[#B3B3B3]">{formatTime(shift.start_time)} – {formatTime(shift.end_time)}</td>
+                    <td className="py-3 px-4 text-sm text-white">{shift.total_hours}h</td>
+                    <td className="py-3 px-4 text-sm text-[#B3B3B3]">{shift.break_duration} min</td>
+                    <td className="py-3 px-4">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${satRuleColor}`}>
+                        {saturdayRuleLabel(satRule)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-sm text-[#B3B3B3]">{shift.employee_count || 0}</td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => openEdit(shift)} className="p-1.5 text-[#B3B3B3] hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+                          <Pencil size={14} />
                         </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {!shift.is_system_default && (
+                          <button onClick={() => setDeleteTarget(shift)} className="p-1.5 text-[#B3B3B3] hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1261,13 +1310,13 @@ function ShiftsTab() {
 
       {/* Add/Edit Shift Modal */}
       <Dialog open={showModal} onOpenChange={(o) => { if (!o) setShowModal(false); }}>
-        <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white sm:max-w-md w-[calc(100%-2rem)] rounded-xl p-0 overflow-hidden flex flex-col">
+        <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white sm:max-w-md w-[calc(100%-2rem)] rounded-xl p-0 overflow-hidden flex flex-col max-h-[90vh]">
           <DialogHeader className="px-5 pt-5 pb-4 border-b border-white/10 shrink-0">
             <DialogTitle className="text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
               {editShift ? "Edit Shift" : "Add New Shift"}
             </DialogTitle>
           </DialogHeader>
-          <div className="px-5 py-5 space-y-4">
+          <div className="px-5 py-5 space-y-4 overflow-y-auto">
             <div className="space-y-1">
               <Label className={labelCls}>Shift Name *</Label>
               <Input value={form.shift_name} onChange={e => setForm(f => ({ ...f, shift_name: e.target.value }))}
@@ -1308,8 +1357,48 @@ function ShiftsTab() {
               <span className="text-[#B3B3B3] text-sm">Total Hours (calculated)</span>
               <span className="text-white font-semibold text-lg">{totalHours}h</span>
             </div>
+
+            {/* Saturday Rule */}
+            <div className="border-t border-white/10 pt-4 space-y-3">
+              <p className="text-[#B3B3B3] text-xs font-semibold uppercase tracking-wider">Saturday Settings</p>
+              <div className="space-y-1">
+                <Label className={labelCls}>Saturday Rule</Label>
+                <Select value={form.saturday_rule} onValueChange={v => setForm(f => ({ ...f, saturday_rule: v }))}>
+                  <SelectTrigger className={`${inputCls} focus:ring-0`}><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-[#2F2F2F] border-white/10">
+                    {SATURDAY_RULES.map(r => (
+                      <SelectItem key={r.value} value={r.value} className="text-white focus:bg-white/10">{r.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {showSatTimes && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className={labelCls}>Saturday Start Time</Label>
+                      <Input type="time" value={form.saturday_start_time}
+                        onChange={e => setForm(f => ({ ...f, saturday_start_time: e.target.value }))}
+                        className={inputCls} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className={labelCls}>Saturday End Time</Label>
+                      <Input type="time" value={form.saturday_end_time}
+                        onChange={e => setForm(f => ({ ...f, saturday_end_time: e.target.value }))}
+                        className={inputCls} />
+                      {formErrors.saturday_end_time && <p className="text-red-400 text-xs">{formErrors.saturday_end_time}</p>}
+                    </div>
+                  </div>
+                  <div className="bg-[#191919] border border-white/10 rounded-lg px-4 py-2.5 flex items-center justify-between">
+                    <span className="text-[#B3B3B3] text-xs">Saturday Hours</span>
+                    <span className="text-white font-semibold">{satTotalHours}h</span>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-          <div className="px-5 pb-5 flex gap-3">
+          <div className="px-5 pb-5 flex gap-3 shrink-0">
             <Button variant="outline" onClick={() => setShowModal(false)}
               className="flex-1 bg-transparent border-white/20 text-[#B3B3B3] hover:bg-white/5 hover:text-white min-h-[44px]">
               Cancel
