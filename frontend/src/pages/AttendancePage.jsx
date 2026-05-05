@@ -192,12 +192,16 @@ function DateDetailModal({ date, record, isAdmin, onClose, onEdit }) {
                   <p className="text-white text-sm">{record.notes}</p>
                 </div>
               )}
-              {isAdmin && (
+              {isAdmin && record.status === "Holiday" ? (
+                <div className="w-full flex items-center justify-center gap-2 py-2.5 bg-white/5 border border-white/10 rounded-lg text-[#555] text-sm cursor-not-allowed select-none">
+                  <span>🔒</span> Holiday — cannot edit attendance
+                </div>
+              ) : isAdmin ? (
                 <button onClick={onEdit}
                   className="w-full flex items-center justify-center gap-2 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[#B3B3B3] hover:text-white text-sm transition-colors">
                   <Pencil size={14} /> Edit Attendance
                 </button>
-              )}
+              ) : null}
             </>
           )}
         </div>
@@ -427,10 +431,16 @@ function TableView({ records, isAdmin, onEdit }) {
                   </td>
                   {isAdmin && (
                     <td className="py-3 px-4">
-                      <button onClick={() => onEdit(dateObj, rec)}
-                        className="p-1.5 text-[#B3B3B3] hover:text-white hover:bg-white/10 rounded-lg transition-colors">
-                        <Pencil size={13} />
-                      </button>
+                      {rec.status === "Holiday" ? (
+                        <span className="p-1.5 text-[#333] cursor-not-allowed" title="Holiday — cannot edit">
+                          <Pencil size={13} />
+                        </span>
+                      ) : (
+                        <button onClick={() => onEdit(dateObj, rec)}
+                          className="p-1.5 text-[#B3B3B3] hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+                          <Pencil size={13} />
+                        </button>
+                      )}
                     </td>
                   )}
                 </tr>

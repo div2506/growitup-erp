@@ -4751,6 +4751,10 @@ async def update_daily_attendance(attendance_id: str, body: DailyAttendanceUpdat
     if not existing:
         raise HTTPException(404, "Attendance record not found")
 
+    # Block editing Holiday records — holidays cannot be manually changed
+    if existing.get("status") == "Holiday":
+        raise HTTPException(400, "Cannot edit a Holiday record. Holidays cannot be changed manually.")
+
     valid = ["Present", "Half Day", "Absent", "Leave", "WFH", "Holiday", "Incomplete", "Forgot Punch Out"]
     if body.status not in valid:
         raise HTTPException(400, f"Invalid status. Must be one of: {', '.join(valid)}")
@@ -4805,6 +4809,11 @@ async def create_manual_attendance(request: Request):
     emp = await db.employees.find_one({"employee_id": employee_id}, {"_id": 0})
     if not emp:
         raise HTTPException(404, "Employee not found")
+
+    # Block overriding a Holiday record — holidays cannot be manually changed
+    existing = await db.daily_attendance.find_one({"employee_id": employee_id, "date": date_str}, {"_id": 0, "status": 1})
+    if existing and existing.get("status") == "Holiday":
+        raise HTTPException(400, "Cannot override a Holiday record. Holidays cannot be changed manually.")
 
     shift = await get_active_shift_for_date_async(employee_id, datetime.strptime(date_str, "%Y-%m-%d"))
     shift_id = shift["shift_id"] if shift else None
