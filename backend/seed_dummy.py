@@ -255,8 +255,17 @@ async def seed():
             })
 
     if att_docs:
-        await db.daily_attendance.insert_many(att_docs)
-    print(f"  {len(att_docs)} attendance records")
+        # Skip records that already exist (same employee_id + date)
+        inserted = 0
+        for doc in att_docs:
+            exists = await db.daily_attendance.find_one(
+                {"employee_id": doc["employee_id"], "date": doc["date"]},
+                {"_id": 1}
+            )
+            if not exists:
+                await db.daily_attendance.insert_one(doc)
+                inserted += 1
+        print(f"  {inserted} attendance records inserted ({len(att_docs) - inserted} skipped — already exist)")
 
     # ── MONTHLY LATE TRACKING ─────────────────────────────────────────────────
     for (eid, month), cnt in late_tracking.items():
@@ -290,8 +299,13 @@ async def seed():
                 "created_at": datetime.now(timezone.utc).isoformat(),
             })
     if lr_docs:
-        await db.leave_requests.insert_many(lr_docs)
-    print(f"  {len(lr_docs)} leave requests")
+        existing_leave = set(
+            r["employee_id"] async for r in db.leave_requests.find({}, {"employee_id": 1, "_id": 0})
+        )
+        new_lr = [d for d in lr_docs if d["employee_id"] not in existing_leave]
+        if new_lr:
+            await db.leave_requests.insert_many(new_lr)
+        print(f"  {len(new_lr)} leave requests inserted ({len(lr_docs)-len(new_lr)} skipped)")
 
     # ── OVERTIME REQUESTS ─────────────────────────────────────────────────────
     ot_docs = []
@@ -315,8 +329,13 @@ async def seed():
                 "created_at": datetime.now(timezone.utc).isoformat(),
             })
     if ot_docs:
-        await db.overtime_requests.insert_many(ot_docs)
-    print(f"  {len(ot_docs)} overtime requests")
+        existing_ot = set(
+            f"{r['employee_id']}_{r['date']}" async for r in db.overtime_requests.find({}, {"employee_id": 1, "date": 1, "_id": 0})
+        )
+        new_ot = [d for d in ot_docs if f"{d['employee_id']}_{d['date']}" not in existing_ot]
+        if new_ot:
+            await db.overtime_requests.insert_many(new_ot)
+        print(f"  {len(new_ot)} overtime requests inserted ({len(ot_docs)-len(new_ot)} skipped)")
 
     # ── WFH REQUESTS ──────────────────────────────────────────────────────────
     wfh_docs = []
@@ -334,8 +353,13 @@ async def seed():
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
     if wfh_docs:
-        await db.wfh_requests.insert_many(wfh_docs)
-    print(f"  {len(wfh_docs)} WFH requests")
+        existing_wfh = set(
+            r["employee_id"] async for r in db.wfh_requests.find({}, {"employee_id": 1, "_id": 0})
+        )
+        new_wfh = [d for d in wfh_docs if d["employee_id"] not in existing_wfh]
+        if new_wfh:
+            await db.wfh_requests.insert_many(new_wfh)
+        print(f"  {len(new_wfh)} WFH requests inserted ({len(wfh_docs)-len(new_wfh)} skipped)")
 
     # ── PAYROLL — last 3 months ───────────────────────────────────────────────
     payroll_docs = []
@@ -367,8 +391,13 @@ async def seed():
                 "created_at": datetime.now(timezone.utc).isoformat(),
             })
     if payroll_docs:
-        await db.payroll.insert_many(payroll_docs)
-    print(f"  {len(payroll_docs)} payroll records")
+        existing_payroll = set(
+            f"{r['employee_id']}_{r['month']}" async for r in db.payroll.find({}, {"employee_id": 1, "month": 1, "_id": 0})
+        )
+        new_payroll = [d for d in payroll_docs if f"{d['employee_id']}_{d['month']}" not in existing_payroll]
+        if new_payroll:
+            await db.payroll.insert_many(new_payroll)
+        print(f"  {len(new_payroll)} payroll records inserted ({len(payroll_docs)-len(new_payroll)} skipped)")
 
     # ── MANAGER PERFORMANCE ───────────────────────────────────────────────────
     creative_leads = [emp for emp in employees if emp["department_name"] == "Creative"][:2]
