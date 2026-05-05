@@ -810,6 +810,46 @@ async def notify_leave_submitted(leave_req: dict, employee: dict) -> None:
         logger.warning(f"[Leave] Slack notification failed (non-blocking): {exc}")
 
 
+async def notify_wfh_submitted(wfh_req: dict, employee: dict) -> None:
+    """Fire-and-forget Slack ping when a new WFH request is submitted.
+    Silently no-ops if SLACK_WEBHOOK_URL is unset or Slack is unreachable."""
+    slack_url = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
+    if not slack_url or slack_url == "YOUR_SLACK_WEBHOOK_URL":
+        return
+    try:
+        emp_name = f"{employee.get('first_name', '')} {employee.get('last_name', '')}".strip()
+        emp_id = employee.get("employee_id", "")
+        dept = employee.get("department_name", "")
+        from_date = wfh_req.get("from_date", "")
+        to_date = wfh_req.get("to_date", "")
+        total = wfh_req.get("total_days", 0)
+        date_part = (
+            from_date
+            if from_date == to_date
+            else f"{from_date} – {to_date}"
+        )
+        exceeds = wfh_req.get("exceeds_limit", False)
+        reason = (wfh_req.get("reason") or "").strip()
+        if len(reason) > 200:
+            reason = reason[:200] + "…"
+
+        text = (
+            f":house_with_garden: *New WFH Request*\n"
+            f"*Employee:* {emp_name} ({emp_id}{' · ' + dept if dept else ''})\n"
+            f"*Dates:* {date_part} · {total} day{'s' if total != 1 else ''}"
+            + (f" ⚠️ _Exceeds monthly limit_" if exceeds else "") +
+            f"\n*Reason:* {reason}"
+        )
+        http_requests.post(
+            slack_url,
+            json={"text": text},
+            headers={"Content-Type": "application/json"},
+            timeout=5,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[WFH] Slack notification failed (non-blocking): {exc}")
+
+
 # ===================== OVERTIME HELPERS =====================
 
 def get_days_in_month(date_str: str) -> int:
@@ -4779,6 +4819,11 @@ async def create_wfh_request(body: WFHRequestCreate, request: Request):
         "created_at": now, "updated_at": now
     }
     await db.wfh_requests.insert_one(new_req)
+    # Fire-and-forget Slack notification (does not block or fail the request)
+    try:
+        await notify_wfh_submitted(new_req, my_emp)
+    except Exception:  # noqa: BLE001
+        pass
     return {k: v for k, v in new_req.items() if k != "_id"}
 
 
