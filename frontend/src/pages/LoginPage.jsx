@@ -13,7 +13,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!loading && user) {
-      navigate("/employees", { replace: true });
+      navigate("/dashboard", { replace: true });
     }
     // Show error from query param (e.g. access denied)
     const params = new URLSearchParams(window.location.search);
@@ -65,7 +65,7 @@ export default function LoginPage() {
         }
       } catch {}
 
-      navigate("/employees", { replace: true });
+      navigate("/dashboard", { replace: true });
     } catch (err) {
       setErrorMsg(err.message || "Sign-in failed. Please try again.");
       toast.error(err.message || "Sign-in failed");
