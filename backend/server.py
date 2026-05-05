@@ -4192,7 +4192,16 @@ async def update_daily_attendance(attendance_id: str, body: DailyAttendanceUpdat
     if body.status not in valid:
         raise HTTPException(400, f"Invalid status. Must be one of: {', '.join(valid)}")
 
-    update: dict = {"status": body.status, "updated_at": datetime.now(timezone.utc).isoformat()}
+    # Fetch employee for biometric_employee_code
+    emp = await db.employees.find_one({"employee_id": existing["employee_id"]}, {"_id": 0, "biometric_employee_code": 1})
+
+    update: dict = {
+        "status": body.status,
+        "source": "manual",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if emp and emp.get("biometric_employee_code"):
+        update["biometric_employee_code"] = emp["biometric_employee_code"]
     if body.notes is not None:
         update["notes"] = body.notes
     if body.check_in is not None:
@@ -4237,10 +4246,14 @@ async def create_manual_attendance(request: Request):
     shift = await get_active_shift_for_date_async(employee_id, datetime.strptime(date_str, "%Y-%m-%d"))
     shift_id = shift["shift_id"] if shift else None
 
+    bio_code = emp.get("biometric_employee_code") or None
+
     record = await upsert_daily_attendance(employee_id, date_str, {
         "shift_id": shift_id, "status": status,
         "check_in": check_in, "check_out": check_out,
-        "total_hours": None, "is_late": False, "late_minutes": 0, "notes": notes
+        "total_hours": None, "is_late": False, "late_minutes": 0,
+        "notes": notes, "source": "manual",
+        **({"biometric_employee_code": bio_code} if bio_code else {}),
     })
     return record
 
