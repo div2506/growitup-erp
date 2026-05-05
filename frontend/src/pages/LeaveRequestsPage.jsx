@@ -421,7 +421,7 @@ export default function LeaveRequestsPage() {
       </div>
 
       {/* Search */}
-      <div className="relative mb-4 max-w-sm">
+      <div className="relative mb-4 w-full sm:max-w-sm">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#B3B3B3]" />
         <Input
           data-testid="leave-requests-search"

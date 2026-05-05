@@ -282,8 +282,8 @@ export default function DashboardPage() {
         </span>
       </div>
 
-      {/* Main grid: 3 cols, 2 rows — col 3 spans both rows */}
-      <div className="grid grid-cols-1 gap-4 md:gap-5" style={{ gridTemplateColumns: "2fr 2fr 1fr" }}>
+      {/* Main grid: 3 cols on md+, single col on mobile — col 3 spans both rows on md+ */}
+      <div className="grid grid-cols-1 md:grid-cols-[2fr_2fr_1fr] gap-4 md:gap-5">
 
         {/* Row 1 Col 1 — On Leave Today */}
         <SectionCard

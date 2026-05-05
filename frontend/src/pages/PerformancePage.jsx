@@ -133,9 +133,9 @@ function MetricsSection({ records, dbType }) {
   return (
     <div className="mb-2">
       <p className="text-[#B3B3B3] text-xs uppercase tracking-wider mb-2 font-medium">{dbType}</p>
-      <div className="grid grid-cols-3 gap-3 mb-3">{row1}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">{row1}</div>
       {row2.length > 0 && (
-        <div className="grid gap-3 mb-3" style={{ gridTemplateColumns: `repeat(${row2.length}, minmax(0,1fr))` }}>
+        <div className={`grid gap-3 mb-3 ${row2.length === 1 ? "grid-cols-1" : row2.length === 2 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1 sm:grid-cols-3"}`}>
           {row2}
         </div>
       )}
@@ -433,7 +433,7 @@ function PerformanceView({ employeeId, employeeName, employee, onBack, showBackL
             </div>
           )}
         </div>
-        <div className="w-full sm:w-auto sm:ml-auto flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
+        <div className="w-full sm:w-auto sm:ml-auto flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* Upgrade Your Level button — always visible, enabled based on 90-day avg */}
           <button
             data-testid="upgrade-level-btn"
@@ -477,7 +477,7 @@ function PerformanceView({ employeeId, employeeName, employee, onBack, showBackL
 
       {/* Filters */}
       <div className="flex items-center gap-3 mb-4 flex-wrap" data-testid="performance-filters">
-        <div className="relative flex-1 min-w-48">
+        <div className="relative flex-1 min-w-0 sm:min-w-48">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#B3B3B3]" />
           <input
             data-testid="perf-search"

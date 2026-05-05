@@ -1837,7 +1837,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Top group tabs */}
-      <div className="flex gap-1 mb-6 bg-[#191919] border border-white/10 p-1 rounded-lg w-fit">
+      <div className="flex gap-1 mb-5 md:mb-6 bg-[#191919] border border-white/10 p-1 rounded-lg w-fit overflow-x-auto no-scrollbar">
         {groups.map(({ val, label }) => (
           <button
             key={val}
@@ -1851,33 +1851,34 @@ export default function SettingsPage() {
         ))}
       </div>
 
-      {/* Sidebar + content layout */}
-      <div className="flex gap-6 items-start">
-        {/* Left sidebar */}
-        <div className="w-48 shrink-0">
-          <nav className="flex flex-col gap-0.5">
+      {/* Sidebar + content layout — stacked on mobile, side-by-side on md+ */}
+      <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-start">
+        {/* Left sidebar — horizontal scrollable pills on mobile, vertical nav on md+ */}
+        <div className="w-full md:w-48 md:shrink-0">
+          <nav className="flex flex-row md:flex-col gap-1 md:gap-0.5 overflow-x-auto no-scrollbar">
             {currentItems.map(({ val, label, icon: Icon }) => (
               <button
                 key={val}
                 onClick={() => handleSubChange(val)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left ${
+                className={`flex items-center gap-2 md:gap-3 px-3 py-2 md:py-2.5 rounded-lg text-xs md:text-sm transition-colors text-left whitespace-nowrap shrink-0 md:w-full ${
                   currentSub === val
                     ? "bg-[#2F2F2F] text-white font-medium"
                     : "text-[#B3B3B3] hover:text-white hover:bg-white/5"
                 }`}
               >
-                <Icon size={15} className="shrink-0" />
+                <Icon size={14} className="shrink-0" />
                 {label}
               </button>
             ))}
           </nav>
         </div>
 
-        {/* Divider */}
-        <div className="w-px self-stretch bg-white/10 shrink-0" />
+        {/* Divider — horizontal on mobile, vertical on md+ */}
+        <div className="hidden md:block w-px self-stretch bg-white/10 shrink-0" />
+        <div className="block md:hidden h-px w-full bg-white/10 shrink-0" />
 
         {/* Content */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 w-full">
           {currentSub === "departments" && <DepartmentsTab />}
           {currentSub === "job-positions" && <JobPositionsTab />}
           {currentSub === "teams" && <TeamsTab />}

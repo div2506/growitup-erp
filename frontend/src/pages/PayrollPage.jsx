@@ -494,12 +494,12 @@ export default function PayrollPage() {
         </div>
 
         {/* Month Selector */}
-        <div className="flex items-center gap-2">
-          <label className="text-[#B3B3B3] text-sm">Month:</label>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <label className="text-[#B3B3B3] text-sm whitespace-nowrap">Month:</label>
           <select
             value={month}
             onChange={e => setMonth(e.target.value)}
-            className="bg-[#2F2F2F] border border-white/10 text-white text-sm rounded-lg px-3 py-2 focus:outline-none"
+            className="bg-[#2F2F2F] border border-white/10 text-white text-sm rounded-lg px-3 py-2 focus:outline-none flex-1 sm:flex-none"
           >
             {monthOptions.map(m => (
               <option key={m} value={m}>{fmtMonthLabel(m)}</option>

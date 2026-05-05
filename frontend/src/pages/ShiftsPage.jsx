@@ -168,7 +168,7 @@ export default function ShiftsPage() {
         {loadingShift ? (
           <div className="h-20 bg-white/5 rounded-lg animate-pulse" />
         ) : shiftInfo ? (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <p className="text-[#B3B3B3] text-xs mb-1">Shift Name</p>
               <p className="text-white font-semibold">{shiftInfo.shift_name}</p>
@@ -195,11 +195,11 @@ export default function ShiftsPage() {
       </div>
 
       {/* Request Shift Change */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h2 className="text-white font-semibold">Shift Change Requests</h2>
         <button
           onClick={() => { setShowRequestForm(true); setForm({ requested_shift_id: "", from_date: "", to_date: "", reason: "" }); setFormErrors({}); }}
-          className="flex items-center gap-2 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+          className="flex items-center gap-2 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap"
         >
           <RefreshCw size={14} /> Request Shift Change
         </button>

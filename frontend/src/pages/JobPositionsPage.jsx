@@ -112,10 +112,10 @@ export default function JobPositionsPage() {
   };
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 md:p-8">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5 md:mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
+          <h1 className="text-xl md:text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
             Job Positions
           </h1>
           <p className="text-[#B3B3B3] text-sm mt-0.5">{filtered.length} total</p>
@@ -157,8 +157,8 @@ export default function JobPositionsPage() {
           <p className="text-[#B3B3B3] text-sm">Add your first job position to get started</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-white/10 overflow-hidden">
-          <table className="w-full" data-testid="positions-table">
+        <div className="rounded-xl border border-white/10 overflow-hidden overflow-x-auto">
+          <table className="w-full min-w-[560px]" data-testid="positions-table">
             <thead className="bg-[#191919] border-b border-white/10">
               <tr>
                 <th className="text-left py-3 px-5 text-xs font-medium text-[#B3B3B3] uppercase tracking-wider">Position</th>

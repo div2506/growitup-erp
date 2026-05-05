@@ -607,7 +607,7 @@ export default function AttendancePage() {
           </div>
 
           {/* View Toggle (admin gets "All Employees" option) */}
-          <div className="flex gap-1 bg-[#2F2F2F] rounded-lg p-1 border border-white/10">
+          <div className="flex gap-1 bg-[#2F2F2F] rounded-lg p-1 border border-white/10 self-start sm:self-auto">
             <button onClick={() => setViewMode("calendar")}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${viewMode === "calendar" ? "bg-white/10 text-white" : "text-[#B3B3B3] hover:text-white"}`}>
               <Calendar size={13} /> Calendar
@@ -629,7 +629,7 @@ export default function AttendancePage() {
         <div className="flex flex-wrap items-center gap-3 mt-4">
           <div className="flex items-center gap-2 bg-[#2F2F2F] border border-white/10 rounded-lg px-2 py-1">
             <button onClick={prevMonth} className="p-1.5 hover:bg-white/10 rounded text-[#B3B3B3] hover:text-white transition-colors"><ChevronLeft size={15} /></button>
-            <span className="text-white text-sm font-medium px-2 min-w-[130px] text-center">{monthLabel}</span>
+            <span className="text-white text-sm font-medium px-2 min-w-[110px] md:min-w-[130px] text-center">{monthLabel}</span>
             <button onClick={nextMonth} disabled={isNextDisabled}
               className="p-1.5 hover:bg-white/10 rounded text-[#B3B3B3] hover:text-white disabled:opacity-30 transition-colors">
               <ChevronRight size={15} />
@@ -637,12 +637,12 @@ export default function AttendancePage() {
           </div>
 
           {isAdmin && viewMode !== "all" && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
               <Select
                 value={selectedEmployee || myEmployee?.employee_id || ""}
                 onValueChange={v => setSelectedEmployee(v)}
               >
-                <SelectTrigger className="bg-[#2F2F2F] border-white/10 text-white min-w-[200px] focus:ring-0">
+                <SelectTrigger className="bg-[#2F2F2F] border-white/10 text-white w-full sm:min-w-[200px] focus:ring-0">
                   <SelectValue placeholder="Select employee" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#2F2F2F] border-white/10 max-h-60">
