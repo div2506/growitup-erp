@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 # In-memory session cache: token → (user_dict, expires_at)
 _session_cache: dict = {}
-_SESSION_CACHE_TTL = 60  # seconds before re-validating against DB
+_SESSION_CACHE_TTL = 300  # seconds before re-validating against DB (5 minutes)
 
 
 # ===================== MODELS =====================
@@ -381,6 +381,16 @@ async def get_current_user(request: Request):
     user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
     if not user:
         raise HTTPException(401, "User not found")
+
+    # Sliding session: renew if within 7 days of expiry (fire-and-forget)
+    days_left = (expires_at - now).total_seconds() / 86400
+    if days_left < 7:
+        new_expiry = now + timedelta(days=30)
+        asyncio.create_task(db.user_sessions.update_one(
+            {"session_token": session_token},
+            {"$set": {"expires_at": new_expiry}}
+        ))
+        expires_at = new_expiry
 
     # Store in cache
     _session_cache[session_token] = (user, expires_at, now.timestamp())
@@ -1462,14 +1472,128 @@ async def update_employee(emp_id: str, body: EmployeeCreate, request: Request):
     return {**existing, **update}
 
 
-@api_router.delete("/employees/{emp_id}")
-async def delete_employee(emp_id: str, request: Request):
-    await get_current_user(request)
+@api_router.get("/employees/{emp_id}/delete-check")
+async def check_employee_delete(emp_id: str, request: Request):
+    """Check what must be resolved before this employee can be deleted."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can delete employees")
+
     emp = await db.employees.find_one({"employee_id": emp_id}, {"_id": 0})
     if not emp:
         raise HTTPException(404, "Employee not found")
+
+    blockers = []
+
+    # 1. Other employees that report to this person
+    subordinates = await db.employees.find(
+        {"reporting_manager_id": emp_id, "employee_id": {"$ne": emp_id}},
+        {"_id": 0, "employee_id": 1, "first_name": 1, "last_name": 1}
+    ).to_list(100)
+    if subordinates:
+        blockers.append({
+            "type": "reporting_manager",
+            "title": "Reporting Manager",
+            "description": f"{len(subordinates)} employee(s) have this person as their Reporting Manager. Reassign them first.",
+            "action": "Go to each employee's Work Info and change their Reporting Manager.",
+            "items": [{"id": e["employee_id"], "name": f"{e['first_name']} {e['last_name']} ({e['employee_id']})"} for e in subordinates]
+        })
+
+    # 2. Teams managed by this person
+    managed_teams = await db.teams.find(
+        {"team_manager_id": emp_id},
+        {"_id": 0, "team_id": 1, "team_name": 1}
+    ).to_list(100)
+    if managed_teams:
+        blockers.append({
+            "type": "team_manager",
+            "title": "Team Manager",
+            "description": f"This employee manages {len(managed_teams)} team(s). Assign a new manager first.",
+            "action": "Go to Settings → Teams and change the manager for each team.",
+            "items": [{"id": t["team_id"], "name": t["team_name"]} for t in managed_teams]
+        })
+
+    # Summary of what will be deleted once blockers are cleared
+    deletable = {
+        "leave_requests": await db.leave_requests.count_documents({"employee_id": emp_id}),
+        "wfh_requests": await db.wfh_requests.count_documents({"employee_id": emp_id}),
+        "overtime_requests": await db.overtime_requests.count_documents({"employee_id": emp_id}),
+        "shift_change_requests": await db.shift_change_requests.count_documents({"employee_id": emp_id}),
+        "attendance_records": await db.daily_attendance.count_documents({"employee_id": emp_id}),
+        "attendance_entries": await db.attendance_entries.count_documents({"employee_id": emp_id}),
+        "payroll_records": await db.payroll.count_documents({"employee_id": emp_id}) if await db.list_collection_names() else 0,
+        "performance_records": await db.performance_data.count_documents({"employee_id": emp_id}),
+    }
+
+    return {
+        "employee_id": emp_id,
+        "employee_name": f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip(),
+        "can_delete": len(blockers) == 0,
+        "blockers": blockers,
+        "will_delete": deletable,
+    }
+
+
+@api_router.delete("/employees/{emp_id}")
+async def delete_employee(emp_id: str, request: Request):
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can delete employees")
+
+    emp = await db.employees.find_one({"employee_id": emp_id}, {"_id": 0})
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+
+    # Re-run blocker check — cannot delete if blockers exist
+    subordinates = await db.employees.count_documents({"reporting_manager_id": emp_id, "employee_id": {"$ne": emp_id}})
+    managed_teams = await db.teams.count_documents({"team_manager_id": emp_id})
+    if subordinates > 0 or managed_teams > 0:
+        raise HTTPException(400, "Resolve all blockers before deleting this employee. Use GET /employees/{emp_id}/delete-check for details.")
+
+    # Cascade delete all related data
+    await asyncio.gather(
+        db.leave_requests.delete_many({"employee_id": emp_id}),
+        db.wfh_requests.delete_many({"employee_id": emp_id}),
+        db.overtime_requests.delete_many({"employee_id": emp_id}),
+        db.shift_change_requests.delete_many({"employee_id": emp_id}),
+        db.daily_attendance.delete_many({"employee_id": emp_id}),
+        db.attendance_entries.delete_many({"employee_id": emp_id}),
+        db.employee_shifts.delete_many({"employee_id": emp_id}),
+        db.leave_balance.delete_many({"employee_id": emp_id}),
+        db.leave_transactions.delete_many({"employee_id": emp_id}),
+        db.monthly_late_tracking.delete_many({"employee_id": emp_id}),
+        db.wfh_tracking.delete_many({"employee_id": emp_id}),
+        db.performance_data.delete_many({"employee_id": emp_id}),
+        db.manager_performance.delete_many({"employee_id": emp_id}),
+        db.biometric_logs.delete_many({"resolved_employee_id": emp_id}),
+    )
+
+    # Remove from teams membership
+    await db.teams.update_many(
+        {"member_ids": emp_id},
+        {"$pull": {"member_ids": emp_id}}
+    )
+
+    # Delete user session if work email matches a user account
+    work_email = emp.get("work_email", "")
+    if work_email:
+        linked_user = await db.users.find_one(
+            {"email": {"$regex": f"^{work_email}$", "$options": "i"}}, {"_id": 0, "user_id": 1}
+        )
+        if linked_user:
+            await db.user_sessions.delete_many({"user_id": linked_user["user_id"]})
+
+    # Finally delete the employee
     await db.employees.delete_one({"employee_id": emp_id})
-    return {"message": "Deleted"}
+    return {"message": f"Employee {emp_id} and all related data deleted successfully"}
 
 
 class SelfEditBody(BaseModel):

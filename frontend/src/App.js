@@ -33,6 +33,38 @@ axios.interceptors.request.use((config) => {
   return config;
 });
 
+// Global 401 handler: when any request returns 401, verify with /auth/me before logging out.
+// This prevents false logouts from transient server errors on data endpoints.
+let _verifyingSession = false;
+const API_BASE = `${process.env.REACT_APP_BACKEND_URL}/api`;
+axios.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const status = error?.response?.status;
+    const requestUrl = error?.config?.url || "";
+    // Only act on 401; ignore if it's already from /auth/me (avoid loop)
+    if (status === 401 && !requestUrl.includes("/auth/me") && !_verifyingSession) {
+      _verifyingSession = true;
+      try {
+        const token = localStorage.getItem("session_token");
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const res = await fetch(`${API_BASE}/auth/me`, { credentials: "include", headers });
+        if (res.status === 401 || res.status === 403) {
+          // Session is genuinely dead — clear and redirect to login
+          localStorage.removeItem("session_token");
+          window.location.href = "/login";
+        }
+        // If /auth/me is OK (2xx/5xx), session is fine — transient 401 on data endpoint, do nothing
+      } catch {
+        // Network error during verify — keep user logged in
+      } finally {
+        _verifyingSession = false;
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 function AppRouter() {
   return (
     <Routes>

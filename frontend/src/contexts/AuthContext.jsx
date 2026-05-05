@@ -40,9 +40,10 @@ export function AuthProvider({ children }) {
         setLoading(false); setEmployeeLoading(false);
         return;
       }
-      const userData = await response.json();
+      let userData;
+      try { userData = await response.json(); } catch { userData = null; }
       if (!userData || !userData.user_id) {
-        setUser(null); setMyEmployee(null);
+        // Malformed response — don't log out, just skip update
         setLoading(false); setEmployeeLoading(false);
         return;
       }
