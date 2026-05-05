@@ -747,6 +747,7 @@ function AttendanceIntegrationTab() {
 
   const baseUrl = process.env.REACT_APP_BACKEND_URL || "";
   const endpointUrl = `${baseUrl}/api/attendance/entries`;
+  const bulkEndpointUrl = `${baseUrl}/api/attendance/entries/bulk`;
   const exampleBodyBiometric = JSON.stringify(
     { source: "easytime_pro", biometric_employee_code: "12", timestamp: "2026-05-04T09:15:30" },
     null, 2
@@ -755,6 +756,23 @@ function AttendanceIntegrationTab() {
     { employee_id: "GM002", timestamp: "2026-05-04T09:15:30" },
     null, 2
   );
+  const exampleBulkBody = JSON.stringify({
+    source: "easytime_pro",
+    entries: [
+      { biometric_employee_code: "12", timestamp: "2026-05-04T09:15:30" },
+      { biometric_employee_code: "7",  timestamp: "2026-05-04T09:18:00" },
+      { employee_id: "GM003",          timestamp: "2026-05-04T09:20:10" },
+    ]
+  }, null, 2);
+  const bulkSuccessResponse = JSON.stringify({
+    success: true,
+    summary: { total: 3, recorded: 2, duplicate: 1, skipped: 0, error: 0 },
+    results: [
+      { index: 0, status: "recorded",  employee_id: "GM001", employee_name: "Raj Shah",   timestamp: "2026-05-04T09:15:30" },
+      { index: 1, status: "duplicate", employee_id: "GM002", employee_name: "Priya Patel", timestamp: "2026-05-04T09:18:00" },
+      { index: 2, status: "recorded",  employee_id: "GM003", employee_name: "Amit Nair",  timestamp: "2026-05-04T09:20:10" },
+    ]
+  }, null, 2);
   const successResponse = JSON.stringify(
     { success: true, message: "Attendance entry recorded", entry_id: "ae_abc123def456" },
     null, 2
@@ -792,23 +810,45 @@ function AttendanceIntegrationTab() {
         </div>
       </div>
 
-      {/* Endpoint */}
+      {/* Endpoints */}
       <section data-testid="att-int-endpoint">
         <h4 className="text-[#B3B3B3] text-xs uppercase tracking-wider font-semibold mb-2 flex items-center gap-2">
-          <ExternalLink size={13} /> API Endpoint
+          <ExternalLink size={13} /> API Endpoints
         </h4>
-        <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4 flex items-center gap-3">
-          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-green-500/10 text-green-400 border border-green-500/30 shrink-0">POST</span>
-          <code className="flex-1 text-white text-sm font-mono break-all" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-            {endpointUrl}
-          </code>
-          <button
-            data-testid="copy-att-endpoint-btn"
-            onClick={() => copy(endpointUrl, "Endpoint URL")}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs text-white transition-colors"
-          >
-            <Copy size={13} /> Copy URL
-          </button>
+        <div className="space-y-2">
+          {/* Single */}
+          <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4">
+            <p className="text-[#B3B3B3] text-xs mb-2">Single punch — one entry per call</p>
+            <div className="flex items-center gap-3">
+              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-green-500/10 text-green-400 border border-green-500/30 shrink-0">POST</span>
+              <code className="flex-1 text-white text-sm font-mono break-all" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                {endpointUrl}
+              </code>
+              <button
+                data-testid="copy-att-endpoint-btn"
+                onClick={() => copy(endpointUrl, "Endpoint URL")}
+                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs text-white transition-colors"
+              >
+                <Copy size={13} /> Copy
+              </button>
+            </div>
+          </div>
+          {/* Bulk */}
+          <div className="bg-[#2F2F2F] rounded-xl border border-blue-500/20 p-4">
+            <p className="text-blue-400 text-xs mb-2 font-medium">Bulk — send up to 5,000 punches in one API call <span className="text-[#B3B3B3] font-normal">(recommended for daily batch sync)</span></p>
+            <div className="flex items-center gap-3">
+              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-green-500/10 text-green-400 border border-green-500/30 shrink-0">POST</span>
+              <code className="flex-1 text-white text-sm font-mono break-all" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                {bulkEndpointUrl}
+              </code>
+              <button
+                onClick={() => copy(bulkEndpointUrl, "Bulk Endpoint URL")}
+                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs text-white transition-colors"
+              >
+                <Copy size={13} /> Copy
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -999,6 +1039,38 @@ X-API-Key: <your-api-key>`}
   "detail": "Invalid or missing API key"
 }`}
             </pre>
+          </div>
+        </div>
+      </section>
+
+      <hr className="border-white/10" />
+
+      {/* Bulk request format */}
+      <section>
+        <h4 className="text-[#B3B3B3] text-xs uppercase tracking-wider font-semibold mb-2 flex items-center gap-2">
+          <FileJson size={13} /> Bulk Request Format
+        </h4>
+        <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4 space-y-4">
+          <p className="text-[#B3B3B3] text-sm">Send an <code className="bg-white/5 px-1.5 py-0.5 rounded text-white text-xs font-mono">entries</code> array. Set <code className="bg-white/5 px-1.5 py-0.5 rounded text-white text-xs font-mono">source</code> once at the top level (applies to all rows) or per entry.</p>
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[#B3B3B3] text-xs">Request body</p>
+              <button onClick={() => copy(exampleBulkBody, "Bulk request body")} className="flex items-center gap-1.5 px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-xs text-white transition-colors">
+                <Copy size={11} /> Copy
+              </button>
+            </div>
+            <pre className="bg-[#191919] border border-white/10 rounded-lg p-3 text-white text-sm font-mono whitespace-pre overflow-x-auto" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+{exampleBulkBody}
+            </pre>
+          </div>
+          <div>
+            <p className="text-[#B3B3B3] text-xs mb-1.5">Response — summary + per-row result</p>
+            <pre className="bg-[#191919] border border-white/10 rounded-lg p-3 text-white text-sm font-mono whitespace-pre overflow-x-auto" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+{bulkSuccessResponse}
+            </pre>
+          </div>
+          <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3">
+            <p className="text-blue-300 text-xs">Each row status: <code className="bg-white/5 px-1 rounded font-mono">recorded</code> · <code className="bg-white/5 px-1 rounded font-mono">duplicate</code> · <code className="bg-white/5 px-1 rounded font-mono">skipped</code> (unmapped code) · <code className="bg-white/5 px-1 rounded font-mono">error</code>. Duplicates and skipped rows never cause the whole batch to fail.</p>
           </div>
         </div>
       </section>

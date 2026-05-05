@@ -4201,6 +4201,167 @@ async def create_attendance_entry(body: AttendanceEntryCreate, request: Request)
     return {"success": True, "message": "Attendance entry recorded", "entry_id": entry["entry_id"]}
 
 
+class AttendanceBulkEntry(BaseModel):
+    employee_id: Optional[str] = None
+    biometric_employee_code: Optional[str] = None
+    timestamp: str
+    source: Optional[str] = None
+
+class AttendanceBulkCreate(BaseModel):
+    entries: List[AttendanceBulkEntry]
+    source: Optional[str] = None   # default source for all entries if not set per-row
+
+
+@api_router.post("/attendance/entries/bulk")
+@api_router.post("/attendance/bulk")
+async def create_attendance_bulk(body: AttendanceBulkCreate, request: Request):
+    """Bulk biometric endpoint — send an array of punches in one call.
+    Requires X-API-Key header or ?api_key= query param.
+    Each entry can use employee_id or biometric_employee_code.
+    Returns per-row results: recorded / duplicate / skipped / error."""
+    api_key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+    if api_key != ATTENDANCE_API_KEY:
+        raise HTTPException(401, "Invalid or missing API key")
+
+    if not body.entries:
+        raise HTTPException(400, "entries array is empty")
+
+    if len(body.entries) > 5000:
+        raise HTTPException(400, "Maximum 5000 entries per request")
+
+    # Pre-load all employees once to avoid N DB lookups
+    all_emps = await db.employees.find({}, {"_id": 0, "employee_id": 1, "first_name": 1, "last_name": 1, "biometric_employee_code": 1}).to_list(5000)
+    emp_by_id   = {e["employee_id"]: e for e in all_emps}
+    emp_by_code = {}
+    for e in all_emps:
+        code = e.get("biometric_employee_code")
+        if code:
+            emp_by_code.setdefault(code, []).append(e)
+
+    # Pre-load existing punches for the date range in this batch to speed up dedup
+    timestamps_in_batch = []
+    for row in body.entries:
+        try:
+            timestamps_in_batch.append(datetime.fromisoformat(row.timestamp).strftime("%Y-%m-%d"))
+        except Exception:
+            pass
+    date_set = list(set(timestamps_in_batch))
+
+    existing_punches: set = set()
+    if date_set:
+        cursor = db.attendance_entries.find(
+            {"punch_date": {"$in": date_set}},
+            {"_id": 0, "employee_id": 1, "punch_time": 1}
+        )
+        async for doc in cursor:
+            existing_punches.add((doc["employee_id"], doc["punch_time"]))
+
+    now = datetime.now(timezone.utc).isoformat()
+    default_source = body.source or "biometric"
+
+    results = []
+    new_entries = []
+    logs = []
+    dates_to_process: set = set()  # (employee_id, date_str) pairs to reprocess
+
+    for i, row in enumerate(body.entries):
+        row_source = row.source or default_source
+        log_base = {
+            "log_id": f"bl_{uuid.uuid4().hex[:12]}",
+            "source": row_source,
+            "biometric_employee_code": row.biometric_employee_code or None,
+            "employee_id_input": row.employee_id or None,
+            "timestamp_input": row.timestamp,
+            "called_at": now,
+        }
+
+        if not row.employee_id and not row.biometric_employee_code:
+            logs.append({**log_base, "status": "error", "message": "Neither employee_id nor biometric_employee_code provided", "resolved_employee_id": None})
+            results.append({"index": i, "status": "error", "message": "Neither employee_id nor biometric_employee_code provided"})
+            continue
+
+        # Resolve employee from pre-loaded map
+        if row.biometric_employee_code:
+            matches = emp_by_code.get(row.biometric_employee_code, [])
+            if not matches:
+                logs.append({**log_base, "status": "skipped", "message": f"Biometric code {row.biometric_employee_code} not mapped", "resolved_employee_id": None})
+                results.append({"index": i, "status": "skipped", "message": f"Biometric code {row.biometric_employee_code} not mapped"})
+                continue
+            if len(matches) > 1:
+                logs.append({**log_base, "status": "error", "message": f"Multiple employees for code {row.biometric_employee_code}", "resolved_employee_id": None})
+                results.append({"index": i, "status": "error", "message": f"Multiple employees for code {row.biometric_employee_code}"})
+                continue
+            emp = matches[0]
+        else:
+            emp = emp_by_id.get(row.employee_id)
+            if not emp:
+                logs.append({**log_base, "status": "error", "message": f"Employee {row.employee_id} not found", "resolved_employee_id": None})
+                results.append({"index": i, "status": "error", "message": f"Employee {row.employee_id} not found"})
+                continue
+
+        try:
+            punch_dt = datetime.fromisoformat(row.timestamp)
+            punch_date = punch_dt.strftime("%Y-%m-%d")
+            punch_time_str = punch_dt.isoformat()
+        except ValueError:
+            logs.append({**log_base, "status": "error", "message": "Invalid timestamp format", "resolved_employee_id": emp.get("employee_id")})
+            results.append({"index": i, "status": "error", "message": "Invalid timestamp. Use ISO format: YYYY-MM-DDTHH:MM:SS"})
+            continue
+
+        resolved_id = emp["employee_id"]
+        emp_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+
+        # Dedup check using pre-loaded set
+        if (resolved_id, punch_time_str) in existing_punches:
+            logs.append({**log_base, "status": "duplicate", "message": "Punch already recorded", "resolved_employee_id": resolved_id, "employee_name": emp_name, "punch_date": punch_date, "punch_time": punch_time_str})
+            results.append({"index": i, "status": "duplicate", "employee_id": resolved_id, "employee_name": emp_name, "timestamp": row.timestamp})
+            continue
+
+        # Mark as seen so duplicates within the same batch are also caught
+        existing_punches.add((resolved_id, punch_time_str))
+
+        entry = {
+            "entry_id": f"ae_{uuid.uuid4().hex[:12]}",
+            "employee_id": resolved_id,
+            "punch_time": punch_time_str,
+            "punch_date": punch_date,
+            "created_at": now,
+            "source": row_source,
+        }
+        if row.biometric_employee_code:
+            entry["biometric_employee_code"] = row.biometric_employee_code
+
+        new_entries.append(entry)
+        logs.append({**log_base, "status": "recorded", "message": "Punch recorded", "resolved_employee_id": resolved_id, "employee_name": emp_name, "punch_date": punch_date, "punch_time": punch_time_str})
+        results.append({"index": i, "status": "recorded", "employee_id": resolved_id, "employee_name": emp_name, "timestamp": row.timestamp})
+        dates_to_process.add((resolved_id, punch_date))
+
+    # Bulk insert all new entries at once
+    if new_entries:
+        await db.attendance_entries.insert_many(new_entries)
+
+    # Bulk insert logs
+    if logs:
+        await db.biometric_logs.insert_many(logs)
+
+    # Re-process daily attendance for all affected employee+date pairs
+    if dates_to_process:
+        await asyncio.gather(*[
+            process_daily_attendance_fn(emp_id, date_str)
+            for emp_id, date_str in dates_to_process
+        ])
+
+    summary = {
+        "total": len(body.entries),
+        "recorded": sum(1 for r in results if r["status"] == "recorded"),
+        "duplicate": sum(1 for r in results if r["status"] == "duplicate"),
+        "skipped": sum(1 for r in results if r["status"] == "skipped"),
+        "error": sum(1 for r in results if r["status"] == "error"),
+    }
+
+    return {"success": True, "summary": summary, "results": results}
+
+
 @api_router.get("/attendance/biometric-logs")
 async def get_biometric_logs(
     request: Request,
