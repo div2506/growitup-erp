@@ -134,7 +134,7 @@ function DateDetailModal({ date, record, isAdmin, onClose, onEdit }) {
               <CloudOff size={28} className="text-[#B3B3B3] mx-auto mb-2" />
               <p className="text-[#B3B3B3]">No attendance record for this date</p>
               {isAdmin && (
-                <button onClick={onEdit} className="mt-3 px-4 py-2 bg-[#E53935] hover:bg-[#F44336] text-white rounded-lg text-sm font-medium">
+                <button onClick={onEdit} className="mt-3 px-4 py-2 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 rounded-lg text-sm font-medium">
                   Add Attendance
                 </button>
               )}
@@ -267,7 +267,7 @@ function EditAttendanceModal({ date, record, employeeId, onClose, onSaved }) {
         </div>
         <div className="px-5 pb-5 flex gap-3">
           <Button variant="outline" onClick={onClose} className="flex-1 bg-transparent border-white/20 text-[#B3B3B3] hover:bg-white/5 min-h-[44px]">Cancel</Button>
-          <Button onClick={handleSave} disabled={saving} className="flex-1 bg-[#E53935] hover:bg-[#F44336] text-white min-h-[44px]">
+          <Button onClick={handleSave} disabled={saving} className="flex-1 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 min-h-[44px]">
             {saving ? "Saving..." : "Save"}
           </Button>
         </div>
@@ -514,6 +514,13 @@ export default function AttendancePage() {
 
   const [currentMonth, setCurrentMonth] = useState(() => monthStart(new Date()));
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+
+  // Auto-select own attendance once myEmployee is available
+  useEffect(() => {
+    if (myEmployee?.employee_id && !selectedEmployee) {
+      setSelectedEmployee(myEmployee.employee_id);
+    }
+  }, [myEmployee?.employee_id]);
   const [viewMode, setViewMode] = useState("calendar");  // "calendar" | "table" | "all"
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [summary, setSummary] = useState({ present:0,half_day:0,absent:0,leave:0,wfh:0,holiday:0,late_count:0,total_hours:0 });
@@ -525,7 +532,7 @@ export default function AttendancePage() {
   const [detailModal, setDetailModal] = useState(null);  // { date, record }
   const [editModal, setEditModal] = useState(null);      // { date, record }
 
-  const targetEmployee = selectedEmployee || myEmployee?.employee_id;
+  const targetEmployee = selectedEmployee || myEmployee?.employee_id || null;
   const monthKey = fmtMonthKey(currentMonth);
 
   const fetchAttendance = useCallback(async () => {
@@ -549,10 +556,16 @@ export default function AttendancePage() {
   useEffect(() => {
     if (isAdmin) {
       axios.get(`${API}/employees`, { withCredentials: true })
-        .then(res => setAllEmployees(res.data))
+        .then(res => {
+          setAllEmployees(res.data);
+          // Super admin has no myEmployee — default to first employee in list
+          if (!myEmployee?.employee_id && res.data.length > 0) {
+            setSelectedEmployee(prev => prev || res.data[0].employee_id);
+          }
+        })
         .catch(() => {});
     }
-  }, [isAdmin]);
+  }, [isAdmin, myEmployee?.employee_id]);
 
   useEffect(() => { fetchAttendance(); }, [fetchAttendance]);
 
@@ -617,12 +630,14 @@ export default function AttendancePage() {
 
           {isAdmin && viewMode !== "all" && (
             <div className="flex items-center gap-2">
-              <Select value={selectedEmployee || "__self__"} onValueChange={v => setSelectedEmployee(v === "__self__" ? null : v)}>
+              <Select
+                value={selectedEmployee || myEmployee?.employee_id || ""}
+                onValueChange={v => setSelectedEmployee(v)}
+              >
                 <SelectTrigger className="bg-[#2F2F2F] border-white/10 text-white min-w-[200px] focus:ring-0">
                   <SelectValue placeholder="Select employee" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#2F2F2F] border-white/10 max-h-60">
-                  <SelectItem value="__self__" className="text-white focus:bg-white/10">— All / Overview —</SelectItem>
                   {allEmployees.map(e => (
                     <SelectItem key={e.employee_id} value={e.employee_id} className="text-white focus:bg-white/10">
                       {e.first_name} {e.last_name} ({e.employee_id})
@@ -630,11 +645,6 @@ export default function AttendancePage() {
                   ))}
                 </SelectContent>
               </Select>
-              {selectedEmployee && (
-                <button onClick={() => setSelectedEmployee(null)} className="p-1.5 text-[#B3B3B3] hover:text-white">
-                  <X size={15} />
-                </button>
-              )}
             </div>
           )}
 

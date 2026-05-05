@@ -213,7 +213,7 @@ function ApplyLeaveModal({ balance, onClose, onSubmitted }) {
 
         <div className="px-5 py-4 border-t border-white/10 shrink-0 flex gap-3">
           <Button variant="outline" onClick={onClose} className="flex-1 bg-transparent border-white/20 text-[#B3B3B3] hover:bg-white/5 min-h-[44px]">Cancel</Button>
-          <Button onClick={handleSubmit} disabled={submitting} className="flex-1 bg-[#E53935] hover:bg-[#F44336] text-white min-h-[44px]">
+          <Button onClick={handleSubmit} disabled={submitting} className="flex-1 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 min-h-[44px]">
             {submitting ? "Submitting..." : "Submit Request"}
           </Button>
         </div>
@@ -243,7 +243,7 @@ function CancelConfirmDialog({ request, onConfirm, onClose }) {
             setCancelling(true);
             await onConfirm();
             setCancelling(false);
-          }} className="flex-1 bg-red-500 hover:bg-red-600 text-white min-h-[44px]">
+          }} className="flex-1 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 min-h-[44px]">
             {cancelling ? "Cancelling..." : "Yes, Cancel"}
           </Button>
         </div>
@@ -523,7 +523,7 @@ export default function LeavePage() {
           <p className="text-[#B3B3B3] text-sm mt-0.5">Manage your leave requests and view balance</p>
         </div>
         <button onClick={() => setShowApplyForm(true)}
-          className="flex items-center gap-2 bg-[#E53935] hover:bg-[#F44336] text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors">
+          className="flex items-center gap-2 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 rounded-lg px-4 py-2 text-sm font-medium transition-colors">
           <Plus size={15} /> Apply for Leave
         </button>
       </div>

@@ -218,7 +218,7 @@ function RequestWFHModal({ usage, onClose, onSubmitted }) {
             <Button
               onClick={handleSubmit}
               disabled={submitting}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white border-0"
+              className="flex-1 bg-blue-500/10 border border-blue-500/40 text-blue-400 hover:bg-blue-500/20 hover:border-blue-500/60 border-0"
             >
               {submitting ? "Submitting..." : "Submit Request"}
             </Button>
@@ -253,7 +253,7 @@ function CancelConfirmDialog({ reqId, onClose, onCancelled }) {
         <p className="text-[#B3B3B3] text-sm">Are you sure you want to cancel this WFH request?</p>
         <div className="flex gap-3 pt-2">
           <Button variant="outline" onClick={onClose} className="flex-1 bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white">Keep It</Button>
-          <Button onClick={handleCancel} disabled={submitting} className="flex-1 bg-red-600 hover:bg-red-700 text-white border-0">
+          <Button onClick={handleCancel} disabled={submitting} className="flex-1 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 border-0">
             {submitting ? "Cancelling..." : "Yes, Cancel"}
           </Button>
         </div>
@@ -321,7 +321,7 @@ export default function WFHPage() {
   }
 
   return (
-    <div className="p-4 md:p-8 max-w-4xl mx-auto">
+    <div className="p-4 md:p-8">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
@@ -333,7 +333,7 @@ export default function WFHPage() {
         {isEligible ? (
           <Button
             onClick={() => setShowModal(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white border-0 gap-2"
+            className="bg-blue-500/10 border border-blue-500/40 text-blue-400 hover:bg-blue-500/20 hover:border-blue-500/60 border-0 gap-2"
           >
             <Plus size={16} /> Request WFH
           </Button>

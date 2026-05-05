@@ -93,11 +93,14 @@ export default function Layout() {
       </nav>
 
       <div className="px-3 py-4 border-t border-white/10">
-        <div className="flex items-center gap-3 px-2 py-2 rounded-lg mb-2">
+        <button
+          onClick={() => myEmployee?.employee_id && navigate(`/employees?id=${myEmployee.employee_id}`)}
+          className="w-full flex items-center gap-3 px-2 py-2 rounded-lg mb-2 hover:bg-white/5 transition-colors text-left"
+        >
           {displayPicture ? (
-            <img src={displayPicture} alt={displayName} className="w-8 h-8 rounded-full object-cover" />
+            <img src={displayPicture} alt={displayName} className="w-8 h-8 rounded-full object-cover shrink-0" />
           ) : (
-            <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white text-xs font-bold">
+            <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white text-xs font-bold shrink-0">
               {displayName?.[0]?.toUpperCase() || "U"}
             </div>
           )}
@@ -105,7 +108,7 @@ export default function Layout() {
             <p className="text-white text-xs font-medium truncate">{displayName}</p>
             <p className="text-[#B3B3B3] text-xs truncate">{displayEmail}</p>
           </div>
-        </div>
+        </button>
         <button data-testid="logout-button" onClick={handleLogout}
           className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-[#B3B3B3] hover:text-white hover:bg-white/5 text-sm transition-colors duration-200">
           <LogOut size={16} />

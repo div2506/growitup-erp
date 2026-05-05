@@ -450,12 +450,6 @@ function EmployeePayslipView({ month }) {
         </div>
       ) : data ? (
         <div className="bg-[#2F2F2F] rounded-xl border border-white/10 p-4 md:p-6">
-          <div className="flex items-center justify-end mb-4">
-            <button onClick={handlePrint}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm transition-colors">
-              <Printer size={14} /> Print Payslip
-            </button>
-          </div>
           <div ref={printRef}>
             <PayslipContent data={data} />
           </div>
@@ -489,7 +483,7 @@ export default function PayrollPage() {
   }
 
   return (
-    <div className="p-4 md:p-8 max-w-6xl mx-auto">
+    <div className="p-4 md:p-8">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>

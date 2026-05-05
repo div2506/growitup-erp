@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { MoreVertical, Plus, Search, User } from "lucide-react";
 import { toast } from "sonner";
 import axios from "axios";
@@ -306,6 +307,7 @@ export default function EmployeesPage() {
   const [editEmployee, setEditEmployee] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [viewEmployee, setViewEmployee] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const isAdminDept = user?.is_admin || myEmployee?.department_name === "Admin";
 
@@ -314,12 +316,19 @@ export default function EmployeesPage() {
     try {
       const { data } = await axios.get(`${API}/employees`, { withCredentials: true });
       setEmployees(data);
+      // Auto-open profile if ?id= param is set
+      const idParam = searchParams.get("id");
+      if (idParam) {
+        const emp = data.find(e => e.employee_id === idParam);
+        if (emp) setViewEmployee(emp);
+        setSearchParams({}, { replace: true });
+      }
     } catch {
       toast.error("Failed to load employees");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [searchParams.get("id")]);
 
   useEffect(() => { fetchEmployees(); }, [fetchEmployees]);
 
@@ -381,7 +390,7 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* Search */}
+      {/* Search + Add Employee */}
       <div className="flex items-center gap-3 mb-5 md:mb-6">
         <div className="flex-1 relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#B3B3B3]" />
@@ -391,9 +400,19 @@ export default function EmployeesPage() {
             placeholder="Search by name, email, ID..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-[#2F2F2F] border border-white/10 text-white placeholder-[#B3B3B3] rounded-lg pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-white/30 transition-colors min-h-[44px] md:min-h-0"
+            className="w-full bg-[#2F2F2F] border border-white/10 text-white placeholder-[#B3B3B3] rounded-lg pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-white/30 transition-colors"
           />
         </div>
+        {isAdminDept && (
+          <button
+            data-testid="add-employee-btn"
+            onClick={() => { setEditEmployee(null); setShowModal(true); }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 rounded-lg text-sm font-medium transition-all whitespace-nowrap active:scale-[0.98]"
+          >
+            <Plus size={16} />
+            Add Employee
+          </button>
+        )}
       </div>
 
       {/* Employee Grid */}
@@ -512,17 +531,6 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* FAB — only for admin dept */}
-      {isAdminDept && (
-        <button
-          data-testid="add-employee-fab"
-          onClick={() => { setEditEmployee(null); setShowModal(true); }}
-          className="fixed bottom-5 right-5 md:bottom-20 md:right-8 bg-[#E53935] hover:bg-[#F44336] text-white rounded-full w-14 h-14 md:w-auto md:h-auto md:px-5 md:py-3.5 shadow-xl flex items-center gap-2 z-30 transition-colors font-medium text-sm justify-center"
-        >
-          <Plus size={20} />
-          <span className="hidden md:inline">Add Employee</span>
-        </button>
-      )}
 
       {/* Admin edit/add modal */}
       {showModal && (

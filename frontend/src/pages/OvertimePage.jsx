@@ -235,7 +235,7 @@ function LogOvertimeModal({ myEmployee, onClose, onSubmitted }) {
           <div className="flex gap-3 pt-1">
             <Button variant="outline" onClick={onClose} className="flex-1 bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white">Cancel</Button>
             <Button onClick={handleSubmit} disabled={submitting || !shiftInfo}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white border-0">
+              className="flex-1 bg-blue-500/10 border border-blue-500/40 text-blue-400 hover:bg-blue-500/20 hover:border-blue-500/60 border-0">
               {submitting ? "Submitting..." : "Log Overtime"}
             </Button>
           </div>
@@ -286,14 +286,14 @@ export default function OvertimePage() {
   const totalApprovedPay = approvedRequests.reduce((s, r) => s + (r.overtime_pay || 0), 0);
 
   return (
-    <div className="p-4 md:p-8 max-w-4xl mx-auto">
+    <div className="p-4 md:p-8">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>Overtime</h1>
           <p className="text-[#B3B3B3] text-sm mt-0.5">Log and track your overtime hours</p>
         </div>
-        <Button onClick={() => setShowModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white border-0 gap-2">
+        <Button onClick={() => setShowModal(true)} className="bg-blue-500/10 border border-blue-500/40 text-blue-400 hover:bg-blue-500/20 hover:border-blue-500/60 border-0 gap-2">
           <Plus size={16} /> Log Overtime
         </Button>
       </div>

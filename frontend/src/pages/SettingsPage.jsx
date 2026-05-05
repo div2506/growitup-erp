@@ -86,7 +86,7 @@ function DepartmentsTab() {
       <div className="flex items-center justify-between mb-4">
         <p className="text-[#B3B3B3] text-sm">{departments.length} departments</p>
         <button data-testid="add-department-button" onClick={openAdd}
-          className="flex items-center gap-2 bg-[#E53935] hover:bg-[#F44336] text-white rounded-lg px-3 py-1.5 text-sm font-medium transition-colors">
+          className="flex items-center gap-2 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors">
           <Plus size={15} /> Add Department
         </button>
       </div>
@@ -149,7 +149,7 @@ function DepartmentsTab() {
             </div>
             <div className="flex justify-end gap-3 pt-1">
               <Button variant="outline" onClick={() => setShowModal(false)} className="bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white">Cancel</Button>
-              <Button data-testid="save-department-button" onClick={handleSave} disabled={saving || editDept?.is_system} className="bg-[#E53935] hover:bg-[#F44336] text-white border-0">
+              <Button data-testid="save-department-button" onClick={handleSave} disabled={saving || editDept?.is_system} className="bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60">
                 {saving ? "Saving..." : editDept ? "Update" : "Add"}
               </Button>
             </div>
@@ -262,7 +262,7 @@ function JobPositionsTab() {
           </select>
         </div>
         <button data-testid="add-position-button" onClick={openAdd}
-          className="flex items-center gap-2 bg-[#E53935] hover:bg-[#F44336] text-white rounded-lg px-3 py-1.5 text-sm font-medium transition-colors">
+          className="flex items-center gap-2 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors">
           <Plus size={15} /> Add Position
         </button>
       </div>
@@ -361,7 +361,7 @@ function JobPositionsTab() {
             )}
             <div className="flex justify-end gap-3 pt-1">
               <Button variant="outline" onClick={() => setShowModal(false)} className="bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white">Cancel</Button>
-              <Button onClick={handleSave} disabled={saving} className="bg-[#E53935] hover:bg-[#F44336] text-white border-0">
+              <Button onClick={handleSave} disabled={saving} className="bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60">
                 {saving ? "Saving..." : editPos ? "Update" : "Add"}
               </Button>
             </div>
@@ -438,7 +438,7 @@ function TeamsTab() {
       <div className="flex items-center justify-between mb-4">
         <p className="text-[#B3B3B3] text-sm">{teams.length} teams</p>
         <button data-testid="add-team-button" onClick={openAdd}
-          className="flex items-center gap-2 bg-[#E53935] hover:bg-[#F44336] text-white rounded-lg px-3 py-1.5 text-sm font-medium transition-colors">
+          className="flex items-center gap-2 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors">
           <Plus size={15} /> Add Team
         </button>
       </div>
@@ -510,7 +510,7 @@ function TeamsTab() {
             </div>
             <div className="flex justify-end gap-3 pt-1">
               <Button variant="outline" onClick={() => setShowModal(false)} className="bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white">Cancel</Button>
-              <Button data-testid="save-team-button" onClick={handleSave} disabled={saving} className="bg-[#E53935] hover:bg-[#F44336] text-white border-0">
+              <Button data-testid="save-team-button" onClick={handleSave} disabled={saving} className="bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60">
                 {saving ? "Saving..." : editTeam ? "Update" : "Create"}
               </Button>
             </div>
@@ -606,7 +606,7 @@ function NotionIntegrationTab() {
       <div className="flex items-center justify-between mb-4">
         <p className="text-[#B3B3B3] text-sm">{databases.length} integrations</p>
         <button data-testid="add-notion-db-button" onClick={openAdd}
-          className="flex items-center gap-2 bg-[#E53935] hover:bg-[#F44336] text-white rounded-lg px-3 py-1.5 text-sm font-medium transition-colors">
+          className="flex items-center gap-2 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors">
           <Plus size={15} /> Add Integration
         </button>
       </div>
@@ -709,7 +709,7 @@ function NotionIntegrationTab() {
             </div>
             <div className="flex justify-end gap-3 pt-1">
               <Button variant="outline" onClick={() => setShowModal(false)} className="bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white">Cancel</Button>
-              <Button data-testid="save-notion-db-button" onClick={handleSave} disabled={saving} className="bg-[#E53935] hover:bg-[#F44336] text-white border-0">
+              <Button data-testid="save-notion-db-button" onClick={handleSave} disabled={saving} className="bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60">
                 {saving ? "Saving..." : editDb ? "Update" : "Add"}
               </Button>
             </div>
@@ -1087,7 +1087,7 @@ function DataImportTab() {
           data-testid="import-button"
           onClick={handleImport}
           disabled={!selectedFile || importing}
-          className="w-full flex items-center justify-center gap-2 bg-[#E53935] hover:bg-[#F44336] text-white rounded-lg px-4 py-2.5 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-center gap-2 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Upload size={15} />
           {importing ? "Importing..." : "Import"}
@@ -1198,7 +1198,7 @@ function ShiftsTab() {
       <div className="flex items-center justify-between mb-4">
         <p className="text-[#B3B3B3] text-sm">{shifts.length} shift{shifts.length !== 1 ? "s" : ""}</p>
         <button onClick={openAdd}
-          className="flex items-center gap-2 bg-[#E53935] hover:bg-[#F44336] text-white rounded-lg px-3 py-1.5 text-sm font-medium transition-colors">
+          className="flex items-center gap-2 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors">
           <Plus size={15} /> Add Shift
         </button>
       </div>
@@ -1310,7 +1310,7 @@ function ShiftsTab() {
               Cancel
             </Button>
             <Button onClick={handleSave} disabled={saving}
-              className="flex-1 bg-[#E53935] hover:bg-[#F44336] text-white min-h-[44px]">
+              className="flex-1 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 min-h-[44px]">
               {saving ? "Saving..." : "Save"}
             </Button>
           </div>
@@ -1500,7 +1500,7 @@ export function ShiftRequestsTab() {
               Cancel
             </Button>
             <Button onClick={handleReject} disabled={processing !== null}
-              className="flex-1 bg-red-500 hover:bg-red-600 text-white min-h-[44px]">
+              className="flex-1 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 min-h-[44px]">
               {processing ? "Rejecting..." : "Reject Request"}
             </Button>
           </div>
@@ -1731,7 +1731,7 @@ function HolidaysTab() {
               <Button variant="outline" onClick={() => setDeleteConfirm(null)}
                 className="flex-1 bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white">Cancel</Button>
               <Button onClick={handleDelete} disabled={deleting}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white border-0">
+                className="flex-1 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60">
                 {deleting ? "Deleting..." : "Delete"}
               </Button>
             </div>

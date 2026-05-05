@@ -663,7 +663,7 @@ export default function EmployeeModal({ employee, onClose, onSaved }) {
                 data-testid="save-employee-button"
                 onClick={handleSave}
                 disabled={saving}
-                className="bg-[#E53935] hover:bg-[#F44336] text-white border-0 min-w-[120px] min-h-[44px]"
+                className="bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 min-w-[120px] min-h-[44px]"
               >
                 {saving ? "Saving..." : employee ? "Update" : "Add Employee"}
               </Button>

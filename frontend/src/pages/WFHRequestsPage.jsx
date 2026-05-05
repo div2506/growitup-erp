@@ -142,7 +142,7 @@ function ReviewDialog({ request, action, onClose, onDone }) {
             <Button
               onClick={handleSubmit}
               disabled={submitting}
-              className={`flex-1 text-white border-0 ${isReject ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"}`}
+              className={`flex-1 ${isReject ? "bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20" : "bg-green-500/10 border border-green-500/40 text-green-400 hover:bg-green-500/20"}`}
             >
               {submitting ? "Saving..." : isReject ? "Reject" : "Approve"}
             </Button>
@@ -256,7 +256,7 @@ function PartialApprovalModal({ request, onClose, onDone }) {
 
         <div className="flex gap-3">
           <Button variant="outline" onClick={onClose} className="flex-1 bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white">Cancel</Button>
-          <Button onClick={handleSubmit} disabled={submitting} className="flex-1 bg-green-600 hover:bg-green-700 text-white border-0">
+          <Button onClick={handleSubmit} disabled={submitting} className="flex-1 bg-green-500/10 border border-green-500/40 text-green-400 hover:bg-green-500/20 hover:border-green-500/60">
             {submitting ? "Saving..." : "Approve Selected"}
           </Button>
         </div>
@@ -319,7 +319,7 @@ export default function WFHRequestsPage() {
   const pending = requests.filter(r => r.status === "Pending");
 
   return (
-    <div className="p-4 md:p-8 max-w-5xl mx-auto">
+    <div className="p-4 md:p-8">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
@@ -490,7 +490,7 @@ export default function WFHRequestsPage() {
                     <Button
                       onClick={() => setPartialModal(r)}
                       size="sm"
-                      className="bg-blue-600/80 hover:bg-blue-600 text-white border-0 text-xs h-8"
+                      className="bg-blue-500/10 border border-blue-500/40 text-blue-400 hover:bg-blue-500/20 hover:border-blue-500/60 text-xs h-8"
                     >
                       Review Days
                     </Button>
@@ -498,14 +498,14 @@ export default function WFHRequestsPage() {
                   <Button
                     onClick={() => setReviewDialog({ request: r, action: "Approved" })}
                     size="sm"
-                    className="bg-green-600/80 hover:bg-green-600 text-white border-0 text-xs h-8"
+                    className="bg-green-500/10 border border-green-500/40 text-green-400 hover:bg-green-500/20 hover:border-green-500/60 text-xs h-8"
                   >
                     Approve All
                   </Button>
                   <Button
                     onClick={() => setReviewDialog({ request: r, action: "Rejected" })}
                     size="sm"
-                    className="bg-red-600/80 hover:bg-red-600 text-white border-0 text-xs h-8"
+                    className="bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 text-xs h-8"
                   >
                     Reject All
                   </Button>

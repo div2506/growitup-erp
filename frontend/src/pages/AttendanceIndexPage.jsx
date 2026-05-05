@@ -8,7 +8,7 @@ import WFHPage from "@/pages/WFHPage";
 import WFHRequestsPage from "@/pages/WFHRequestsPage";
 import OvertimePage from "@/pages/OvertimePage";
 import OvertimeRequestsPage from "@/pages/OvertimeRequestsPage";
-import { ShiftRequestsTab } from "@/pages/SettingsPage";
+import ShiftRequestsPage from "@/pages/ShiftRequestsPage";
 
 /**
  * Attendance entry point — surfaces all attendance-related modules as tabs.
@@ -24,9 +24,9 @@ export default function AttendanceIndexPage() {
   const tabs = isAdminDept
     ? [
         { val: "attendance",         label: "Attendance",         icon: Calendar },
-        { val: "shift-requests",     label: "Shift Requests",     icon: Clock },
         { val: "wfh-requests",       label: "WFH Requests",       icon: Home },
         { val: "overtime-requests",  label: "Overtime Requests",  icon: Timer },
+        { val: "shift-requests",     label: "Shift Requests",     icon: Clock },
       ]
     : [
         { val: "attendance",         label: "Attendance",          icon: Calendar },
@@ -65,15 +65,7 @@ export default function AttendanceIndexPage() {
       {isAdminDept ? (
         <>
           <TabsContent value="shift-requests" className="mt-0">
-            <div className="p-4 md:p-8">
-              <div className="mb-6">
-                <h1 className="text-xl md:text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>
-                  Shift Change Requests
-                </h1>
-                <p className="text-[#B3B3B3] text-sm mt-0.5">Review and approve employee shift change requests</p>
-              </div>
-              <ShiftRequestsTab />
-            </div>
+            <ShiftRequestsPage />
           </TabsContent>
           <TabsContent value="wfh-requests" className="mt-0">
             <WFHRequestsPage />

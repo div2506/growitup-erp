@@ -282,7 +282,7 @@ function ManagerPerfModal({ onClose, onSuccess, selectedMonth, managers, editing
               data-testid="mgr-perf-save-btn"
               type="button" onClick={handleSubmit} disabled={!canSubmit || !!linkError}
               className={`${canSubmit && !linkError
-                  ? "bg-green-500 hover:bg-green-600 text-white"
+                  ? "bg-green-500/10 border border-green-500/40 text-green-400 hover:bg-green-500/20 hover:border-green-500/60"
                   : "bg-white/5 text-[#B3B3B3] cursor-not-allowed"
                 } min-h-[44px]`}
             >

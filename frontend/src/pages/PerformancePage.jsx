@@ -689,13 +689,14 @@ function EmployeeSelection({ teamId, teamName, onSelectEmployee, onBack }) {
     <div>
       <div className="flex items-center gap-3 mb-6">
         {onBack && (
-          <button onClick={onBack} className="flex items-center gap-1.5 text-[#B3B3B3] hover:text-white text-sm transition-colors">
+          <button onClick={onBack} className="flex items-center gap-1.5 text-[#B3B3B3] hover:text-white text-sm transition-colors shrink-0">
             <ChevronLeft size={16} /> Teams
           </button>
         )}
+        {onBack && <div className="w-px h-5 bg-white/10 shrink-0" />}
         <div>
-          <h2 className="text-white font-semibold" style={{ fontFamily: "Manrope, sans-serif" }}>{teamName}</h2>
-          <p className="text-[#B3B3B3] text-xs">Select an employee to view performance</p>
+          <h1 className="text-white text-lg font-bold" style={{ fontFamily: "Manrope, sans-serif" }}>{teamName}</h1>
+          <p className="text-[#B3B3B3] text-xs mt-0.5">Select an employee to view their performance</p>
         </div>
       </div>
       {loading ? (
@@ -1083,17 +1084,6 @@ export default function PerformancePage() {
 
   return (
     <div className="p-4 md:p-8">
-      <div className="mb-5 md:mb-6">
-        <h1 className="text-xl md:text-2xl font-bold text-white" style={{ fontFamily: "Manrope, sans-serif" }}>Performance</h1>
-        <div className="flex items-center gap-2 mt-1 flex-wrap">
-          {crumbs.map((c, i) => (
-            <span key={i} className="flex items-center gap-2">
-              {i > 0 && <ChevronRight size={14} className="text-[#B3B3B3]" />}
-              <span className={i === crumbs.length - 1 ? "text-white text-sm" : "text-[#B3B3B3] text-sm"}>{c}</span>
-            </span>
-          ))}
-        </div>
-      </div>
 
       {isAdminDept && (
         <AdminManagerLanding 

@@ -93,7 +93,7 @@ export default function DepartmentsPage() {
         <button
           data-testid="add-department-button"
           onClick={openAdd}
-          className="flex items-center gap-2 bg-[#E53935] hover:bg-[#F44336] text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+          className="flex items-center gap-2 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
         >
           <Plus size={16} /> Add Department
         </button>
@@ -190,7 +190,7 @@ export default function DepartmentsPage() {
                 data-testid="save-department-button"
                 onClick={handleSave}
                 disabled={saving}
-                className="bg-[#E53935] hover:bg-[#F44336] text-white border-0"
+                className="bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 border-0"
               >
                 {saving ? "Saving..." : editDept ? "Update" : "Add"}
               </Button>

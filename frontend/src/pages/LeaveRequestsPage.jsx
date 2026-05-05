@@ -321,7 +321,7 @@ function ReviewDialog({ request, action, onClose, onDone }) {
             Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={submitting} data-testid={`review-submit-${action.toLowerCase()}-btn`}
-            className={`flex-1 min-h-[44px] text-white ${isReject ? "bg-red-500 hover:bg-red-600" : "bg-green-500 hover:bg-green-600"}`}>
+            className={`flex-1 min-h-[44px] text-white ${isReject ? "bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60" : "bg-green-500/10 border border-green-500/40 text-green-400 hover:bg-green-500/20 hover:border-green-500/60"}`}>
             {submitting ? "Submitting..." : isReject ? "Reject" : "Approve"}
           </Button>
         </div>

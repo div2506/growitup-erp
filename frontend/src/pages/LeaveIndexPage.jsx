@@ -13,13 +13,13 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 export default function LeaveIndexPage() {
   const { user, myEmployee } = useAuth();
   const isAdminDept = user?.is_admin || myEmployee?.department_name === "Admin";
-  const [tab, setTab] = useState("mine");
+  const [tab, setTab] = useState(isAdminDept ? "team" : "mine");
 
   if (!isAdminDept) return <LeavePage />;
 
   const tabs = [
-    { val: "mine", label: "My Leaves",     icon: CalendarCheck },
-    { val: "team", label: "Team Requests", icon: Inbox },
+    { val: "team", label: "Leave Requests", icon: Inbox },
+    { val: "mine", label: "My Leaves",      icon: CalendarCheck },
   ];
 
   return (

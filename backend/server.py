@@ -3651,26 +3651,36 @@ async def get_dashboard_today(request: Request):
         base["late_minutes"] = r.get("late_minutes") or 0
         late_list.append(base)
 
-    # Birthdays today — match on month-day regardless of year
+    # Birthdays + Work anniversaries today — match on month-day regardless of year
     bday_regex = f"-{mm_dd}$"
-    bday_docs = await db.employees.find(
-        {"date_of_birth": {"$regex": bday_regex}},
-        {"_id": 0, "employee_id": 1, "first_name": 1, "last_name": 1,
-         "profile_picture": 1, "job_position_name": 1, "department_name": 1,
-         "date_of_birth": 1},
-    ).to_list(200)
+    bday_docs, anniv_docs = await asyncio.gather(
+        db.employees.find(
+            {"date_of_birth": {"$regex": bday_regex}, "status": "Active"},
+            {"_id": 0, "employee_id": 1, "first_name": 1, "last_name": 1,
+             "profile_picture": 1, "job_position_name": 1, "department_name": 1,
+             "date_of_birth": 1},
+        ).to_list(200),
+        db.employees.find(
+            {"joining_date": {"$regex": bday_regex}, "status": "Active"},
+            {"_id": 0, "employee_id": 1, "first_name": 1, "last_name": 1,
+             "profile_picture": 1, "job_position_name": 1, "department_name": 1,
+             "joining_date": 1},
+        ).to_list(200),
+    )
 
     bday_list = []
+    seen_ids = set()
+
     for e in bday_docs:
         age = None
         try:
             dob = datetime.strptime(e["date_of_birth"], "%Y-%m-%d")
             age = now.year - dob.year
-            # Should be exact today; account for pre-birthday-today corner case
             if (now.month, now.day) < (dob.month, dob.day):
                 age -= 1
         except Exception:
             age = None
+        seen_ids.add(e["employee_id"])
         bday_list.append({
             "employee_id": e["employee_id"],
             "first_name": e.get("first_name"),
@@ -3678,8 +3688,39 @@ async def get_dashboard_today(request: Request):
             "profile_picture": e.get("profile_picture"),
             "job_position_name": e.get("job_position_name"),
             "department_name": e.get("department_name"),
+            "type": "birthday",
             "age": age,
         })
+
+    for e in anniv_docs:
+        years = None
+        try:
+            jd = datetime.strptime(e["joining_date"], "%Y-%m-%d")
+            years = now.year - jd.year
+            if (now.month, now.day) < (jd.month, jd.day):
+                years -= 1
+        except Exception:
+            years = None
+        if years is None or years < 1:
+            continue  # skip day-1 joins
+        entry = {
+            "employee_id": e["employee_id"],
+            "first_name": e.get("first_name"),
+            "last_name": e.get("last_name"),
+            "profile_picture": e.get("profile_picture"),
+            "job_position_name": e.get("job_position_name"),
+            "department_name": e.get("department_name"),
+            "years": years,
+        }
+        if e["employee_id"] in seen_ids:
+            # Same person has both birthday + anniversary today — merge
+            for item in bday_list:
+                if item["employee_id"] == e["employee_id"]:
+                    item["type"] = "both"
+                    item["years"] = years
+        else:
+            entry["type"] = "anniversary"
+            bday_list.append(entry)
 
     return {
         "date": today_str,
@@ -3688,6 +3729,96 @@ async def get_dashboard_today(request: Request):
         "late": late_list,
         "birthdays": bday_list,
     }
+
+
+@api_router.get("/dashboard/my-requests")
+async def get_dashboard_my_requests(request: Request):
+    """
+    For employees: their own leave/WFH/overtime requests in the last 7 days.
+    For admins: pending leave/WFH/overtime requests across all employees that need action.
+    """
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+
+    if is_admin:
+        # Fetch all pending requests across leave / WFH / overtime
+        leave_pending, wfh_pending, ot_pending = await asyncio.gather(
+            db.leave_requests.find({"status": "Pending"}, {"_id": 0}).sort("created_at", -1).to_list(50),
+            db.wfh_requests.find({"status": "Pending"}, {"_id": 0}).sort("created_at", -1).to_list(50),
+            db.overtime_requests.find({"status": "Pending"}, {"_id": 0}).sort("created_at", -1).to_list(50),
+        )
+        # Batch-fetch employee info
+        all_ids = list({r.get("employee_id") for r in leave_pending + wfh_pending + ot_pending if r.get("employee_id")})
+        emp_docs = await db.employees.find(
+            {"employee_id": {"$in": all_ids}},
+            {"_id": 0, "employee_id": 1, "first_name": 1, "last_name": 1, "profile_picture": 1, "department_name": 1, "job_position_name": 1}
+        ).to_list(None)
+        emp_map = {e["employee_id"]: e for e in emp_docs}
+
+        def enrich_req(r, rtype):
+            emp = emp_map.get(r.get("employee_id"), {})
+            return {
+                "type": rtype,
+                "request_id": r.get("leave_request_id") or r.get("wfh_request_id") or r.get("overtime_request_id"),
+                "employee_id": r.get("employee_id"),
+                "employee_name": f"{emp.get('first_name','')} {emp.get('last_name','')}".strip(),
+                "profile_picture": emp.get("profile_picture"),
+                "department_name": emp.get("department_name"),
+                "status": r.get("status"),
+                "from_date": r.get("from_date") or r.get("date"),
+                "to_date": r.get("to_date") or r.get("date"),
+                "reason": r.get("reason"),
+                "created_at": r.get("created_at"),
+            }
+
+        requests_list = (
+            [enrich_req(r, "leave") for r in leave_pending] +
+            [enrich_req(r, "wfh") for r in wfh_pending] +
+            [enrich_req(r, "overtime") for r in ot_pending]
+        )
+        requests_list.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+        return {"is_admin": True, "requests": requests_list[:30]}
+
+    else:
+        # Employee: their own requests in the last 7 days
+        if not my_emp:
+            return {"is_admin": False, "requests": []}
+        emp_id = my_emp["employee_id"]
+        seven_days_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+
+        leave_reqs, wfh_reqs, ot_reqs = await asyncio.gather(
+            db.leave_requests.find(
+                {"employee_id": emp_id, "created_at": {"$gte": seven_days_ago}}, {"_id": 0}
+            ).sort("created_at", -1).to_list(20),
+            db.wfh_requests.find(
+                {"employee_id": emp_id, "created_at": {"$gte": seven_days_ago}}, {"_id": 0}
+            ).sort("created_at", -1).to_list(20),
+            db.overtime_requests.find(
+                {"employee_id": emp_id, "created_at": {"$gte": seven_days_ago}}, {"_id": 0}
+            ).sort("created_at", -1).to_list(20),
+        )
+
+        def fmt(r, rtype):
+            return {
+                "type": rtype,
+                "request_id": r.get("leave_request_id") or r.get("wfh_request_id") or r.get("overtime_request_id"),
+                "status": r.get("status"),
+                "from_date": r.get("from_date") or r.get("date"),
+                "to_date": r.get("to_date") or r.get("date"),
+                "reason": r.get("reason"),
+                "created_at": r.get("created_at"),
+            }
+
+        requests_list = (
+            [fmt(r, "leave") for r in leave_reqs] +
+            [fmt(r, "wfh") for r in wfh_reqs] +
+            [fmt(r, "overtime") for r in ot_reqs]
+        )
+        requests_list.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+        return {"is_admin": False, "requests": requests_list}
 
 
 @api_router.post("/attendance/entry")

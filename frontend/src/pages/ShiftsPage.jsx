@@ -199,7 +199,7 @@ export default function ShiftsPage() {
         <h2 className="text-white font-semibold">Shift Change Requests</h2>
         <button
           onClick={() => { setShowRequestForm(true); setForm({ requested_shift_id: "", from_date: "", to_date: "", reason: "" }); setFormErrors({}); }}
-          className="flex items-center gap-2 bg-[#E53935] hover:bg-[#F44336] text-white rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+          className="flex items-center gap-2 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
         >
           <RefreshCw size={14} /> Request Shift Change
         </button>
@@ -339,7 +339,7 @@ export default function ShiftsPage() {
               Cancel
             </Button>
             <Button onClick={handleSubmitRequest} disabled={submitting}
-              className="flex-1 bg-[#E53935] hover:bg-[#F44336] text-white min-h-[44px]">
+              className="flex-1 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 min-h-[44px]">
               {submitting ? "Submitting..." : "Submit Request"}
             </Button>
           </div>
@@ -359,7 +359,7 @@ export default function ShiftsPage() {
               Keep it
             </Button>
             <Button onClick={() => handleCancel(cancelTarget)}
-              className="flex-1 bg-red-500 hover:bg-red-600 text-white min-h-[44px]">
+              className="flex-1 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 min-h-[44px]">
               Yes, Cancel
             </Button>
           </div>
