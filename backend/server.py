@@ -780,7 +780,15 @@ async def update_late_tracking_fn(employee_id: str, date_str: str, late_minutes:
             }
             await db.monthly_late_tracking.insert_one(tracking)
 
+        # Idempotency guard — skip if this date is already recorded as late
+        existing_late_dates = {p.get("date") for p in tracking.get("penalties_applied", [])}
+        # Also track all late dates (including 1st/2nd/3rd that have no penalty entry)
+        all_late_dates = set(tracking.get("late_dates", []))
+        if date_str in all_late_dates:
+            return  # Already counted for this date, do nothing
+
         new_count = tracking["late_count"] + 1
+        all_late_dates.add(date_str)
         penalties = list(tracking.get("penalties_applied", []))
 
         if new_count >= 4:
@@ -804,7 +812,7 @@ async def update_late_tracking_fn(employee_id: str, date_str: str, late_minutes:
 
         await db.monthly_late_tracking.update_one(
             {"employee_id": employee_id, "month": month_str},
-            {"$set": {"late_count": new_count, "penalties_applied": penalties, "updated_at": now}}
+            {"$set": {"late_count": new_count, "penalties_applied": penalties, "late_dates": list(all_late_dates), "updated_at": now}}
         )
     except Exception as e:
         logger.error(f"[Late Tracking] Error for {employee_id}: {e}")
@@ -4867,15 +4875,22 @@ async def update_daily_attendance(attendance_id: str, body: DailyAttendanceUpdat
         late_records = [r for r in month_records if r.get("is_late")]
         late_count = len(late_records)
         # Rebuild penalties
+        month_first = f"{month_key}-01"
+        emp_for_penalty = await db.employees.find_one({"employee_id": employee_id}, {"_id": 0})
+        days_in_month = cal_module.monthrange(int(month_key[:4]), int(month_key[5:7]))[1]
         penalties = []
+        late_dates_list = []
         for idx, r in enumerate(sorted(late_records, key=lambda x: x["date"]), start=1):
-            if idx == 4:
-                penalties.append({"late_number": 4, "date": r["date"], "type": "leave_deduction"})
-            elif idx >= 5:
-                penalties.append({"late_number": idx, "date": r["date"], "type": "salary_deduction"})
+            late_dates_list.append(r["date"])
+            if idx == 4 and emp_for_penalty:
+                one_day = round(emp_for_penalty.get("basic_salary", 0) / days_in_month, 2)
+                penalties.append({"late_number": 4, "date": r["date"], "type": "leave_or_salary_deduction", "amount": one_day, "description": f"4th late: 1 paid leave OR {one_day} salary deduction"})
+            elif idx >= 5 and emp_for_penalty:
+                penalty = round(emp_for_penalty.get("basic_salary", 0) * 0.0167, 2)
+                penalties.append({"late_number": idx, "date": r["date"], "type": "salary_deduction_1_67pct", "amount": penalty, "percentage": 1.67, "description": f"{idx}th late: 1.67% salary deduction = {penalty}"})
         await db.monthly_late_tracking.update_one(
-            {"employee_id": employee_id, "month_key": month_key},
-            {"$set": {"late_count": late_count, "penalties_applied": penalties, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            {"employee_id": employee_id, "month": month_first},
+            {"$set": {"late_count": late_count, "penalties_applied": penalties, "late_dates": late_dates_list, "updated_at": datetime.now(timezone.utc).isoformat()}},
             upsert=True
         )
 
@@ -4916,6 +4931,11 @@ async def create_manual_attendance(request: Request):
     existing = await db.daily_attendance.find_one({"employee_id": employee_id, "date": date_str}, {"_id": 0, "status": 1})
     if existing and existing.get("status") == "Holiday":
         raise HTTPException(400, "Cannot override a Holiday record. Holidays cannot be changed manually.")
+
+    # Also block if the date is a company holiday (even without an existing attendance record)
+    holiday_doc = await db.holidays.find_one({"date": date_str}, {"_id": 0, "holiday_name": 1})
+    if holiday_doc and status != "Holiday":
+        raise HTTPException(400, f"Cannot create attendance on a company holiday: {holiday_doc.get('holiday_name', date_str)}")
 
     shift = await get_active_shift_for_date_async(employee_id, datetime.strptime(date_str, "%Y-%m-%d"))
     shift_id = shift["shift_id"] if shift else None
