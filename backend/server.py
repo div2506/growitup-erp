@@ -5642,6 +5642,14 @@ async def cancel_wfh_request(request_id: str, request: Request):
 app.include_router(api_router)
 
 
+# ── Health / keep-alive endpoint ──────────────────────────────────────────────
+# Used by the frontend keep-alive ping (every 8 min) so Render free-tier never
+# idles long enough to spin down (idle threshold is ~15 min of no requests).
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+
 # Custom CORS middleware that always reflects the request Origin back.
 # This is required because allow_credentials=True is incompatible with
 # allow_origins=["*"] per the CORS spec — browsers block it.

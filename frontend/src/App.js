@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState, createContext, useContext, useRef } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import { Toaster } from "@/components/ui/sonner";
@@ -21,8 +21,11 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import axios from "axios";
 import "@/App.css";
 
+// ── Server-down context ───────────────────────────────────────────────────────
+const ServerDownContext = createContext({ serverDown: false, firstLoad: true });
+export const useServerDown = () => useContext(ServerDownContext);
+
 // Set axios defaults so ALL requests include the session token as Bearer header.
-// This is the cross-device/mobile fallback when cookies are blocked (Safari, strict browsers).
 axios.defaults.withCredentials = true;
 axios.interceptors.request.use((config) => {
   const token = localStorage.getItem("session_token");
@@ -33,13 +36,13 @@ axios.interceptors.request.use((config) => {
   return config;
 });
 
-// Global 401 handler: when any request returns 401, verify with /auth/me before logging out.
-// This prevents false logouts from transient server errors or cache-expiry races.
-let _verifyingSession = false;
 const API_BASE = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const HEALTH_URL = `${process.env.REACT_APP_BACKEND_URL}/health`;
 
-// Returns the HTTP status of /auth/me, or null if the server is unreachable.
-// null means "we don't know" — treat as "keep user logged in".
+// Module-level callbacks so the interceptor can talk to the React tree
+let _setServerDown = null;
+let _verifyingSession = false;
+
 async function _checkSessionAlive() {
   try {
     const token = localStorage.getItem("session_token");
@@ -47,48 +50,47 @@ async function _checkSessionAlive() {
     const res = await fetch(`${API_BASE}/auth/me`, { credentials: "include", headers });
     return res.status;
   } catch {
-    // Network error — backend is down / restarting
-    return null;
+    return null; // network error — server unreachable
   }
 }
 
 axios.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Any successful response means server is up
+    if (_setServerDown) _setServerDown(false);
+    return response;
+  },
   async (error) => {
     const status = error?.response?.status;
     const requestUrl = error?.config?.url || "";
 
-    // If there's no response at all (network error / server down), never log out.
-    if (!error?.response) return Promise.reject(error);
+    // No response = network error / server down
+    if (!error?.response) {
+      if (_setServerDown) _setServerDown(true);
+      return Promise.reject(error);
+    }
 
-    // Only act on 401; ignore /auth/me calls (avoid loop) and concurrent checks.
+    // Server responded (even with error) → it's up
+    if (_setServerDown) _setServerDown(false);
+
+    // 401 handling — verify before logging out
     if (status === 401 && !requestUrl.includes("/auth/me") && !_verifyingSession) {
       _verifyingSession = true;
       try {
-        // Wait briefly — cache-expiry races can cause transient 401s
         await new Promise(r => setTimeout(r, 800));
         const firstCheck = await _checkSessionAlive();
-
-        // null = server unreachable → keep user logged in
         if (firstCheck === null) return Promise.reject(error);
-
         if (firstCheck === 401 || firstCheck === 403) {
-          // Retry once more before giving up
           await new Promise(r => setTimeout(r, 1200));
           const secondCheck = await _checkSessionAlive();
-
-          // If second check also can't reach server, keep user logged in
           if (secondCheck === null) return Promise.reject(error);
-
           if (secondCheck === 401 || secondCheck === 403) {
-            // Session is genuinely dead — clear and redirect
             localStorage.removeItem("session_token");
             localStorage.removeItem("cached_user");
             localStorage.removeItem("cached_employee");
             window.location.href = "/login";
           }
         }
-        // Any 2xx or 5xx → session is alive, transient issue on the data endpoint
       } finally {
         _verifyingSession = false;
       }
@@ -96,6 +98,100 @@ axios.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// ── Full-screen server-down overlay ──────────────────────────────────────────
+function ServerDownOverlay({ firstLoad }) {
+  const [dots, setDots] = useState(".");
+
+  // Animate dots
+  useEffect(() => {
+    const id = setInterval(() => setDots(d => d.length >= 3 ? "." : d + "."), 500);
+    return () => clearInterval(id);
+  }, []);
+
+  if (firstLoad) {
+    // First load / page refresh — full opaque screen
+    return (
+      <div className="fixed inset-0 z-[9999] bg-[#191919] flex flex-col items-center justify-center gap-6">
+        <div className="flex flex-col items-center gap-4">
+          {/* Pulsing logo area */}
+          <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center animate-pulse">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+              <circle cx="16" cy="16" r="14" stroke="#444" strokeWidth="2" />
+              <path d="M10 22 L16 10 L22 22" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          {/* Skeleton bars */}
+          <div className="space-y-2 w-48">
+            <div className="h-2.5 bg-white/10 rounded animate-pulse" />
+            <div className="h-2.5 bg-white/10 rounded animate-pulse w-3/4 mx-auto" />
+          </div>
+        </div>
+        <div className="text-center">
+          <p className="text-white text-sm font-medium">Server is starting up{dots}</p>
+          <p className="text-[#555] text-xs mt-1">This usually takes 30–60 seconds. Please wait.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Mid-session drop — slim top banner + backdrop
+  return (
+    <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex flex-col items-start justify-start">
+      <div className="w-full bg-[#2F2F2F] border-b border-amber-500/30 px-4 py-3 flex items-center gap-3">
+        <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+        <div>
+          <p className="text-amber-400 text-sm font-medium">Connection lost — reconnecting{dots}</p>
+          <p className="text-[#B3B3B3] text-xs">Server is temporarily unavailable. Retrying automatically.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Server-down monitor ───────────────────────────────────────────────────────
+function ServerDownMonitor({ children }) {
+  const [serverDown, setServerDown] = useState(false);
+  const [firstLoad, setFirstLoad] = useState(true);
+  const firstLoadRef = useRef(true);
+
+  // Wire the module-level setter into this component's state
+  useEffect(() => {
+    _setServerDown = (down) => {
+      setServerDown(down);
+      if (!down && firstLoadRef.current) {
+        firstLoadRef.current = false;
+        setFirstLoad(false);
+      }
+    };
+    return () => { _setServerDown = null; };
+  }, []);
+
+  // When server is down, poll /health every 5s until it recovers
+  useEffect(() => {
+    if (!serverDown) return;
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch(HEALTH_URL);
+        if (res.ok) {
+          setServerDown(false);
+          if (firstLoadRef.current) {
+            firstLoadRef.current = false;
+            setFirstLoad(false);
+          }
+        }
+      } catch {}
+    }, 5000);
+    return () => clearInterval(poll);
+  }, [serverDown]);
+
+  return (
+    <ServerDownContext.Provider value={{ serverDown, firstLoad }}>
+      {children}
+      {serverDown && <ServerDownOverlay firstLoad={firstLoad} />}
+    </ServerDownContext.Provider>
+  );
+}
 
 function AppRouter() {
   return (
@@ -138,8 +234,10 @@ function App() {
       <GoogleOAuthProvider clientId={googleClientId}>
         <BrowserRouter>
           <AuthProvider>
-            <AppRouter />
-            <Toaster theme="dark" richColors position="top-right" />
+            <ServerDownMonitor>
+              <AppRouter />
+              <Toaster theme="dark" richColors position="top-right" />
+            </ServerDownMonitor>
           </AuthProvider>
         </BrowserRouter>
       </GoogleOAuthProvider>
