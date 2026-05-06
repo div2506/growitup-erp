@@ -161,6 +161,14 @@ function DateDetailModal({ date, record, isAdmin, isHoliday, onClose, onEdit, is
                 <span className="text-[#B3B3B3] text-sm">Status</span>
                 <StatusBadge status={record.status} size="lg" />
               </div>
+              {record.half_day_type && ["Half Day", "Leave"].includes(record.status) && (
+                <div className="flex items-center justify-between">
+                  <span className="text-[#B3B3B3] text-sm">Leave Half</span>
+                  <span className="text-amber-400 text-sm font-medium">
+                    {record.half_day_type === "First Half" ? "First Half (Morning)" : "Second Half (Afternoon)"}
+                  </span>
+                </div>
+              )}
               {record.check_in && (
                 <div className="flex items-center justify-between">
                   <span className="text-[#B3B3B3] text-sm">Check-in</span>
