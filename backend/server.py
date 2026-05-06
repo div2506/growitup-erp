@@ -4849,6 +4849,36 @@ async def update_daily_attendance(attendance_id: str, body: DailyAttendanceUpdat
             logger.warning(f"[update_daily_attendance] Recalc failed: {e}")
 
     await db.daily_attendance.update_one({"attendance_id": attendance_id}, {"$set": update})
+
+    # Sync late tracking for the affected month
+    employee_id = existing["employee_id"]
+    date_str = existing.get("date")
+    final_is_late = update.get("is_late", existing.get("is_late", False))
+    final_late_minutes = update.get("late_minutes", existing.get("late_minutes", 0))
+    if final_is_late and date_str:
+        await update_late_tracking_fn(employee_id, date_str, final_late_minutes)
+    elif date_str:
+        # If no longer late, recalculate the month's late tracking from scratch
+        month_key = date_str[:7]  # "YYYY-MM"
+        month_records = await db.daily_attendance.find(
+            {"employee_id": employee_id, "date": {"$gte": f"{month_key}-01", "$lte": f"{month_key}-31"}},
+            {"_id": 0, "date": 1, "is_late": 1, "late_minutes": 1}
+        ).to_list(31)
+        late_records = [r for r in month_records if r.get("is_late")]
+        late_count = len(late_records)
+        # Rebuild penalties
+        penalties = []
+        for idx, r in enumerate(sorted(late_records, key=lambda x: x["date"]), start=1):
+            if idx == 4:
+                penalties.append({"late_number": 4, "date": r["date"], "type": "leave_deduction"})
+            elif idx >= 5:
+                penalties.append({"late_number": idx, "date": r["date"], "type": "salary_deduction"})
+        await db.monthly_late_tracking.update_one(
+            {"employee_id": employee_id, "month_key": month_key},
+            {"$set": {"late_count": late_count, "penalties_applied": penalties, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True
+        )
+
     return {**existing, **update}
 
 
@@ -4892,13 +4922,47 @@ async def create_manual_attendance(request: Request):
 
     bio_code = emp.get("biometric_employee_code") or None
 
+    # Calculate late/early fields if check_in provided
+    is_late = False
+    late_minutes = 0
+    left_early = False
+    early_departure_minutes = 0
+    total_hours = None
+
+    if check_in and status in {"Present", "Half Day", "Incomplete", "Forgot Punch Out", "Absent"}:
+        try:
+            date_obj_m = datetime.strptime(date_str, "%Y-%m-%d")
+            shift_timings = get_shift_timings_for_date(shift, date_obj_m)
+            sh, sm = map(int, shift_timings["start_time"].split(":"))
+            eh, em = map(int, shift_timings["end_time"].split(":"))
+            eff_start_mins = sh * 60 + sm
+            eff_end_mins   = eh * 60 + em
+            ci_h, ci_m = map(int, check_in.split(":"))
+            ci_mins = ci_h * 60 + ci_m
+            is_late = ci_mins > eff_start_mins + 10
+            late_minutes = max(0, ci_mins - eff_start_mins) if is_late else 0
+            if check_out:
+                co_h, co_m = map(int, check_out.split(":"))
+                co_mins = co_h * 60 + co_m
+                left_early = co_mins < eff_end_mins
+                early_departure_minutes = max(0, eff_end_mins - co_mins) if left_early else 0
+                break_dur = float(shift_timings.get("break_duration") or 0)
+                total_hours = round(max(0, (co_mins - ci_mins) - break_dur) / 60, 2)
+        except Exception:
+            pass
+
     record = await upsert_daily_attendance(employee_id, date_str, {
         "shift_id": shift_id, "status": status,
         "check_in": check_in, "check_out": check_out,
-        "total_hours": None, "is_late": False, "late_minutes": 0,
+        "total_hours": total_hours, "is_late": is_late, "late_minutes": late_minutes,
+        "left_early": left_early, "early_departure_minutes": early_departure_minutes,
         "notes": notes, "source": "manual",
         **({"biometric_employee_code": bio_code} if bio_code else {}),
     })
+
+    if is_late:
+        await update_late_tracking_fn(employee_id, date_str, late_minutes)
+
     return record
 
 
