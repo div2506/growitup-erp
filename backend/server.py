@@ -1006,9 +1006,26 @@ async def ensure_admin_leave_request(employee_id: str, date_str: str, status: st
 
     now = datetime.now(timezone.utc).isoformat()
 
-    # Use paid leave balance if available (same logic as regular leave requests)
+    # Use paid leave balance, but subtract paid days already consumed by other approved
+    # leave requests (both employee-submitted and admin_manual) so we don't over-allocate.
     balance = await get_or_create_leave_balance(employee_id)
-    deduction = calc_leave_deduction(balance, total_days)
+    raw_paid_balance = float(balance.get("paid_leave_balance", 0))
+
+    # Sum paid_days already used by other approved leave requests (excluding this exact date's admin_manual)
+    already_used_cursor = db.leave_requests.find({
+        "employee_id": employee_id,
+        "status": "Approved",
+        "$or": [
+            {"source": {"$ne": "admin_manual"}},
+            {"from_date": {"$ne": date_str}},
+        ]
+    }, {"paid_days": 1, "_id": 0})
+    already_used_docs = await already_used_cursor.to_list(1000)
+    already_used_paid = round(sum(float(d.get("paid_days", 0)) for d in already_used_docs), 2)
+
+    available_paid = max(0.0, raw_paid_balance - already_used_paid)
+    effective_balance = {**balance, "paid_leave_balance": available_paid}
+    deduction = calc_leave_deduction(effective_balance, total_days)
 
     # Upsert admin-manual leave request (by employee_id + from_date + source)
     await db.leave_requests.update_one(
