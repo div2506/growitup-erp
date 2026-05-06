@@ -1005,6 +1005,11 @@ async def ensure_admin_leave_request(employee_id: str, date_str: str, status: st
         return
 
     now = datetime.now(timezone.utc).isoformat()
+
+    # Use paid leave balance if available (same logic as regular leave requests)
+    balance = await get_or_create_leave_balance(employee_id)
+    deduction = calc_leave_deduction(balance, total_days)
+
     # Upsert admin-manual leave request (by employee_id + from_date + source)
     await db.leave_requests.update_one(
         {"employee_id": employee_id, "from_date": date_str, "to_date": date_str, "source": "admin_manual"},
@@ -1012,8 +1017,8 @@ async def ensure_admin_leave_request(employee_id: str, date_str: str, status: st
             "leave_type": leave_type,
             "half_day_type": half_dt,
             "total_days": total_days,
-            "paid_days": 0.0,
-            "regular_days": total_days,
+            "paid_days": deduction["paid_days"],
+            "regular_days": deduction["regular_days"],
             "status": "Approved",
             "reason": "Added by admin",
             "reviewed_by": "admin",
