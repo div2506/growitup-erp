@@ -239,22 +239,35 @@ function EditAttendanceModal({ date, record, employeeId, onClose, onSaved }) {
     status: record?.status || "Present",
     check_in: record?.check_in || "",
     check_out: record?.check_out || "",
-    notes: record?.notes || ""
+    notes: record?.notes || "",
+    half_day_type: record?.half_day_type || ""
   });
   const [saving, setSaving] = useState(false);
 
   const dateLabel = date?.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
+  const isLeaveStatus = ["Leave", "Half Day"].includes(form.status);
+  const showTimings = ["Present", "Half Day", "Incomplete", "Forgot Punch Out", "Leave"].includes(form.status);
+
   const handleSave = async () => {
+    // Validate half_day_type when Half Day is selected for Leave context
+    if (form.status === "Half Day" && !form.half_day_type) {
+      toast.error("Please select First Half or Second Half");
+      return;
+    }
     setSaving(true);
     try {
+      const payload = { ...form };
+      // Only send half_day_type when relevant
+      if (!isLeaveStatus) payload.half_day_type = null;
+
       if (record?.attendance_id) {
-        await axios.put(`${API}/attendance/${record.attendance_id}`, form, { withCredentials: true });
+        await axios.put(`${API}/attendance/${record.attendance_id}`, payload, { withCredentials: true });
       } else {
         await axios.post(`${API}/attendance/manual`, {
           employee_id: employeeId,
           date: date ? `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}` : undefined,
-          ...form
+          ...payload
         }, { withCredentials: true });
       }
       toast.success("Attendance updated");
@@ -276,25 +289,43 @@ function EditAttendanceModal({ date, record, employeeId, onClose, onSaved }) {
         <div className="px-5 py-5 space-y-4">
           <div className="space-y-1">
             <Label className={labelCls}>Status *</Label>
-            <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
+            <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v, half_day_type: "" }))}>
               <SelectTrigger className={`${inputCls} focus:ring-0`}><SelectValue /></SelectTrigger>
               <SelectContent className="bg-[#2F2F2F] border-white/10">
                 {VALID_STATUSES.map(s => <SelectItem key={s} value={s} className="text-white focus:bg-white/10">{s}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
-          {["Present", "Half Day", "Incomplete", "Forgot Punch Out"].includes(form.status) && (
+
+          {/* Half Day Type selector for Leave / Half Day */}
+          {isLeaveStatus && (
+            <div className="space-y-1">
+              <Label className={labelCls}>Half Day Type {form.status === "Half Day" ? "*" : "(optional)"}</Label>
+              <Select value={form.half_day_type} onValueChange={v => setForm(f => ({ ...f, half_day_type: v }))}>
+                <SelectTrigger className={`${inputCls} focus:ring-0`}><SelectValue placeholder="Full Day Leave" /></SelectTrigger>
+                <SelectContent className="bg-[#2F2F2F] border-white/10">
+                  {form.status === "Leave" && <SelectItem value="" className="text-white focus:bg-white/10">Full Day Leave</SelectItem>}
+                  <SelectItem value="First Half" className="text-white focus:bg-white/10">First Half</SelectItem>
+                  <SelectItem value="Second Half" className="text-white focus:bg-white/10">Second Half</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[#B3B3B3] text-xs pt-0.5">A leave request will be auto-created &amp; approved for payroll.</p>
+            </div>
+          )}
+
+          {showTimings && (
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className={labelCls}>Check-in</Label>
+                <Label className={labelCls}>Check-in {isLeaveStatus ? "(optional)" : ""}</Label>
                 <Input type="time" value={form.check_in} onChange={e => setForm(f => ({ ...f, check_in: e.target.value }))} className={inputCls} />
               </div>
               <div className="space-y-1">
-                <Label className={labelCls}>Check-out</Label>
+                <Label className={labelCls}>Check-out {isLeaveStatus ? "(optional)" : ""}</Label>
                 <Input type="time" value={form.check_out} onChange={e => setForm(f => ({ ...f, check_out: e.target.value }))} className={inputCls} />
               </div>
             </div>
           )}
+
           {["Incomplete", "Forgot Punch Out"].includes(form.status) && (
             <div className="flex items-start gap-2 bg-orange-500/10 border border-orange-500/20 rounded-lg px-3 py-2.5">
               <span className="text-orange-400 text-xs mt-0.5">⚠</span>

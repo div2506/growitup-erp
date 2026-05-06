@@ -382,6 +382,7 @@ class DailyAttendanceUpdate(BaseModel):
     notes: Optional[str] = None
     check_in: Optional[str] = None   # "HH:MM"
     check_out: Optional[str] = None  # "HH:MM"
+    half_day_type: Optional[str] = None  # "First Half" or "Second Half" (for Leave/Half Day)
 
 
 # ===================== HELPERS =====================
@@ -958,6 +959,79 @@ async def get_or_create_leave_balance(employee_id: str) -> dict:
         await db.leave_balance.insert_one(bal)
         return {k: v for k, v in bal.items() if k != "_id"}
     return bal
+
+
+async def ensure_admin_leave_request(employee_id: str, date_str: str, status: str, half_day_type: Optional[str]):
+    """
+    When admin manually sets attendance to 'Leave' or 'Half Day', ensure an approved
+    leave_request exists for that date so payroll can deduct correctly.
+    - If an approved leave_request already covers this date, leave it unchanged.
+    - Otherwise, upsert an admin-created approved leave request.
+    - If status is changed away from Leave/Half Day, remove any admin-created leave request for that date.
+    """
+    is_leave_status = status in ("Leave", "Half Day")
+
+    if not is_leave_status:
+        # Remove any admin-auto-created leave request for this exact single day
+        await db.leave_requests.delete_many({
+            "employee_id": employee_id,
+            "from_date": date_str,
+            "to_date": date_str,
+            "source": "admin_manual"
+        })
+        return
+
+    # Determine leave type
+    if status == "Half Day" or (status == "Leave" and half_day_type in ("First Half", "Second Half")):
+        leave_type = "Half Day"
+        half_dt = half_day_type if half_day_type else None
+        total_days = 0.5
+    else:
+        leave_type = "Full Day"
+        half_dt = None
+        total_days = 1.0
+
+    # Check if a non-admin-manual approved leave_request already exists for this date
+    existing_approved = await db.leave_requests.find_one({
+        "employee_id": employee_id,
+        "status": "Approved",
+        "from_date": {"$lte": date_str},
+        "to_date": {"$gte": date_str},
+        "source": {"$ne": "admin_manual"}
+    }, {"_id": 0, "request_id": 1})
+
+    if existing_approved:
+        # An employee-submitted approved leave already covers this date; nothing to do.
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+    # Upsert admin-manual leave request (by employee_id + from_date + source)
+    await db.leave_requests.update_one(
+        {"employee_id": employee_id, "from_date": date_str, "to_date": date_str, "source": "admin_manual"},
+        {"$set": {
+            "leave_type": leave_type,
+            "half_day_type": half_dt,
+            "total_days": total_days,
+            "paid_days": 0.0,
+            "regular_days": total_days,
+            "status": "Approved",
+            "reason": "Added by admin",
+            "reviewed_by": "admin",
+            "reviewed_at": now,
+            "updated_at": now,
+        }, "$setOnInsert": {
+            "request_id": f"lr_admin_{uuid.uuid4().hex[:10]}",
+            "employee_id": employee_id,
+            "from_date": date_str,
+            "to_date": date_str,
+            "source": "admin_manual",
+            "admin_notes": None,
+            "cancelled_at": None,
+            "requested_at": now,
+            "created_at": now,
+        }},
+        upsert=True
+    )
 
 
 async def create_leave_txn(employee_id: str, txn_type: str, leave_type: str, amount: float,
@@ -4953,6 +5027,12 @@ async def update_daily_attendance(attendance_id: str, body: DailyAttendanceUpdat
         except Exception as e:
             logger.warning(f"[update_daily_attendance] Recalc failed: {e}")
 
+    # Store half_day_type in attendance record when status is Leave/Half Day
+    if body.status in ("Leave", "Half Day"):
+        update["half_day_type"] = body.half_day_type or None
+    else:
+        update["half_day_type"] = None
+
     await db.daily_attendance.update_one({"attendance_id": attendance_id}, {"$set": update})
 
     # Always fully rebuild late tracking from actual attendance records
@@ -4961,6 +5041,10 @@ async def update_daily_attendance(attendance_id: str, body: DailyAttendanceUpdat
     if date_str:
         month_first = date_str[:7] + "-01"
         await rebuild_late_tracking_fn(employee_id, month_first)
+
+    # Auto-create or remove approved leave request for payroll
+    if date_str:
+        await ensure_admin_leave_request(employee_id, date_str, body.status, body.half_day_type)
 
     return {**existing, **update}
 
@@ -4983,6 +5067,7 @@ async def create_manual_attendance(request: Request):
     notes = body.get("notes", "")
     check_in = body.get("check_in")
     check_out = body.get("check_out")
+    half_day_type = body.get("half_day_type") or None
 
     if not employee_id or not date_str or not status:
         raise HTTPException(400, "employee_id, date, and status required")
@@ -5045,11 +5130,15 @@ async def create_manual_attendance(request: Request):
         "total_hours": total_hours, "is_late": is_late, "late_minutes": late_minutes,
         "left_early": left_early, "early_departure_minutes": early_departure_minutes,
         "notes": notes, "source": "manual",
+        "half_day_type": half_day_type if status in ("Leave", "Half Day") else None,
         **({"biometric_employee_code": bio_code} if bio_code else {}),
     })
 
     # Always fully rebuild late tracking from actual attendance records
     await rebuild_late_tracking_fn(employee_id, date_str[:7] + "-01")
+
+    # Auto-create or remove approved leave request for payroll
+    await ensure_admin_leave_request(employee_id, date_str, status, half_day_type)
 
     return record
 
