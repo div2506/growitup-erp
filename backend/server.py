@@ -1926,6 +1926,8 @@ async def delete_employee(emp_id: str, request: Request):
         db.performance_data.delete_many({"employee_id": emp_id}),
         db.manager_performance.delete_many({"employee_id": emp_id}),
         db.biometric_logs.delete_many({"resolved_employee_id": emp_id}),
+        db.payroll_adjustments.delete_many({"employee_id": emp_id}),
+        db.payroll.delete_many({"employee_id": emp_id}),
     )
 
     # Remove from teams membership
