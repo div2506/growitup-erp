@@ -3,7 +3,7 @@ import axios from "axios";
 import { toast } from "sonner";
 import {
   Printer, Download, ChevronLeft, Search, IndianRupee,
-  TrendingUp, TrendingDown, Users, Wallet, Eye, X
+  TrendingUp, TrendingDown, Users, Wallet, Eye, X, Pencil
 } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -81,6 +81,12 @@ function PayslipContent({ data }) {
             <div className="flex justify-between text-sm">
               <span className="text-[#B3B3B3]">Overtime ({E.overtime_hours}h, {E.overtime_count} session{E.overtime_count !== 1 ? "s" : ""})</span>
               <span className="text-green-400">+{fmt(E.overtime_pay)}</span>
+            </div>
+          )}
+          {E.other_allowance > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-[#B3B3B3]">Other Allowance{E.other_allowance_note ? ` (${E.other_allowance_note})` : ""}</span>
+              <span className="text-green-400">+{fmt(E.other_allowance)}</span>
             </div>
           )}
         </div>
@@ -183,21 +189,47 @@ function PayslipContent({ data }) {
 // ─────────────────────────────────────────────
 // Payslip Modal
 // ─────────────────────────────────────────────
-function PayslipModal({ employeeId, month, onClose }) {
+function PayslipModal({ employeeId, month, onClose, isAdmin }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [allowanceEdit, setAllowanceEdit] = useState(false);
+  const [allowanceVal, setAllowanceVal] = useState("");
+  const [allowanceNote, setAllowanceNote] = useState("");
+  const [savingAllowance, setSavingAllowance] = useState(false);
   const printRef = useRef();
 
-  useEffect(() => {
+  const fetchData = useCallback(() => {
     if (!employeeId || !month) return;
     setLoading(true);
     axios.get(`${API}/payroll/calculate`, {
       params: { employee_id: employeeId, month },
       withCredentials: true
-    }).then(r => setData(r.data))
+    }).then(r => {
+      setData(r.data);
+      setAllowanceVal(String(r.data?.earnings?.other_allowance || 0));
+      setAllowanceNote(r.data?.earnings?.other_allowance_note || "");
+    })
       .catch(() => toast.error("Failed to load payslip"))
       .finally(() => setLoading(false));
   }, [employeeId, month]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const saveAllowance = async () => {
+    setSavingAllowance(true);
+    try {
+      await axios.patch(`${API}/payroll/adjustments`, {
+        employee_id: employeeId,
+        month,
+        other_allowance: parseFloat(allowanceVal) || 0,
+        other_allowance_note: allowanceNote,
+      }, { withCredentials: true });
+      toast.success("Other allowance updated");
+      setAllowanceEdit(false);
+      fetchData();
+    } catch { toast.error("Failed to update allowance"); }
+    finally { setSavingAllowance(false); }
+  };
 
   const handlePrint = () => {
     const printContents = printRef.current?.innerHTML;
@@ -262,9 +294,61 @@ function PayslipModal({ employeeId, month, onClose }) {
             </div>
           </div>
         ) : data ? (
-          <div ref={printRef}>
-            <PayslipContent data={data} />
-          </div>
+          <>
+            <div ref={printRef}>
+              <PayslipContent data={data} />
+            </div>
+            {/* Other Allowance — admin only */}
+            {isAdmin && (
+              <div className="mt-4 pt-4 border-t border-white/10">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[#B3B3B3] text-xs font-semibold uppercase tracking-wider">Other Allowance</p>
+                  {!allowanceEdit && (
+                    <button onClick={() => setAllowanceEdit(true)}
+                      className="flex items-center gap-1 text-xs text-[#B3B3B3] hover:text-white transition-colors">
+                      <Pencil size={11} /> Edit
+                    </button>
+                  )}
+                </div>
+                {allowanceEdit ? (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex gap-2">
+                      <input
+                        type="number" min="0" step="0.01"
+                        value={allowanceVal}
+                        onChange={e => setAllowanceVal(e.target.value)}
+                        placeholder="Amount (₹)"
+                        className="flex-1 bg-[#191919] border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-white/30"
+                      />
+                      <input
+                        type="text"
+                        value={allowanceNote}
+                        onChange={e => setAllowanceNote(e.target.value)}
+                        placeholder="Note (optional)"
+                        className="flex-1 bg-[#191919] border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-white/30"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={saveAllowance} disabled={savingAllowance}
+                        className="flex-1 bg-white text-black hover:bg-white/90 text-sm h-8">
+                        {savingAllowance ? "Saving..." : "Save"}
+                      </Button>
+                      <Button variant="outline" onClick={() => setAllowanceEdit(false)}
+                        className="flex-1 bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white text-sm h-8">
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-white text-sm">
+                    {data?.earnings?.other_allowance > 0
+                      ? `₹${Number(data.earnings.other_allowance).toLocaleString("en-IN")}${data.earnings.other_allowance_note ? ` — ${data.earnings.other_allowance_note}` : ""}`
+                      : <span className="text-[#666]">No allowance set</span>}
+                  </p>
+                )}
+              </div>
+            )}
+          </>
         ) : (
           <p className="text-[#B3B3B3] text-sm text-center py-8">Failed to load payslip</p>
         )}
@@ -422,6 +506,7 @@ function AdminPayrollView({ month }) {
           employeeId={viewPayslip}
           month={month}
           onClose={() => setViewPayslip(null)}
+          isAdmin={true}
         />
       )}
     </>

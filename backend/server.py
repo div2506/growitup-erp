@@ -210,7 +210,32 @@ async def calculate_monthly_payroll_fn(employee_id: str, month_str: str) -> dict
     if not emp:
         raise HTTPException(404, f"Employee {employee_id} not found")
 
-    basic_salary = float(emp.get("basic_salary") or 0)
+    # ---------- Payroll Adjustments (salary snapshot + other allowance) ----------
+    adj = await db.payroll_adjustments.find_one(
+        {"employee_id": employee_id, "month": month_first}, {"_id": 0}
+    )
+    # Use snapshotted salary if available, else current salary (and snapshot it now)
+    if adj and adj.get("salary_snapshot") is not None:
+        basic_salary = float(adj["salary_snapshot"])
+    else:
+        basic_salary = float(emp.get("basic_salary") or 0)
+        # Snapshot the salary for this month so future salary changes don't affect it
+        await db.payroll_adjustments.update_one(
+            {"employee_id": employee_id, "month": month_first},
+            {"$setOnInsert": {
+                "adj_id": f"pa_{uuid.uuid4().hex[:10]}",
+                "employee_id": employee_id,
+                "month": month_first,
+                "salary_snapshot": basic_salary,
+                "other_allowance": 0.0,
+                "other_allowance_note": "",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }, "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True
+        )
+
+    other_allowance = float(adj.get("other_allowance", 0)) if adj else 0.0
+    other_allowance_note = adj.get("other_allowance_note", "") if adj else ""
     day_rate = basic_salary / days_in_month if days_in_month else 0
 
     # ---------- Fetch all data in parallel ----------
@@ -313,7 +338,7 @@ async def calculate_monthly_payroll_fn(employee_id: str, month_str: str) -> dict
 
     # ---------- Final ----------
     total_deductions = round(regular_leave_deduction + total_absence_deduction + total_late_deduction + half_day_deduction, 2)
-    net_salary = round(gross_earnings - total_deductions, 2)
+    net_salary = round(gross_earnings - total_deductions + other_allowance, 2)
 
     return {
         "employee_id": employee_id,
@@ -328,7 +353,9 @@ async def calculate_monthly_payroll_fn(employee_id: str, month_str: str) -> dict
         "earnings": {
             "basic_salary": round(basic_salary, 2),
             "overtime_pay": overtime_pay, "overtime_hours": overtime_hours,
-            "overtime_count": len(ot_records), "gross_earnings": gross_earnings
+            "overtime_count": len(ot_records), "gross_earnings": gross_earnings,
+            "other_allowance": round(other_allowance, 2),
+            "other_allowance_note": other_allowance_note,
         },
         "deductions": {
             "regular_leave": {"days": regular_leave_days, "amount": regular_leave_deduction},
@@ -5434,6 +5461,50 @@ async def get_payroll_summary(
 
     summary.sort(key=lambda x: x.get("employee", {}).get("first_name", "") or "")
     return summary
+
+
+@api_router.patch("/payroll/adjustments")
+async def update_payroll_adjustment(request: Request):
+    """Admin only: set other_allowance (and optional note) for an employee+month."""
+    user = await get_current_user(request)
+    my_emp = await db.employees.find_one(
+        {"work_email": {"$regex": f"^{user['email']}$", "$options": "i"}}, {"_id": 0}
+    )
+    is_admin = user.get("is_admin") or (my_emp and my_emp.get("department_name") == "Admin")
+    if not is_admin:
+        raise HTTPException(403, "Only Admin department can update payroll adjustments")
+
+    body = await request.json()
+    employee_id = body.get("employee_id")
+    month = body.get("month")  # "YYYY-MM"
+    other_allowance = body.get("other_allowance")
+    other_allowance_note = body.get("other_allowance_note", "")
+
+    if not employee_id or not month:
+        raise HTTPException(400, "employee_id and month are required")
+
+    month_first = month[:7] + "-01"
+    now = datetime.now(timezone.utc).isoformat()
+
+    update_fields: dict = {"updated_at": now}
+    if other_allowance is not None:
+        update_fields["other_allowance"] = float(other_allowance)
+    if other_allowance_note is not None:
+        update_fields["other_allowance_note"] = other_allowance_note
+
+    await db.payroll_adjustments.update_one(
+        {"employee_id": employee_id, "month": month_first},
+        {"$set": update_fields,
+         "$setOnInsert": {
+             "adj_id": f"pa_{uuid.uuid4().hex[:10]}",
+             "employee_id": employee_id,
+             "month": month_first,
+             "salary_snapshot": None,
+             "created_at": now,
+         }},
+        upsert=True
+    )
+    return {"message": "Payroll adjustment updated"}
 
 
 app.include_router(api_router)
