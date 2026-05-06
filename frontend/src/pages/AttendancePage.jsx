@@ -145,7 +145,11 @@ function DateDetailModal({ date, record, isAdmin, isHoliday, onClose, onEdit, is
             <div className="text-center py-4">
               <CloudOff size={28} className="text-[#B3B3B3] mx-auto mb-2" />
               <p className="text-[#B3B3B3]">No attendance record for this date</p>
-              {isAdmin && (
+              {isHoliday ? (
+                <div className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 bg-white/5 border border-white/10 rounded-lg text-[#555] text-sm cursor-not-allowed select-none">
+                  <span>🔒</span> Holiday — attendance cannot be added
+                </div>
+              ) : isAdmin && (
                 <button onClick={onEdit} className="mt-3 px-4 py-2 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60 rounded-lg text-sm font-medium">
                   Add Attendance
                 </button>
