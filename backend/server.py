@@ -5265,7 +5265,8 @@ async def delete_holiday(holiday_id: str, request: Request):
     if not existing:
         raise HTTPException(404, "Holiday not found")
 
-    await db.holidays.delete_one({"holiday_id": holiday_id})
+    result = await db.holidays.delete_one({"holiday_id": holiday_id})
+    logger.info(f"[Holiday] delete_one matched={result.deleted_count} for holiday_id={holiday_id}, name={existing.get('holiday_name')}")
     return {"message": "Holiday deleted successfully"}
 
 
