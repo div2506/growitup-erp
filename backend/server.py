@@ -2469,30 +2469,6 @@ async def seed_v2():
                 "created_at": now, "updated_at": now
             })
 
-    # Seed 2026 Indian public holidays (idempotent by date)
-    holidays_2026 = [
-        {"holiday_name": "Republic Day",      "date": "2026-01-26"},
-        {"holiday_name": "Holi",              "date": "2026-03-25"},
-        {"holiday_name": "Good Friday",       "date": "2026-04-03"},
-        {"holiday_name": "Eid al-Fitr",       "date": "2026-04-11"},
-        {"holiday_name": "Independence Day",  "date": "2026-08-15"},
-        {"holiday_name": "Gandhi Jayanti",    "date": "2026-10-02"},
-        {"holiday_name": "Dussehra",          "date": "2026-10-22"},
-        {"holiday_name": "Diwali",            "date": "2026-11-11"},
-        {"holiday_name": "Christmas",         "date": "2026-12-25"},
-    ]
-    for h in holidays_2026:
-        if not await db.holidays.find_one({"date": h["date"]}):
-            now_ts = datetime.now(timezone.utc).isoformat()
-            await db.holidays.insert_one({
-                "holiday_id": f"hol_{uuid.uuid4().hex[:10]}",
-                "holiday_name": h["holiday_name"],
-                "date": h["date"],
-                "created_by": None,
-                "created_at": now_ts,
-                "updated_at": now_ts
-            })
-
     return {"message": "Seeded v2 successfully"}
 
 
