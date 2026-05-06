@@ -492,13 +492,12 @@ function LatePenaltyAlert({ lateTracking }) {
   const [expanded, setExpanded] = useState(false);
   const hasPenalty = lateTracking.late_count >= 4;
   const penalties = lateTracking.penalties_applied || [];
-  const totalDeduction = penalties.reduce((s, p) => s + (p.amount || 0), 0);
 
-  const borderCls  = hasPenalty ? "border-red-500/20"    : "border-orange-500/20";
-  const bgCls      = hasPenalty ? "bg-red-500/10"        : "bg-orange-500/10";
-  const textCls    = hasPenalty ? "text-red-400"         : "text-orange-400";
-  const mutedCls   = hasPenalty ? "text-red-400/60"      : "text-orange-400/60";
-  const pillBg     = hasPenalty ? "bg-red-500/20"        : "bg-orange-500/20";
+  const borderCls = hasPenalty ? "border-red-500/20"   : "border-orange-500/20";
+  const bgCls     = hasPenalty ? "bg-red-500/10"       : "bg-orange-500/10";
+  const textCls   = hasPenalty ? "text-red-400"        : "text-orange-400";
+  const mutedCls  = hasPenalty ? "text-red-400/60"     : "text-orange-400/60";
+  const pillBg    = hasPenalty ? "bg-red-500/20"       : "bg-orange-500/20";
 
   return (
     <div className={`mb-5 rounded-xl border ${bgCls} ${borderCls}`}>
@@ -512,19 +511,11 @@ function LatePenaltyAlert({ lateTracking }) {
               : `⚠️ ${lateTracking.late_count} late arrivals — Next late will trigger a penalty`}
           </span>
         </div>
-        {/* Summary pills */}
-        <div className="flex items-center gap-2 shrink-0">
-          {penalties.length > 0 && (
+        {penalties.length > 0 && (
+          <div className="flex items-center gap-2 shrink-0">
             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pillBg} ${textCls}`}>
               {penalties.length} penalty{penalties.length !== 1 ? "s" : ""}
             </span>
-          )}
-          {totalDeduction > 0 && (
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pillBg} ${textCls}`}>
-              ₹{totalDeduction.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
-            </span>
-          )}
-          {penalties.length > 0 && (
             <button
               onClick={() => setExpanded(e => !e)}
               className={`text-xs ${mutedCls} hover:${textCls} flex items-center gap-1 transition-colors`}
@@ -532,8 +523,8 @@ function LatePenaltyAlert({ lateTracking }) {
               {expanded ? "Hide" : "Details"}
               <ChevronRight size={12} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Collapsible breakdown */}
@@ -541,11 +532,9 @@ function LatePenaltyAlert({ lateTracking }) {
         <div className={`border-t ${borderCls} px-4 py-3`}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
             {penalties.map((p, i) => (
-              <div key={i} className={`flex items-center justify-between gap-2 text-xs px-2.5 py-1.5 rounded-lg ${pillBg}`}>
-                <span className={mutedCls}>{p.description?.split(":")[0]}</span>
-                <span className={`${textCls} font-medium`}>
-                  {p.amount ? `₹${Number(p.amount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : p.description?.split(": ")[1] || ""}
-                </span>
+              <div key={i} className={`flex items-center gap-2 text-xs px-2.5 py-1.5 rounded-lg ${pillBg}`}>
+                <span className={mutedCls}>{p.date}</span>
+                <span className={`${textCls} font-medium`}>{p.description?.split(":")[0]}</span>
               </div>
             ))}
           </div>
