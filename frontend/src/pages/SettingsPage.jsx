@@ -1616,6 +1616,9 @@ function HolidaysTab() {
   const [formErrors, setFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteYearConfirm, setDeleteYearConfirm] = useState(null); // year string
+  const [deletingYear, setDeletingYear] = useState(false);
+  const [copyingYear, setCopyingYear] = useState(null); // year string
 
   const fetchHolidays = useCallback(async () => {
     setLoading(true);
@@ -1677,6 +1680,42 @@ function HolidaysTab() {
     } finally { setDeleting(false); }
   };
 
+  const handleDeleteYear = async () => {
+    if (!deleteYearConfirm) return;
+    setDeletingYear(true);
+    try {
+      const toDelete = grouped[deleteYearConfirm] || [];
+      await Promise.all(toDelete.map(h => axios.delete(`${API}/holidays/${h.holiday_id}`, { withCredentials: true })));
+      toast.success(`All ${deleteYearConfirm} holidays deleted`);
+      setDeleteYearConfirm(null);
+      fetchHolidays();
+    } catch (err) {
+      toast.error("Failed to delete some holidays");
+    } finally { setDeletingYear(false); }
+  };
+
+  const handleCopyToNextYear = async (yr) => {
+    setCopyingYear(yr);
+    const nextYr = String(parseInt(yr) + 1);
+    const toAdd = (grouped[yr] || []).map(h => ({
+      holiday_name: h.holiday_name,
+      date: h.date.replace(yr, nextYr),
+    }));
+    let added = 0;
+    let skipped = 0;
+    for (const h of toAdd) {
+      try {
+        await axios.post(`${API}/holidays`, h, { withCredentials: true });
+        added++;
+      } catch {
+        skipped++; // likely duplicate date
+      }
+    }
+    toast.success(`Copied ${added} holidays to ${nextYr}${skipped ? ` (${skipped} skipped — date conflict)` : ""}`);
+    setCopyingYear(null);
+    fetchHolidays();
+  };
+
   // Group holidays by year
   const grouped = holidays.reduce((acc, h) => {
     const yr = h.date.slice(0, 4);
@@ -1718,7 +1757,19 @@ function HolidaysTab() {
       ) : (
         years.map(yr => (
           <div key={yr} className="mb-6">
-            <p className="text-[#B3B3B3] text-xs font-semibold uppercase tracking-wider mb-2">{yr}</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[#B3B3B3] text-xs font-semibold uppercase tracking-wider">{yr} — {grouped[yr].length} holiday{grouped[yr].length !== 1 ? "s" : ""}</p>
+              <div className="flex items-center gap-2">
+                <button onClick={() => handleCopyToNextYear(yr)} disabled={copyingYear === yr}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-[#B3B3B3] hover:text-white hover:bg-white/10 transition-colors disabled:opacity-50">
+                  <Copy size={12} /> {copyingYear === yr ? "Copying..." : `Copy to ${parseInt(yr) + 1}`}
+                </button>
+                <button onClick={() => setDeleteYearConfirm(yr)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-[#B3B3B3] hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                  <Trash2 size={12} /> Delete {yr}
+                </button>
+              </div>
+            </div>
             <div className="bg-[#191919] rounded-xl border border-white/10 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[450px]">
@@ -1811,6 +1862,28 @@ function HolidaysTab() {
                   {saving ? "Saving..." : editHoliday ? "Save Changes" : "Add Holiday"}
                 </Button>
               </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Delete Year Confirmation */}
+      {deleteYearConfirm && (
+        <Dialog open onOpenChange={(o) => { if (!o) setDeleteYearConfirm(null); }}>
+          <DialogContent className="bg-[#2F2F2F] border border-white/10 text-white sm:max-w-sm w-[calc(100%-2rem)] rounded-xl">
+            <DialogHeader>
+              <DialogTitle className="text-white">Delete All {deleteYearConfirm} Holidays</DialogTitle>
+            </DialogHeader>
+            <p className="text-[#B3B3B3] text-sm">
+              This will permanently delete all <strong className="text-white">{grouped[deleteYearConfirm]?.length} holidays</strong> for <strong className="text-white">{deleteYearConfirm}</strong>. This cannot be undone.
+            </p>
+            <div className="flex gap-3 pt-2">
+              <Button variant="outline" onClick={() => setDeleteYearConfirm(null)}
+                className="flex-1 bg-transparent border-white/10 text-white hover:bg-white/10 hover:text-white">Cancel</Button>
+              <Button onClick={handleDeleteYear} disabled={deletingYear}
+                className="flex-1 bg-red-500/10 border border-red-500/40 text-red-400 hover:bg-red-500/20 hover:border-red-500/60">
+                {deletingYear ? "Deleting..." : `Delete All ${deleteYearConfirm}`}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
