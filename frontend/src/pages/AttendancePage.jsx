@@ -309,10 +309,10 @@ function EditAttendanceModal({ date, record, employeeId, onClose, onSaved }) {
           {isLeaveStatus && (
             <div className="space-y-1">
               <Label className={labelCls}>Half Day Type {form.status === "Half Day" ? "*" : "(optional)"}</Label>
-              <Select value={form.half_day_type} onValueChange={v => setForm(f => ({ ...f, half_day_type: v }))}>
-                <SelectTrigger className={`${inputCls} focus:ring-0`}><SelectValue placeholder="Full Day Leave" /></SelectTrigger>
+              <Select value={form.half_day_type || (form.status === "Leave" ? "Full Day" : "")} onValueChange={v => setForm(f => ({ ...f, half_day_type: v === "Full Day" ? "" : v }))}>
+                <SelectTrigger className={`${inputCls} focus:ring-0`}><SelectValue placeholder="Select..." /></SelectTrigger>
                 <SelectContent className="bg-[#2F2F2F] border-white/10">
-                  {form.status === "Leave" && <SelectItem value="" className="text-white focus:bg-white/10">Full Day Leave</SelectItem>}
+                  {form.status === "Leave" && <SelectItem value="Full Day" className="text-white focus:bg-white/10">Full Day Leave</SelectItem>}
                   <SelectItem value="First Half" className="text-white focus:bg-white/10">First Half</SelectItem>
                   <SelectItem value="Second Half" className="text-white focus:bg-white/10">Second Half</SelectItem>
                 </SelectContent>
