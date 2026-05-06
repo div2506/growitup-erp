@@ -154,17 +154,39 @@ function ServerDownMonitor({ children }) {
   const [serverDown, setServerDown] = useState(false);
   const [firstLoad, setFirstLoad] = useState(true);
   const firstLoadRef = useRef(true);
+  const debounceTimer = useRef(null);
 
-  // Wire the module-level setter into this component's state
+  // Wire the module-level setter into this component's state.
+  // Debounce "down" signals — only show the overlay if the server has been
+  // unreachable for 3 consecutive seconds. This prevents a single failed
+  // request during page load from triggering a reload loop.
   useEffect(() => {
     _setServerDown = (down) => {
-      setServerDown(down);
-      if (!down && firstLoadRef.current) {
-        firstLoadRef.current = false;
-        setFirstLoad(false);
+      if (down) {
+        // Only set serverDown=true after 3s of continuous failure
+        if (!debounceTimer.current) {
+          debounceTimer.current = setTimeout(() => {
+            debounceTimer.current = null;
+            setServerDown(true);
+          }, 3000);
+        }
+      } else {
+        // Server is reachable — cancel any pending debounce and clear the flag
+        if (debounceTimer.current) {
+          clearTimeout(debounceTimer.current);
+          debounceTimer.current = null;
+        }
+        setServerDown(false);
+        if (firstLoadRef.current) {
+          firstLoadRef.current = false;
+          setFirstLoad(false);
+        }
       }
     };
-    return () => { _setServerDown = null; };
+    return () => {
+      _setServerDown = null;
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
   }, []);
 
   // Always-on heartbeat — pings /health every 30s regardless of user activity.
