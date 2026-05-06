@@ -167,7 +167,26 @@ function ServerDownMonitor({ children }) {
     return () => { _setServerDown = null; };
   }, []);
 
-  // When server is down, poll /health every 5s until it recovers
+  // Always-on heartbeat — pings /health every 30s regardless of user activity.
+  // This detects server going down even when no API calls are in flight.
+  useEffect(() => {
+    const heartbeat = setInterval(async () => {
+      try {
+        const res = await fetch(HEALTH_URL);
+        if (res.ok) {
+          setServerDown(false);
+          if (firstLoadRef.current) { firstLoadRef.current = false; setFirstLoad(false); }
+        } else {
+          setServerDown(true);
+        }
+      } catch {
+        setServerDown(true);
+      }
+    }, 30000);
+    return () => clearInterval(heartbeat);
+  }, []);
+
+  // When server is down, additionally poll /health every 5s for faster recovery
   useEffect(() => {
     if (!serverDown) return;
     const poll = setInterval(async () => {
@@ -175,10 +194,7 @@ function ServerDownMonitor({ children }) {
         const res = await fetch(HEALTH_URL);
         if (res.ok) {
           setServerDown(false);
-          if (firstLoadRef.current) {
-            firstLoadRef.current = false;
-            setFirstLoad(false);
-          }
+          if (firstLoadRef.current) { firstLoadRef.current = false; setFirstLoad(false); }
         }
       } catch {}
     }, 5000);
