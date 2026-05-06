@@ -193,8 +193,8 @@ function ServerDownMonitor({ children }) {
       try {
         const res = await fetch(HEALTH_URL);
         if (res.ok) {
-          setServerDown(false);
-          if (firstLoadRef.current) { firstLoadRef.current = false; setFirstLoad(false); }
+          // Server is back — reload the page so all data re-fetches cleanly
+          window.location.reload();
         }
       } catch {}
     }, 5000);
