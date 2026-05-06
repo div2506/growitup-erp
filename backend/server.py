@@ -5011,8 +5011,13 @@ async def update_daily_attendance(attendance_id: str, body: DailyAttendanceUpdat
             if final_check_out:
                 co_h, co_m = map(int, final_check_out.split(":"))
                 co_mins = co_h * 60 + co_m
-                left_early              = co_mins < eff_end_mins
-                early_departure_minutes = max(0, eff_end_mins - co_mins) if left_early else 0
+                # Half Day status → never "left early" (they only work half the day)
+                if body.status == "Half Day":
+                    left_early              = False
+                    early_departure_minutes = 0
+                else:
+                    left_early              = co_mins < eff_end_mins
+                    early_departure_minutes = max(0, eff_end_mins - co_mins) if left_early else 0
                 update["left_early"]              = left_early
                 update["early_departure_minutes"] = early_departure_minutes
 
@@ -5117,8 +5122,13 @@ async def create_manual_attendance(request: Request):
             if check_out:
                 co_h, co_m = map(int, check_out.split(":"))
                 co_mins = co_h * 60 + co_m
-                left_early = co_mins < eff_end_mins
-                early_departure_minutes = max(0, eff_end_mins - co_mins) if left_early else 0
+                # Half Day status → never "left early"
+                if status == "Half Day":
+                    left_early = False
+                    early_departure_minutes = 0
+                else:
+                    left_early = co_mins < eff_end_mins
+                    early_departure_minutes = max(0, eff_end_mins - co_mins) if left_early else 0
                 break_dur = float(shift_timings.get("break_duration") or 0)
                 total_hours = round(max(0, (co_mins - ci_mins) - break_dur) / 60, 2)
         except Exception:

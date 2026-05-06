@@ -185,7 +185,7 @@ function DateDetailModal({ date, record, isAdmin, isHoliday, onClose, onEdit, is
                   <span className="text-[#B3B3B3] text-sm">Check-out</span>
                   <div className="text-right">
                     <span className="text-white font-medium">{fmt12(record.check_out)}</span>
-                    {record.left_early && (
+                    {record.left_early && record.status !== "Half Day" && (
                       <p className="text-orange-400 text-xs mt-0.5">Left early by {record.early_departure_minutes} min</p>
                     )}
                   </div>
