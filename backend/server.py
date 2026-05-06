@@ -320,7 +320,22 @@ async def calculate_monthly_payroll_fn(employee_id: str, month_str: str) -> dict
     total_late_deduction = round(total_late_deduction, 2)
 
     # ---------- 5. Half-Day Deductions ----------
-    half_day_count = len(half_day_records)
+    # Build set of dates covered by approved leave requests (these are already accounted
+    # for in regular_leave_deduction / paid_leave_days — don't double-deduct)
+    leave_covered_dates = set()
+    for lr in leave_records:
+        try:
+            ld_start = datetime.strptime(lr["from_date"], "%Y-%m-%d")
+            ld_end   = datetime.strptime(lr["to_date"],   "%Y-%m-%d")
+            cur = ld_start
+            while cur <= ld_end:
+                leave_covered_dates.add(cur.strftime("%Y-%m-%d"))
+                cur += timedelta(days=1)
+        except Exception:
+            pass
+
+    # Only count Half Day attendance records NOT covered by a leave request
+    half_day_count = sum(1 for r in half_day_records if r.get("date") not in leave_covered_dates)
     half_day_deduction = round(day_rate * 0.5 * half_day_count, 2)
 
     # ---------- 6. Attendance Summary (already fetched above) ----------
