@@ -5504,6 +5504,21 @@ async def delete_holiday(holiday_id: str, request: Request):
 
 # ===================== PAYROLL ROUTES =====================
 
+@api_router.get("/payroll/months")
+async def get_payroll_months(request: Request):
+    """Return sorted list of months (YYYY-MM) that have attendance data."""
+    await get_current_user(request)
+    # Get distinct month prefixes from daily_attendance dates (format: YYYY-MM-DD → YYYY-MM)
+    pipeline = [
+        {"$group": {"_id": {"$substr": ["$date", 0, 7]}}},
+        {"$sort": {"_id": -1}},
+        {"$limit": 24}
+    ]
+    results = await db.daily_attendance.aggregate(pipeline).to_list(24)
+    months = [r["_id"] for r in results if r.get("_id")]
+    return {"months": months}
+
+
 @api_router.get("/payroll/calculate")
 async def get_payroll_calculate(request: Request, employee_id: Optional[str] = None, month: Optional[str] = None):
     """

@@ -598,15 +598,30 @@ export default function PayrollPage() {
   const { user, myEmployee } = useAuth();
   const isAdminDept = user?.is_admin || myEmployee?.department_name === "Admin";
   const [month, setMonth] = useState(prevMonthStr());
+  const [monthOptions, setMonthOptions] = useState([]);
 
-  // Generate last 12 months
-  const monthOptions = [];
-  for (let i = 0; i < 13; i++) {
-    const d = new Date();
-    d.setDate(1);
-    d.setMonth(d.getMonth() - i);
-    monthOptions.push(d.toISOString().slice(0, 7));
-  }
+  useEffect(() => {
+    axios.get(`${API}/payroll/months`, { withCredentials: true })
+      .then(r => {
+        const months = r.data.months || [];
+        setMonthOptions(months);
+        // Set selected month to most recent available, or previous month
+        if (months.length > 0 && !months.includes(prevMonthStr())) {
+          setMonth(months[0]);
+        }
+      })
+      .catch(() => {
+        // Fallback: last 12 months
+        const fallback = [];
+        for (let i = 0; i < 13; i++) {
+          const d = new Date();
+          d.setDate(1);
+          d.setMonth(d.getMonth() - i);
+          fallback.push(d.toISOString().slice(0, 7));
+        }
+        setMonthOptions(fallback);
+      });
+  }, []);
 
   return (
     <div className="p-4 md:p-8">
