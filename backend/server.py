@@ -800,8 +800,68 @@ async def process_daily_attendance_fn(employee_id: str, date_str: str) -> Option
         return None
 
 
+async def rebuild_late_tracking_fn(employee_id: str, month_str: str):
+    """
+    Fully rebuild monthly_late_tracking for an employee+month from actual
+    attendance records. Always accurate — use after any manual edit/add.
+    month_str: "YYYY-MM-01"
+    """
+    try:
+        year = int(month_str[:4])
+        month_num = int(month_str[5:7])
+        days_in_month = cal_module.monthrange(year, month_num)[1]
+        last_day = f"{year}-{month_num:02d}-{days_in_month:02d}"
+
+        late_records = await db.daily_attendance.find(
+            {"employee_id": employee_id, "is_late": True,
+             "date": {"$gte": month_str[:7] + "-01", "$lte": last_day}},
+            {"_id": 0, "date": 1}
+        ).sort("date", 1).to_list(31)
+
+        late_dates = [r["date"] for r in late_records]
+        late_count = len(late_dates)
+
+        emp = await db.employees.find_one({"employee_id": employee_id}, {"_id": 0})
+        penalties = []
+        for idx, d in enumerate(late_dates, start=1):
+            if idx == 4 and emp:
+                one_day = round(emp.get("basic_salary", 0) / days_in_month, 2)
+                penalties.append({
+                    "date": d, "late_number": 4,
+                    "type": "leave_or_salary_deduction", "amount": one_day,
+                    "description": f"4th late: 1 paid leave OR {one_day} salary deduction"
+                })
+            elif idx >= 5 and emp:
+                penalty = round(emp.get("basic_salary", 0) * 0.0167, 2)
+                penalties.append({
+                    "date": d, "late_number": idx,
+                    "type": "salary_deduction_1_67pct", "amount": penalty, "percentage": 1.67,
+                    "description": f"{idx}th late: 1.67% salary deduction = {penalty}"
+                })
+
+        now = datetime.now(timezone.utc).isoformat()
+        await db.monthly_late_tracking.update_one(
+            {"employee_id": employee_id, "month": month_str},
+            {"$set": {
+                "late_count": late_count,
+                "late_dates": late_dates,
+                "penalties_applied": penalties,
+                "updated_at": now
+            }, "$setOnInsert": {
+                "tracking_id": f"lt_{uuid.uuid4().hex[:12]}",
+                "employee_id": employee_id,
+                "month": month_str,
+                "year": year,
+                "created_at": now
+            }},
+            upsert=True
+        )
+    except Exception as e:
+        logger.error(f"[Late Tracking] Rebuild error for {employee_id}: {e}")
+
+
 async def update_late_tracking_fn(employee_id: str, date_str: str, late_minutes: int):
-    """Update monthly late count and apply penalties."""
+    """Increment-based late tracking for biometric processing (new records only)."""
     try:
         date_obj = datetime.strptime(date_str, "%Y-%m-%d")
         month_str = date_obj.strftime("%Y-%m-01")
@@ -815,16 +875,14 @@ async def update_late_tracking_fn(employee_id: str, date_str: str, late_minutes:
             tracking = {
                 "tracking_id": f"lt_{uuid.uuid4().hex[:12]}",
                 "employee_id": employee_id, "month": month_str, "year": year,
-                "late_count": 0, "penalties_applied": [], "created_at": now, "updated_at": now
+                "late_count": 0, "penalties_applied": [], "late_dates": [], "created_at": now, "updated_at": now
             }
             await db.monthly_late_tracking.insert_one(tracking)
 
-        # Idempotency guard — skip if this date is already recorded as late
-        existing_late_dates = {p.get("date") for p in tracking.get("penalties_applied", [])}
-        # Also track all late dates (including 1st/2nd/3rd that have no penalty entry)
+        # Idempotency guard — skip if this date is already recorded
         all_late_dates = set(tracking.get("late_dates", []))
         if date_str in all_late_dates:
-            return  # Already counted for this date, do nothing
+            return
 
         new_count = tracking["late_count"] + 1
         all_late_dates.add(date_str)
@@ -4897,41 +4955,12 @@ async def update_daily_attendance(attendance_id: str, body: DailyAttendanceUpdat
 
     await db.daily_attendance.update_one({"attendance_id": attendance_id}, {"$set": update})
 
-    # Sync late tracking for the affected month
+    # Always fully rebuild late tracking from actual attendance records
     employee_id = existing["employee_id"]
     date_str = existing.get("date")
-    final_is_late = update.get("is_late", existing.get("is_late", False))
-    final_late_minutes = update.get("late_minutes", existing.get("late_minutes", 0))
-    if final_is_late and date_str:
-        await update_late_tracking_fn(employee_id, date_str, final_late_minutes)
-    elif date_str:
-        # If no longer late, recalculate the month's late tracking from scratch
-        month_key = date_str[:7]  # "YYYY-MM"
-        month_records = await db.daily_attendance.find(
-            {"employee_id": employee_id, "date": {"$gte": f"{month_key}-01", "$lte": f"{month_key}-31"}},
-            {"_id": 0, "date": 1, "is_late": 1, "late_minutes": 1}
-        ).to_list(31)
-        late_records = [r for r in month_records if r.get("is_late")]
-        late_count = len(late_records)
-        # Rebuild penalties
-        month_first = f"{month_key}-01"
-        emp_for_penalty = await db.employees.find_one({"employee_id": employee_id}, {"_id": 0})
-        days_in_month = cal_module.monthrange(int(month_key[:4]), int(month_key[5:7]))[1]
-        penalties = []
-        late_dates_list = []
-        for idx, r in enumerate(sorted(late_records, key=lambda x: x["date"]), start=1):
-            late_dates_list.append(r["date"])
-            if idx == 4 and emp_for_penalty:
-                one_day = round(emp_for_penalty.get("basic_salary", 0) / days_in_month, 2)
-                penalties.append({"late_number": 4, "date": r["date"], "type": "leave_or_salary_deduction", "amount": one_day, "description": f"4th late: 1 paid leave OR {one_day} salary deduction"})
-            elif idx >= 5 and emp_for_penalty:
-                penalty = round(emp_for_penalty.get("basic_salary", 0) * 0.0167, 2)
-                penalties.append({"late_number": idx, "date": r["date"], "type": "salary_deduction_1_67pct", "amount": penalty, "percentage": 1.67, "description": f"{idx}th late: 1.67% salary deduction = {penalty}"})
-        await db.monthly_late_tracking.update_one(
-            {"employee_id": employee_id, "month": month_first},
-            {"$set": {"late_count": late_count, "penalties_applied": penalties, "late_dates": late_dates_list, "updated_at": datetime.now(timezone.utc).isoformat()}},
-            upsert=True
-        )
+    if date_str:
+        month_first = date_str[:7] + "-01"
+        await rebuild_late_tracking_fn(employee_id, month_first)
 
     return {**existing, **update}
 
@@ -5019,8 +5048,8 @@ async def create_manual_attendance(request: Request):
         **({"biometric_employee_code": bio_code} if bio_code else {}),
     })
 
-    if is_late:
-        await update_late_tracking_fn(employee_id, date_str, late_minutes)
+    # Always fully rebuild late tracking from actual attendance records
+    await rebuild_late_tracking_fn(employee_id, date_str[:7] + "-01")
 
     return record
 
