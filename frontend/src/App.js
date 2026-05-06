@@ -64,9 +64,9 @@ axios.interceptors.response.use(
     const status = error?.response?.status;
     const requestUrl = error?.config?.url || "";
 
-    // No response = network error / server down
+    // No response = network error — let the heartbeat decide if server is truly down.
+    // Don't set serverDown=true here; a single failed request is not conclusive.
     if (!error?.response) {
-      if (_setServerDown) _setServerDown(true);
       return Promise.reject(error);
     }
 
