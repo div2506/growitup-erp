@@ -964,21 +964,61 @@ async def get_or_create_leave_balance(employee_id: str) -> dict:
 async def ensure_admin_leave_request(employee_id: str, date_str: str, status: str, half_day_type: Optional[str]):
     """
     When admin manually sets attendance to 'Leave' or 'Half Day', ensure an approved
-    leave_request exists for that date so payroll can deduct correctly.
-    - If an approved leave_request already covers this date, leave it unchanged.
-    - Otherwise, upsert an admin-created approved leave request.
-    - If status is changed away from Leave/Half Day, remove any admin-created leave request for that date.
+    leave_request exists and leave_balance is correctly updated.
+
+    Flow:
+    - Status changed TO Leave/Half Day:
+        1. Check if employee-submitted approved leave already covers this date → skip if yes
+        2. Find existing admin_manual for this date (to know old paid_days before replacing)
+        3. Restore old paid_days back to leave_balance
+        4. Calculate new paid_days from current balance
+        5. Deduct new paid_days from leave_balance
+        6. Upsert the leave_request doc
+
+    - Status changed AWAY from Leave/Half Day:
+        1. Find and delete admin_manual leave for this date
+        2. Restore its paid_days back to leave_balance
     """
     is_leave_status = status in ("Leave", "Half Day")
+    now = datetime.now(timezone.utc).isoformat()
 
     if not is_leave_status:
-        # Remove any admin-auto-created leave request for this exact single day
-        await db.leave_requests.delete_many({
+        # Find existing admin_manual to restore its paid_days
+        old_req = await db.leave_requests.find_one({
             "employee_id": employee_id,
             "from_date": date_str,
             "to_date": date_str,
             "source": "admin_manual"
-        })
+        }, {"_id": 0, "paid_days": 1})
+
+        if old_req:
+            old_paid = float(old_req.get("paid_days", 0))
+            await db.leave_requests.delete_many({
+                "employee_id": employee_id,
+                "from_date": date_str,
+                "to_date": date_str,
+                "source": "admin_manual"
+            })
+            # Restore paid days back to balance
+            if old_paid > 0:
+                await db.leave_balance.update_one(
+                    {"employee_id": employee_id},
+                    {"$inc": {"paid_leave_balance": old_paid}, "$set": {"updated_at": now}},
+                    upsert=True
+                )
+        return
+
+    # Check if a non-admin-manual approved leave_request already covers this date
+    existing_approved = await db.leave_requests.find_one({
+        "employee_id": employee_id,
+        "status": "Approved",
+        "from_date": {"$lte": date_str},
+        "to_date": {"$gte": date_str},
+        "source": {"$ne": "admin_manual"}
+    }, {"_id": 0, "request_id": 1})
+
+    if existing_approved:
+        # Employee-submitted approved leave already covers this date; nothing to do.
         return
 
     # Determine leave type
@@ -991,53 +1031,42 @@ async def ensure_admin_leave_request(employee_id: str, date_str: str, status: st
         half_dt = None
         total_days = 1.0
 
-    # Check if a non-admin-manual approved leave_request already exists for this date
-    existing_approved = await db.leave_requests.find_one({
+    # Get existing admin_manual for this date (may already exist if re-editing)
+    old_req = await db.leave_requests.find_one({
         "employee_id": employee_id,
-        "status": "Approved",
-        "from_date": {"$lte": date_str},
-        "to_date": {"$gte": date_str},
-        "source": {"$ne": "admin_manual"}
-    }, {"_id": 0, "request_id": 1})
+        "from_date": date_str,
+        "to_date": date_str,
+        "source": "admin_manual"
+    }, {"_id": 0, "paid_days": 1})
+    old_paid = float(old_req.get("paid_days", 0)) if old_req else 0.0
 
-    if existing_approved:
-        # An employee-submitted approved leave already covers this date; nothing to do.
-        return
-
-    now = datetime.now(timezone.utc).isoformat()
-
-    # Use paid leave balance, but subtract paid days already consumed by other approved
-    # leave requests (both employee-submitted and admin_manual) so we don't over-allocate.
+    # Restore old paid_days to balance before recalculating
     balance = await get_or_create_leave_balance(employee_id)
-    raw_paid_balance = float(balance.get("paid_leave_balance", 0))
+    current_balance = float(balance.get("paid_leave_balance", 0))
+    restored_balance = round(current_balance + old_paid, 2)
 
-    # Sum paid_days already consumed by ALL approved leave requests,
-    # EXCEPT the admin_manual record for this exact date (which we're about to upsert).
-    # This prevents double-counting when the same date is re-edited.
-    all_approved = await db.leave_requests.find({
-        "employee_id": employee_id,
-        "status": "Approved",
-    }, {"paid_days": 1, "source": 1, "from_date": 1, "_id": 0}).to_list(1000)
-
-    already_used_paid = round(sum(
-        float(d.get("paid_days", 0))
-        for d in all_approved
-        # Exclude the admin_manual entry for this exact date (we're replacing it)
-        if not (d.get("source") == "admin_manual" and d.get("from_date") == date_str)
-    ), 2)
-
-    available_paid = max(0.0, raw_paid_balance - already_used_paid)
-    effective_balance = {**balance, "paid_leave_balance": available_paid}
+    # Calculate new deduction from restored balance
+    effective_balance = {**balance, "paid_leave_balance": restored_balance}
     deduction = calc_leave_deduction(effective_balance, total_days)
+    new_paid = deduction["paid_days"]
 
-    # Upsert admin-manual leave request (by employee_id + from_date + source)
+    # Deduct new paid_days from leave_balance
+    net_change = new_paid - old_paid  # positive = more deducted, negative = restored
+    if net_change != 0:
+        await db.leave_balance.update_one(
+            {"employee_id": employee_id},
+            {"$inc": {"paid_leave_balance": -net_change}, "$set": {"updated_at": now}},
+            upsert=True
+        )
+
+    # Upsert admin-manual leave request
     await db.leave_requests.update_one(
         {"employee_id": employee_id, "from_date": date_str, "to_date": date_str, "source": "admin_manual"},
         {"$set": {
             "leave_type": leave_type,
             "half_day_type": half_dt,
             "total_days": total_days,
-            "paid_days": deduction["paid_days"],
+            "paid_days": new_paid,
             "regular_days": deduction["regular_days"],
             "status": "Approved",
             "reason": "Added by admin",
