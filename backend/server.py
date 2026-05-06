@@ -270,13 +270,25 @@ async def calculate_monthly_payroll_fn(employee_id: str, month_str: str) -> dict
     late_count = late_tracking.get("late_count", 0) if late_tracking else 0
     late_penalty_list = []
     total_late_deduction = 0.0
+
+    # Fetch leave balance to determine 4th-late penalty type
+    leave_bal_doc = await db.leave_balance.find_one({"employee_id": employee_id}, {"_id": 0})
+    paid_leave_balance = float(leave_bal_doc.get("paid_leave_balance", 0)) if leave_bal_doc else 0.0
+    leave_used_for_late = 0  # track how many paid leaves consumed by late penalties this month
+
     if late_tracking:
         for p in late_tracking.get("penalties_applied", []):
             ptype = p.get("type", "")
             amount = float(p.get("amount", 0))
             if ptype == "leave_or_salary_deduction":
-                total_late_deduction += amount
-                late_penalty_list.append({"date": p.get("date", ""), "type": "4th Late Arrival", "description": "1 day salary", "amount": round(amount, 2)})
+                # Use paid leave if available, else deduct salary
+                available = paid_leave_balance - leave_used_for_late
+                if available >= 1:
+                    leave_used_for_late += 1
+                    late_penalty_list.append({"date": p.get("date", ""), "type": "4th Late Arrival", "description": "1 paid leave deducted", "amount": 0, "leave_deducted": 1})
+                else:
+                    total_late_deduction += amount
+                    late_penalty_list.append({"date": p.get("date", ""), "type": "4th Late Arrival", "description": f"1 day salary deducted (no paid leave)", "amount": round(amount, 2), "leave_deducted": 0})
             elif ptype == "salary_deduction_1_67pct":
                 total_late_deduction += amount
                 late_penalty_list.append({"date": p.get("date", ""), "type": f"{p.get('late_number', 5)}th+ Late Arrival", "description": "1.67% salary", "amount": round(amount, 2)})
@@ -322,7 +334,7 @@ async def calculate_monthly_payroll_fn(employee_id: str, month_str: str) -> dict
             "regular_leave": {"days": regular_leave_days, "amount": regular_leave_deduction},
             "paid_leave": {"days": paid_leave_days, "amount": 0},
             "absences": {"count": len(absent_records), "details": absence_list, "amount": total_absence_deduction},
-            "late_penalties": {"late_count": late_count, "penalties": late_penalty_list, "amount": total_late_deduction},
+            "late_penalties": {"late_count": late_count, "penalties": late_penalty_list, "amount": total_late_deduction, "leaves_consumed": leave_used_for_late},
             "half_days": {"count": half_day_count, "amount": half_day_deduction},
             "total_deductions": total_deductions
         },
