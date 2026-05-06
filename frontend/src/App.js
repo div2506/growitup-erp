@@ -193,8 +193,14 @@ function ServerDownMonitor({ children }) {
       try {
         const res = await fetch(HEALTH_URL);
         if (res.ok) {
-          // Server is back — reload the page so all data re-fetches cleanly
-          window.location.reload();
+          if (document.visibilityState === 'visible') {
+            // Tab is active — reload so all data re-fetches cleanly
+            window.location.reload();
+          } else {
+            // Tab is in background — just dismiss the overlay silently
+            setServerDown(false);
+            if (firstLoadRef.current) { firstLoadRef.current = false; setFirstLoad(false); }
+          }
         }
       } catch {}
     }, 5000);
