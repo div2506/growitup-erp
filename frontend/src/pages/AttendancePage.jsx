@@ -833,7 +833,7 @@ export default function AttendancePage() {
                 onDateClick={(date, record) => {
                   const ds = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
                   const today = new Date(); today.setHours(0,0,0,0);
-                  setDetailModal({ date, record, isHoliday: record?.status === "Holiday" || holidayDates.has(ds), isFuture: date > today });
+                  setDetailModal({ date, record, isHoliday: record?.status === "Holiday" || (!record && holidayDates.has(ds)), isFuture: date > today });
                 }}
               />
             ) : (
@@ -842,7 +842,7 @@ export default function AttendancePage() {
                 isAdmin={isAdmin}
                 onEdit={(date, record) => {
                   const ds = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
-                  setEditModal({ date, record, isHoliday: record?.status === "Holiday" || holidayDates.has(ds) });
+                  setEditModal({ date, record, isHoliday: record?.status === "Holiday" || (!record && holidayDates.has(ds)) });
                 }}
               />
             )}
