@@ -5021,8 +5021,8 @@ async def update_daily_attendance(attendance_id: str, body: DailyAttendanceUpdat
                 update["left_early"]              = left_early
                 update["early_departure_minutes"] = early_departure_minutes
 
-                # Recalculate total_hours (gross minus break)
-                break_dur = float(shift_timings.get("break_duration") or 0)
+                # Recalculate total_hours (gross minus break; no break deduction for Half Day)
+                break_dur = 0 if body.status == "Half Day" else float(shift_timings.get("break_duration") or 0)
                 total_minutes = max(0, (co_mins - ci_mins) - break_dur)
                 update["total_hours"] = round(total_minutes / 60, 2)
             else:
@@ -5129,7 +5129,8 @@ async def create_manual_attendance(request: Request):
                 else:
                     left_early = co_mins < eff_end_mins
                     early_departure_minutes = max(0, eff_end_mins - co_mins) if left_early else 0
-                break_dur = float(shift_timings.get("break_duration") or 0)
+                # No break deduction for Half Day
+                break_dur = 0 if status == "Half Day" else float(shift_timings.get("break_duration") or 0)
                 total_hours = round(max(0, (co_mins - ci_mins) - break_dur) / 60, 2)
         except Exception:
             pass
