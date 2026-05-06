@@ -61,10 +61,13 @@ function StatusBadge({ status, size = "sm" }) {
 // ─────────────────────────────────────────────
 // Calendar Day Cell
 // ─────────────────────────────────────────────
-function DayCell({ date, record, isToday, isFuture, onClick }) {
+function DayCell({ date, record, isToday, isFuture, isHoliday, onClick }) {
   if (!date) return <div />;
   const isSun = date.getDay() === 0;
-  const cfg = record ? STATUS_CONFIG[record.status] : (isSun ? STATUS_CONFIG.Holiday : null);
+  // Holidays (Sundays + DB holidays) always show HOL styling regardless of record
+  const cfg = (isSun || isHoliday)
+    ? STATUS_CONFIG.Holiday
+    : record ? STATUS_CONFIG[record.status] : null;
   const label = cfg ? cfg.label : (isFuture ? "" : "");
 
   return (
@@ -313,7 +316,7 @@ function EditAttendanceModal({ date, record, employeeId, onClose, onSaved }) {
 // ─────────────────────────────────────────────
 // Calendar View
 // ─────────────────────────────────────────────
-function CalendarView({ attendanceMap, currentMonth, isAdmin, onDateClick }) {
+function CalendarView({ attendanceMap, currentMonth, isAdmin, onDateClick, holidayDates = new Set() }) {
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
   const firstDay = new Date(year, month, 1).getDay();
@@ -340,8 +343,10 @@ function CalendarView({ attendanceMap, currentMonth, isAdmin, onDateClick }) {
           const record = attendanceMap[ds];
           const isToday = ds === today;
           const isFuture = ds > today;
+          const isHoliday = holidayDates.has(ds);
           return (
             <DayCell key={ds} date={date} record={record} isToday={isToday} isFuture={isFuture}
+              isHoliday={isHoliday}
               onClick={() => onDateClick(date, record)} />
           );
         })}
@@ -830,6 +835,7 @@ export default function AttendancePage() {
                 attendanceMap={attendanceMap}
                 currentMonth={currentMonth}
                 isAdmin={isAdmin}
+                holidayDates={holidayDates}
                 onDateClick={(date, record) => {
                   const ds = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
                   const today = new Date(); today.setHours(0,0,0,0);
