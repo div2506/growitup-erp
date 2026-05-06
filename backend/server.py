@@ -1011,17 +1011,20 @@ async def ensure_admin_leave_request(employee_id: str, date_str: str, status: st
     balance = await get_or_create_leave_balance(employee_id)
     raw_paid_balance = float(balance.get("paid_leave_balance", 0))
 
-    # Sum paid_days already used by other approved leave requests (excluding this exact date's admin_manual)
-    already_used_cursor = db.leave_requests.find({
+    # Sum paid_days already consumed by ALL approved leave requests,
+    # EXCEPT the admin_manual record for this exact date (which we're about to upsert).
+    # This prevents double-counting when the same date is re-edited.
+    all_approved = await db.leave_requests.find({
         "employee_id": employee_id,
         "status": "Approved",
-        "$or": [
-            {"source": {"$ne": "admin_manual"}},
-            {"from_date": {"$ne": date_str}},
-        ]
-    }, {"paid_days": 1, "_id": 0})
-    already_used_docs = await already_used_cursor.to_list(1000)
-    already_used_paid = round(sum(float(d.get("paid_days", 0)) for d in already_used_docs), 2)
+    }, {"paid_days": 1, "source": 1, "from_date": 1, "_id": 0}).to_list(1000)
+
+    already_used_paid = round(sum(
+        float(d.get("paid_days", 0))
+        for d in all_approved
+        # Exclude the admin_manual entry for this exact date (we're replacing it)
+        if not (d.get("source") == "admin_manual" and d.get("from_date") == date_str)
+    ), 2)
 
     available_paid = max(0.0, raw_paid_balance - already_used_paid)
     effective_balance = {**balance, "paid_leave_balance": available_paid}
