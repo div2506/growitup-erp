@@ -507,12 +507,12 @@ export default function CreativeTeamOfMonth() {
                 <tr className="border-b border-[#3F3F3F]">
                   <th className="text-left text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Rank</th>
                   <th className="text-center text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Team</th>
-                  <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Client Performance</th>
-                  <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Client Feedback</th>
-                  <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Creative Task</th>
-                  <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Total (This month)</th>
+                  <th className="text-center text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Client Performance</th>
+                  <th className="text-center text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Client Feedback</th>
+                  <th className="text-center text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Creative Task</th>
+                  <th className="text-center text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Total (This month)</th>
                   <th className="text-center text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Report</th>
-                  <th className="text-right text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Total (Overall)</th>
+                  <th className="text-center text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Total (Overall)</th>
                   {isAdmin && (
                     <th className="text-center text-[#B3B3B3] text-xs uppercase tracking-wider py-3 px-4 font-medium bg-[#191919]">Actions</th>
                   )}
@@ -541,16 +541,16 @@ export default function CreativeTeamOfMonth() {
                         <span className="text-white font-medium text-sm text-center">{entry.team_name}</span>
                       </div>
                     </td>
-                    <td className="py-4 px-4 text-right text-white font-medium">{entry.client_performance_score.toFixed(1)}</td>
-                    <td className="py-4 px-4 text-right text-white font-medium">{entry.client_feedback_score.toFixed(1)}</td>
-                    <td className="py-4 px-4 text-right text-white font-medium">{entry.creative_task_score.toFixed(1)}</td>
-                    <td className="py-4 px-4 text-right">
+                    <td className="py-4 px-4 text-center text-white font-medium">{entry.client_performance_score.toFixed(1)}</td>
+                    <td className="py-4 px-4 text-center text-white font-medium">{entry.client_feedback_score.toFixed(1)}</td>
+                    <td className="py-4 px-4 text-center text-white font-medium">{entry.creative_task_score.toFixed(1)}</td>
+                    <td className="py-4 px-4 text-center">
                       <span className="text-white font-bold text-lg">{entry.total_points_month.toFixed(2)}</span>
                     </td>
                     <td className="py-4 px-4 text-center">
                       <ReportLinkCell url={entry.report_link} />
                     </td>
-                    <td className="py-4 px-4 text-right text-[#B3B3B3] font-medium">{entry.total_points_overall.toFixed(2)}</td>
+                    <td className="py-4 px-4 text-center text-[#B3B3B3] font-medium">{entry.total_points_overall.toFixed(2)}</td>
                     {isAdmin && (
                       <td className="py-4 px-4 text-center">
                         <button
